@@ -56,6 +56,21 @@ The installer then runs `ctx init` non-interactively with those choices. The sam
 
 The desktop UI supports **中文 / English switching** at any time from the sidebar; the choice is remembered. The skill language only affects the files installed into your agents and can be changed later with `ctx init --skill-lang`.
 
+## Daily workflow
+
+Once installed, Cortex is the memory layer for every engagement:
+
+1. **Findings go in through MCP.** While the agent hunts, it writes confirmed vulnerabilities, recon asset context and the current task snapshot into the local SQLite database (the installed skills/rules tell it when and how). No manual report assembly.
+2. **Agents read the library back at any time.** Before a new task, the agent queries asset context and existing vulnerabilities, so recon is reused and duplicate findings are avoided.
+3. **Humans review from the desktop app or terminal.** The desktop app provides the vulnerability dashboard, asset library, snapshot sessions and Markdown report export. `ctx` provides vulnerability / asset / snapshot queries, full-text search and diagnostics (report export is desktop-only for now).
+4. **Resume a task in a new chat.** Just name the task, for example: *“Continue the Example Program IDOR task.”* The agent runs `manage_snapshot list`, loads the matching session (by project name, phase or `session_id`) and continues from `unfinished_tasks` / `next_steps`. If several sessions match, it asks you whether to continue one or create a new one.
+
+```text
+You:  continue the "Example Program" IDOR task and resume the unfinished checks
+Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
+       query_asset_context / query_vulnerabilities -> continue testing
+```
+
 ## Features
 
 - Vulnerability model: host, entry point, type, severity, URL, description, impact, affected interfaces, Markdown reproduction, remediation, crypto notes, test boundaries, append-only retests, related IDs and status.

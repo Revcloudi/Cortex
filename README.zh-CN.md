@@ -56,6 +56,21 @@ Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex
 
 桌面端界面支持**中英文随时切换**（侧边栏底部），选择会被记住。Skill 语言只影响写入 Agent 的文件，之后仍可用 `ctx init --skill-lang` 修改。
 
+## 日常使用
+
+安装完成后，Cortex 就是每个测试任务的“记忆层”：
+
+1. **漏洞挖掘过程通过 MCP 入库**：Agent 按已安装的 Skill/规则，把确认的漏洞、侦察到的资产上下文和当前任务快照写入本地 SQLite，不需要手工整理报告。
+2. **Agent 随时可以读库**：开始新任务前先查已有资产上下文和漏洞记录，复用侦察成果、避免重复上报。
+3. **人类在桌面端或终端查看**：桌面端提供漏洞看板、资产库、认知快照和 Markdown 报告导出；`ctx` 提供漏洞/资产/会话查询、全文搜索与诊断（报告导出目前仅在桌面端）。
+4. **新对话直接接着跑历史任务**：直接说“继续 Example Program 的 IDOR 验证任务”。Agent 会先 `manage_snapshot list`，按项目名、阶段或 `session_id` 找到匹配会话并 `load`，从未完成事项和下一步继续；如果匹配到多个会话，会先让你选择继续哪个或新建。
+
+```text
+你：继续「Example Program」的 IDOR 验证任务，把未完成的检查跑完
+Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
+       query_asset_context / query_vulnerabilities → 继续测试
+```
+
 ## 功能
 
 - 漏洞模型：Host、入口、类型、等级、URL、描述、影响、受影响接口、Markdown 复现步骤、修复建议、加解密说明、测试边界、只追加的复测历史、关联漏洞与状态流转。
