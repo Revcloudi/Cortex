@@ -1,4 +1,4 @@
-![Cortex — local-first, MCP-native pentest intelligence memory](assets/readme-hero.png)
+![Cortex — pentest intelligence memory for authorized work](assets/readme-hero.png)
 
 # Cortex
 

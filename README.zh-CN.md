@@ -1,4 +1,4 @@
-![Cortex — 本地优先的 MCP 原生渗透测试数据中枢](assets/readme-hero.png)
+![Cortex — 面向授权工作的渗透测试情报记忆](assets/readme-hero.png)
 
 # Cortex
 
