@@ -36,16 +36,20 @@ const thBase =
   'sticky top-0 z-10 border-b border-border bg-background px-3 py-1.5 text-left text-[10px] font-medium text-muted-foreground'
 
 function Panel({ children }: { children: ReactNode }) {
-  return <div className="rounded-[10px] border border-border bg-background">{children}</div>
+  return (
+    <div className="flex h-full min-h-0 flex-col rounded-[10px] border border-border bg-background">
+      {children}
+    </div>
+  )
 }
 
 function TableSkeleton({ selectMode }: { selectMode: boolean }) {
   const { t } = useI18n()
   const nameWidths = ['62%', '48%', '71%', '55%', '66%', '44%', '58%', '50%']
   return (
-    <div aria-hidden="true">
-      <div className="overflow-x-auto">
-        <table className="w-full table-fixed">
+    <div className="flex h-full min-h-0 flex-col" aria-hidden="true">
+      <div className="min-h-0 flex-1 overflow-x-auto">
+        <table className="h-full w-full table-fixed">
           <thead className="sticky top-0 z-10">
             <tr>
               {selectMode ? <th className={cn(thBase, 'w-9')} /> : null}
@@ -216,8 +220,8 @@ export function VulnTable({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto">
-        <table className="w-full table-fixed border-separate border-spacing-0 text-left">
+      <div className="min-h-0 flex-1 overflow-x-auto">
+        <table className="h-full w-full table-fixed border-separate border-spacing-0 text-left">
           <caption className="sr-only">{t('vuln.table.caption')}</caption>
           <thead className="sticky top-0 z-10">
             <tr>
