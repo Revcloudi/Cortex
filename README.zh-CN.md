@@ -2,7 +2,7 @@
 
 # Cortex
 
-本地优先、MCP 原生的授权渗透测试数据中枢：同一份 SQLite 记忆库同时服务于 **纯 stdio MCP Server**（Agent）、**`ctx` CLI**（终端）与 **Windows 桌面端**（人类）。
+本地优先、MCP 原生的授权渗透测试数据中枢：同一份 SQLite 记忆库同时服务于 **纯 stdio MCP Server**（Agent）、**`ctx` CLI**（终端）、**Windows 桌面端**（人类），以及面向本机/受信任内网的**可选浏览器 Web 端**。
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
@@ -14,7 +14,93 @@
 
 > **仅限授权测试。** Cortex 仅用于你拥有或已获得明确书面授权的系统；使用者需自行遵守相关法律、合同与测试范围约束。
 
-**简体中文** · [English](README.md) · [仅安装 CLI](#仅安装-climacos--linux--windows) · [Windows 桌面端](#windows-桌面端) · [MCP 工具](#mcp-接入) · [Web 支持计划](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md)
+**简体中文** · [English](README.md) · [Web 端（仅内网）](#web-端仅内网) · [Windows 桌面端](#windows-桌面端) · [仅安装 CLI](#仅安装-climacos--linux--windows) · [MCP 工具](#mcp-接入)
+
+## Web 端（仅内网）
+
+`ctx web` 用本机 HTTP 服务把同一套 React 界面提供到浏览器，读写与桌面端、CLI、MCP 完全相同的 SQLite 文件。定位是**本机或受信任内网的单用户**：没有账号体系、不支持多用户，也绝不做公网部署——不要把该端口暴露到互联网。
+
+### 最快启动（完成安装或构建后）
+
+Cortex 默认以 **stdio MCP** 方式接入 Agent：`ctx init` 执行一次即可，不需要常驻服务，也不需要保持桌面端运行。之后直接在终端执行：
+
+```bash
+ctx web
+```
+
+服务默认监听 `http://127.0.0.1:8787`，并在命令行打印**完整访问链接**（含一次性 token）：
+
+```text
+完整访问链接: http://127.0.0.1:8787/?token=...
+```
+
+在浏览器打开该链接即可进入看板；刷新页面保持登录，重启服务后旧链接失效并打印新链接。
+
+### 从源码构建与启动
+
+```bash
+npm install
+npm run build         # 桌面端 + MCP + CLI 构建
+npm run build:web     # 独立 SPA → out/web
+npm run build:server  # HTTP 服务端 bundle → out/server/web.cjs
+npm link              # 或不 link，直接用 node out/cli/ctx.cjs
+ctx web               # 启动服务并打印完整访问链接（含一次性 token）
+```
+
+只用 CLI 访问 Web 时，最少需要 `npm run build:web && npm run build:server && npm run build:cli`；缺少构建产物时 `ctx web` 会直接提示需要执行的命令。
+
+```bash
+ctx web                                      # http://127.0.0.1:8787，并打开 token 登录链接
+ctx web --port 9000 --db /data/cortex.db     # 指定端口与数据库
+ctx web --host 192.168.1.20 --allow-intranet # 仅限受信任内网（必须显式确认）
+ctx web --no-open --json                     # 不打开浏览器；输出含 tokenUrls、dbPath、readOnly 等的 JSON
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `--port <port>` | 监听端口，默认 `8787` |
+| `--host <host>` | 监听地址，默认 `127.0.0.1`；任何非回环地址还必须同时传 `--allow-intranet` |
+| `--db <path>` | SQLite 文件，默认 `~/.cortex/data.db`（Windows：`%USERPROFILE%\.cortex\data.db`）或 `CTX_DB_PATH` |
+| `--allow-intranet` | 显式允许非回环地址（仅限受信任内网） |
+| `--no-open` | 不自动用浏览器打开登录链接 |
+| `--json` | 全局参数；输出机器可读 JSON（`tokenUrls`、`dbPath`、`readOnly`、`loopbackOnly`、`intranetAllowed`） |
+
+### 登录方式
+
+启动时会打印一到多个包含一次性 token 的登录链接（`http://…/?token=…`）。打开后服务端写入 `HttpOnly` + `SameSite=Strict` 会话 cookie（12 小时）并重定向，token 从地址栏消失；刷新页面仍保持登录，重启服务后旧链接立即失效。token 只存在于该链接中——不写日志、不落盘，也不接受其他查询参数传入。脚本可改用 `Authorization: Bearer <token>`。
+
+### 安全红线
+
+- 默认只监听回环地址（`127.0.0.1`）；绑定非回环地址必须显式传 `--allow-intranet`，且仅限**受信任内网**。
+- 部署在服务器上时，防火墙 / 安全组只放行私网网段（`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`），绝不做端口映射、公网反向代理或隧道。
+- 不把 SQLite 文件、token、日志放到任何公开目录。
+- 把打印出来的登录链接当作密码：不要截图、分享或粘贴到聊天工具。token 不写日志；重启服务后旧链接失效并打印新链接。
+- 所有 API 都要求会话 cookie 或 Bearer token；HTML 与静态资源同样需要鉴权。服务不开放 CORS，只接受同源请求；校验 `Host` 头防 DNS rebinding；写请求另外校验 `Origin` / `Referer` / `Sec-Fetch-Site`。
+- 严格 CSP、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`，API 响应带 `Cache-Control: no-store`；JSON 请求体上限 2 MB；按 IP 限流（约 300 请求 / 10 秒）；错误信息脱敏，请求日志不记录 token、cookie 或请求体。`/api/app`、`/api/db`、`/api/config` 只暴露数据库文件名，不暴露绝对路径。
+
+### Web 端与桌面端的差异
+
+- 浏览器里没有无边框窗口：最小化/最大化/关闭按钮隐藏。
+- 数据库由服务端 `ctx web --db` 固定；侧边栏数据库行是只读展示，无法打开切换器。
+- 报告导出由服务端返回 Markdown 内容、浏览器下载保存，服务端不落盘。
+- 剪贴板使用 `navigator.clipboard`（含旧浏览器降级）；没有原生保存对话框。
+- 「接入 Agent」与首次配置写入的是运行 `ctx web` 那台机器的 Agent 配置，而不是浏览器所在设备；Web 模式会先二次确认。
+- Agent、CLI 或桌面端写入数据库后，前端通过 `GET /api/events`（SSE）自动刷新。
+- SQLite 文件无写权限时服务以**只读模式**启动（`/api/config` 返回 `readOnly: true`），写接口返回 403 并给出明确提示。
+
+### 可选：内网反向代理
+
+如果内网 TLS 反向代理会保留自定义 `Host`，把该主机名加入显式允许列表；上游仍用 HTTP，并在代理层提供 TLS 与额外认证：
+
+```bash
+CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
+```
+
+### 安装版
+
+`npm run build:runtime` 会把 `out/web` 复制到 `<install>/bin/web/`、`out/server/web.cjs` 复制到 `<install>/bin/web-server.cjs`；`npm run dist:win` 会在打包前执行 `build:web` + `build:server`，因此重新构建的 Windows 安装包包含 Web 组件。缺少 Web 产物的 runtime 构建仍可用于 CLI/MCP（会打印警告）；半成品状态（有 SPA 但没有 server bundle）会明确失败。
+
+> 设计取舍与完整安全清单见 [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md)。
 
 ## 仅安装 CLI（macOS / Linux / Windows）
 
@@ -59,7 +145,7 @@ Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex
 
 1. **漏洞挖掘过程通过 MCP 入库**：Agent 按已安装的 Skill/规则，把确认的漏洞、侦察到的资产上下文和当前任务快照写入本地 SQLite，不需要手工整理报告。
 2. **Agent 随时可以读库**：开始新任务前先查已有资产上下文和漏洞记录，复用侦察成果、避免重复上报。
-3. **人类在桌面端或终端查看**：桌面端提供漏洞看板、资产库、认知快照和 Markdown 报告导出；`ctx` 提供漏洞/资产/会话查询、全文搜索、诊断和 Markdown 报告导出。
+3. **人类在桌面端、终端或可选的浏览器 Web 端查看**：桌面端提供漏洞看板、资产库、认知快照和 Markdown 报告导出；`ctx` 提供漏洞/资产/会话查询、全文搜索、诊断和 Markdown 报告导出；`ctx web` 把同一套页面提供给本机或受信任内网的浏览器。
 4. **新对话直接接着跑历史任务**：直接说“继续 Example Program 的 IDOR 验证任务”。Agent 会先 `manage_snapshot list`，按项目名、阶段或 `session_id` 找到匹配会话并 `load`，从未完成事项和下一步继续；如果匹配到多个会话，会先让你选择继续哪个或新建。
 
 ```text
@@ -75,6 +161,7 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 - 固定 6 个 MCP 工具：`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`。
 - `ctx init` 自动检测 Agent，幂等写入 MCP 配置、3 个 Skill 与系统级强制规则（带备份、`--dry-run`、JSON/TOML/YAML 校验）。
 - 桌面端：漏洞看板（服务端过滤/分页）、资产库（接口浏览器）、认知快照（项目 → 子会话层级）、Markdown 报告导出、双语 MCP 接入页（一键「接入 Agent」+ 精简工具表）。
+- 可选 Web 端（`ctx web`）：在本机或受信任内网的浏览器里使用同一套看板、资产库、快照与 MCP 页面；一次性 token 登录，无账号体系，默认只监听回环地址，共享数据库变更时通过 SSE 自动刷新。
 - 侧边栏数据库按钮可切换到任意 Cortex SQLite 文件查看（仅桌面端；Agent 仍使用默认数据库）。
 - 主进程用 chokidar 监听 SQLite 文件（`data.db`、`-wal`、`-shm`）并推送 `data:changed`，Agent 写入通常 1 秒内可见，且不丢失筛选与打开的详情。
 - Skill 双语：`skills/zh/**` 与 `skills/en/**`，安装时选择。
@@ -100,8 +187,12 @@ npm run dev         # Electron + Vite 开发模式
 npm run typecheck   # Node + Web 两个 TS 项目
 npm run build:mcp   # out/mcp/stdio.cjs（Agent 拉起的 stdio MCP 入口）
 npm run build:cli   # out/cli/ctx.cjs + out/cli/ctx.cmd
+npm run build:web   # out/web（ctx web 使用的独立浏览器构建）
+npm run build:server # out/server/web.cjs（ctx web HTTP 服务端 bundle）
 npm start           # preview 构建产物
 ```
+
+浏览器 Web 端是独立构建：`npm run build:web` + `npm run build:server`（见 [Web 端（仅内网）](#web-端仅内网)）；常规 `npm run build` 保持桌面端/CLI 构建不变。
 
 首次启动会在 `%USERPROFILE%\.cortex\data.db`（macOS/Linux：`~/.cortex/data.db`）创建数据库，可用 `CTX_DB_PATH` 覆盖。
 
@@ -205,6 +296,7 @@ Node 运行、不依赖 Electron，读取同一份 SQLite。所有命令支持 `
 | `ctx snapshots get <session_id>` | 查看单条会话 |
 | `ctx search <keyword>` | 同时搜索漏洞 / 资产 / 快照 |
 | `ctx open [--dev] [--path <exe>]` | 启动/聚焦桌面端（Windows 安装版或源码构建） |
+| `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | 在浏览器中使用同一套看板（仅回环或受信任内网）；启动时打印一次性 token 登录链接 |
 
 ## Skill（双语）
 
@@ -234,6 +326,8 @@ npm run build:runtime      # 只生成 runtime/（手动/高级打包用）
     mcp-stdio.cjs                               stdio MCP 入口
     ctx.cjs  ctx.cmd                            CLI 与包装脚本
     ctx-path.cjs                                安装器 PATH 助手
+    web-server.cjs                              ctx web 的 HTTP 服务端 bundle
+    web\                                        独立 Web 界面（index.html + 哈希资源）
     skills\{zh,en}\...                          ctx init 的 Skill 源
     node_modules\                               better-sqlite3（Node-API）
 ```
@@ -248,6 +342,7 @@ src/
   core/        Electron-free 数据库、路径、日志、版本
   mcp/         纯 stdio MCP Server 与 6 个工具
   cli/         ctx 命令与 Agent 配置写入
+  server/      ctx web HTTP 服务端（鉴权、安全、静态 SPA、REST/SSE 路由）
   main/        Electron 主进程（IPC、文件监听、数据库切换，不启动 MCP）
   preload/     contextBridge API
   renderer/    React 界面 + 轻量 zh/en i18n（消息在 renderer/src/i18n）
@@ -265,8 +360,8 @@ build/         NSIS 自定义脚本
 
 ## 安全与工程约束
 
-- **仅 stdio**：不监听端口、没有 HTTP 端点；MCP 进程随 Agent 退出而销毁。stdout 只输出 JSON-RPC，日志写 stderr 或 `CTX_MCP_LOG`。
-- **进程隔离**：`contextIsolation` + `sandbox`，关闭 `nodeIntegration`；渲染进程只通过 `window.api` 访问数据，主进程对每个 IPC 入参再次校验。
+- **MCP 仅 stdio**：MCP Server 不监听端口，由 Agent 拉起并随其退出而销毁；stdout 只输出 JSON-RPC，日志写 stderr 或 `CTX_MCP_LOG`。可选的 Web 端（`ctx web`）是另一个需要 token 鉴权的 HTTP 服务，不启动就不存在，默认只监听回环地址，非回环必须显式传 `--allow-intranet`。
+- **进程隔离**：`contextIsolation` + `sandbox`，关闭 `nodeIntegration`；桌面端渲染进程只通过 `window.api` 访问数据，主进程对每个 IPC 入参再次校验（浏览器 Web 端改用同源 HTTP，见 [Web 端（仅内网）](#web-端仅内网)）。
 - **Zod 双层校验**：MCP 与 IPC 边界均校验；SQL 全部参数绑定。
 - **并发**：WAL + busy timeout + immediate 事务 + 重试，避免瞬时锁冲突暴露为工具错误。
 

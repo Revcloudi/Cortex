@@ -9,6 +9,7 @@ import { registerOpenCommand } from './commands/open'
 import { registerSearchCommand } from './commands/search'
 import { registerSnapshotCommands } from './commands/snapshots'
 import { registerVulnCommands } from './commands/vulns'
+import { registerWebCommand } from './commands/web'
 import { isCliError } from './errors'
 
 /**
@@ -32,6 +33,7 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   registerSnapshotCommands(cli)
   registerSearchCommand(cli)
   registerOpenCommand(cli)
+  registerWebCommand(cli)
 
   try {
     const parsed = cli.parse(argv, { run: false })

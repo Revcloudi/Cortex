@@ -4,7 +4,7 @@ import { Button } from '@renderer/components/ui/button'
 import { CopyButton } from '@renderer/components/common/CopyButton'
 import { McpToolsTable } from '@renderer/components/mcp/McpToolsTable'
 import { useI18n } from '@renderer/i18n'
-import { getApi, toErrorMessage } from '@renderer/lib/api'
+import { getApi, IS_WEB_RUNTIME, toErrorMessage } from '@renderer/lib/api'
 import { cn } from '@renderer/lib/utils'
 
 /**
@@ -32,6 +32,9 @@ export function McpPage() {
         setMessage({ text: t('mcp.connect.none'), error: true })
         return
       }
+      // In Web mode the configs are written on the host that runs `ctx web`,
+      // not on this browser's machine, so ask before touching its disk.
+      if (IS_WEB_RUNTIME && !window.confirm(t('mcp.connect.webConfirm'))) return
       const result = await api.runSetup({
         agents,
         skillLanguage: lang,
@@ -82,6 +85,12 @@ export function McpPage() {
           {busy ? t('mcp.connect.busy') : t('mcp.connect.button')}
         </Button>
       </div>
+
+      {IS_WEB_RUNTIME ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+          {t('mcp.connect.webHint')}
+        </p>
+      ) : null}
 
       {message !== null ? (
         <p

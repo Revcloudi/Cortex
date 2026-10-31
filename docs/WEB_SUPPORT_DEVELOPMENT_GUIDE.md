@@ -4,7 +4,7 @@
 
 > 在**内网/本机**中通过浏览器访问同一份 Cortex SQLite 数据库；部署在公网服务器时，只开放内网访问端口，**绝不把该端口暴露到公网**。
 
-当前状态：Web 端尚未实现。桌面端（Electron + 自定义无边框窗口）和 `ctx` CLI 已是完整功能；本文件是实现计划、安全约束、接口映射、验收清单和提示词的唯一依据。
+当前状态：**Web 端已实现（Phase W1–W4 完成，见 §10“实现状态与差异”）**。桌面端（Electron + 自定义无边框窗口）和 `ctx` CLI 保持完整功能；本文件其余章节保留为原始设计、安全约束、接口映射与验收清单，实际落地结果、验收证据和与计划的差异以 §10 为准。
 
 ---
 
@@ -179,6 +179,8 @@ ctx web --host 192.168.1.20 --allow-intranet --port 8787
 
 ## 6. 验收清单（手工，不提交测试/基线文件）
 
+> 实现完成后已按本清单完成本地手工验收，结果与证据见 §10.4；下列清单保留为原始验收要求。
+
 - [ ] `ctx web` 默认只监听 `127.0.0.1`；无 token 的 API 返回 401。
 - [ ] 浏览器打开 token URL 后进入看板；刷新后仍保持登录（cookie）。
 - [ ] 漏洞列表筛选/分页/详情/状态流转/删除与桌面端一致。
@@ -253,3 +255,102 @@ ctx web --host 192.168.1.20 --allow-intranet --port 8787
 - 桌面端无边框窗口、自定义标题栏、MCP 页“接入 Agent”按钮、`ctx init` 流程保持不变。
 - 报告 Markdown 模板统一使用 `src/main/export/markdownReport.ts`（如需挪到 shared，保持导入兼容）。
 - 任何 UI 改动都要在中英文之间保持文案一致；Web 模式要隐藏不可用的桌面操作。
+
+---
+
+## 10. 实现状态（W1–W4）与差异
+
+> 本节是实际落地结果，用于覆盖上文计划中的“待实现”语境；安全红线与接口语义仍以 §2–§4 为准。以下内容均可在当前源码树中核对，没有新增测试/基准/日志/截图文件。
+
+### 10.1 已实现（对应 Phase W1–W4）
+
+| 计划项 | 落地实现 |
+| --- | --- |
+| HTTP 入口 | `src/server/index.ts`：鉴权、安全头、Host/Origin 校验、SSE、静态 SPA、REST 分发、错误映射、优雅退出（SIGINT/SIGTERM）、只读降级、token URL 生成 |
+| 鉴权 | `src/server/auth.ts`：每次启动生成 32 字节随机 token（base64url）；`GET /?token=…` 一次性换取 `HttpOnly` + `SameSite=Strict` cookie（12 小时）；`Authorization: Bearer` 供脚本使用；SHA-256 + `timingSafeEqual` 常量时间比较；token 只接受来自一次性 bootstrap URL |
+| 安全与限流 | `src/server/security.ts`：严格 CSP、`nosniff`、`no-referrer`、`DENY`（含 `Permissions-Policy`、COOP/CORP）；Host 允许列表（DNS rebinding 防护，`CTX_WEB_ALLOWED_HOSTS` 显式扩展）；Origin/Referer/Sec-Fetch-Site 写请求校验；2 MB JSON 体积上限；固定窗口按 IP 限流（默认 300 请求 / 10 秒）；JSON/HTML 错误响应统一脱敏 |
+| 静态资源 | `src/server/static.ts`：解码 + 规范化后确认路径不逃逸 `webRoot`；MIME 表；`assets/` 哈希文件长缓存；SPA fallback 只对无扩展名路径生效，缺失哈希资源返回 404；目录列表永不输出；构建缺失时返回说明页（503） |
+| REST API | `src/server/routes.ts`：22 个路由（见 §10.2），复用 `src/main/ipc/schemas.ts` 的 zod 校验、`DatabaseService` 与 `notifyDataChanged` 语义，返回结构与桌面 `CortexApi` 一致 |
+| SSE | `GET /api/events`：`data: changed` 帧 + 25 秒心跳，最多 20 个并发客户端；复用桌面端 chokidar watcher（`src/main/watcher.ts`） |
+| `ctx web` CLI | `src/cli/commands/web.ts`：`--port` / `--host` / `--db` / `--allow-intranet` / `--no-open` 与全局 `--json`；默认 `127.0.0.1:8787`；非回环必须 `--allow-intranet`；回环地址启动时打开 token URL；打印 token 链接与安全提示；Ctrl+C 停止后链接失效 |
+| 前端 transport | `src/renderer/src/lib/transport/index.ts` + `httpClient.ts`：同源 `fetch` + `EventSource` 的 `CortexApi` 实现；`VITE_CORTEX_RUNTIME === 'web'` 由 `vite.web.config.ts` 注入；桌面端继续走 `window.api`，两种 transport 共用同一 `CortexApi` 契约 |
+| Web 模式 UI 降级 | `Titlebar` 隐藏窗口按钮；`Sidebar` 数据库行改为只读展示；报告导出改为浏览器下载；剪贴板用 `navigator.clipboard`（含 `execCommand` 降级）；MCP「接入 Agent」在 Web 模式二次确认（配置写入运行 `ctx web` 的主机）；`src/shared/web.ts` 集中 Web 契约与 `WEB_API_PATHS` |
+| 构建脚本 | `vite.web.config.ts`（`out/web`，`base: './'`，复用根目录 Tailwind/PostCSS 配置，注入运行时标记）；`scripts/build-web-server.mjs`（esbuild → `out/server/web.cjs`，cjs/node22，external `better-sqlite3` / `fsevents`）；`package.json` 新增 `build:web`、`build:server` |
+| 安装版集成 | `scripts/build-runtime.mjs`：`out/web → runtime/web`、`out/server/web.cjs → runtime/web-server.cjs`；Web 产物缺失时仅警告（CLI/MCP runtime 仍可用），半成品（有 `out/web` 无 server bundle）明确失败；`scripts/dist.mjs` 在 `npm run build` 之后、build-runtime 之前执行 `build:web` + `build:server` |
+| 只读降级 | `DatabaseService` 新增 `readonly` 选项：SQLite 文件无写权限时以只读打开（不执行迁移、不改 `journal_mode`），`/api/config` 返回 `readOnly: true`，写请求由 `SQLITE_READONLY` 映射为 403 并给出明确提示 |
+| 配置复用 | `src/cli/setupInfo.ts` 抽出 electron-free 的 setup 实现，`src/server/setup.ts` 复用 `ctx init` 逻辑，`src/main/ipc/setup.ts` 变为薄包装；`src/shared/markdownReport.ts` 承接报告模板 |
+| 打包资源 | 安装版 `<install>/bin/web-server.cjs` + `<install>/bin/web/` 与源码布局（`out/server/web.cjs` + `out/web`）由 CLI 自动识别 |
+
+### 10.2 API 路由状态
+
+全部 22 个 REST 端点均已实现（方法、路径、返回结构与桌面 IPC 对齐；入参在服务端用同一套 zod schema 二次校验）：
+
+| 方法 | 路径 | 对应桌面 IPC | 状态 |
+| --- | --- | --- | --- |
+| GET | `/api/vulns` | `listVulnerabilities` | 已实现 |
+| GET | `/api/vulns/:id` | `getVulnerability` | 已实现 |
+| PATCH | `/api/vulns/:id/status` | `updateVulnerabilityStatus` | 已实现 |
+| DELETE | `/api/vulns/:id` | `deleteVulnerability` | 已实现 |
+| POST | `/api/vulns/delete` | `deleteVulnerabilities` | 已实现 |
+| POST | `/api/vulns/export` | `exportVulnerabilities` | 已实现，返回 `{ files: [{ filename, content }] }` Markdown，由浏览器下载，服务端不落盘 |
+| GET | `/api/assets` | `listAssets` | 已实现 |
+| GET | `/api/assets/:hostPort` | `getAssetDetail`（hostPort 需 URL encoding） | 已实现 |
+| GET | `/api/assets/:hostPort/related` | `getAssetRelatedVulnerabilities` | 已实现 |
+| DELETE | `/api/assets/:hostPort` | `deleteAsset` | 已实现 |
+| GET | `/api/snapshots` | `listSnapshots` | 已实现 |
+| GET | `/api/snapshots/:id` | `getSnapshot` | 已实现 |
+| POST | `/api/snapshots/:id/restore` | `restoreSnapshotPrevious` | 已实现 |
+| POST | `/api/snapshots/:id/archive` | `archiveSnapshot` | 已实现 |
+| DELETE | `/api/snapshots/:id` | `deleteSnapshot` | 已实现 |
+| GET | `/api/stats` | `getStats` | 已实现 |
+| GET | `/api/db` | `getDatabaseInfo` | 已实现（`dbPath` 仅返回文件名） |
+| GET | `/api/app` | `getAppInfo` | 已实现（清理绝对路径与 Electron 专用字段） |
+| GET | `/api/config` | Web 专用 | 已实现（文件名、schema 版本、只读、监听信息，无绝对路径/token） |
+| GET | `/api/setup` | `getSetupInfo` | 已实现 |
+| POST | `/api/setup` | `runSetup` | 已实现（写入运行 `ctx web` 的主机，UI 先二次确认） |
+| POST | `/api/demo/seed` | `seedDemoData` | 已实现 |
+| GET | `/api/events` | 桌面 `data:changed` 推送 | 已实现（SSE，`data: changed` + 心跳，上限 20 连接） |
+
+### 10.3 安全控制落地清单
+
+- 默认仅监听 `127.0.0.1:8787`；非回环地址必须 `--allow-intranet`，CLI 与服务端两层都会拒绝未授权的绑定。
+- 所有 API 都要求 token：会话 cookie（`HttpOnly` + `SameSite=Strict`，12 小时）或 `Authorization: Bearer`；HTML 与静态资源同样需要鉴权，无 token 的 HTML 请求返回说明页、API 返回 401。
+- 一次性 bootstrap：`GET /?token=…` 校验后 303 重定向并种 cookie，token 不再出现在地址栏/历史/Referer；服务重启后旧链接失效。
+- 无 CORS、拒绝 `OPTIONS` preflight、只接受同源请求；`Host` 头必须命中允许列表（回环 + 绑定地址 + 本机网卡地址，`--allow-intranet` 时加入本机各接口地址；可用 `CTX_WEB_ALLOWED_HOSTS` 显式补充），否则 421。
+- 写请求（POST/PUT/PATCH/DELETE）额外校验 `Origin` / `Referer` / `Sec-Fetch-Site`；缺 Origin/Referer 时必须用 Bearer token。
+- 安全响应头：严格 CSP（`default-src 'self'`、`script-src 'self'`、`connect-src 'self'`、`object-src 'none'`、`base-uri 'none'`、`form-action 'self'`、`frame-ancestors 'none'`）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`、`Permissions-Policy`、COOP/CORP；API 响应 `Cache-Control: no-store`。
+- 请求体上限 2 MB（声明长度或流式累计均校验，超限 413）；按客户端 IP 固定窗口限流（默认 300 请求 / 10 秒，超限 429）。
+- 错误信息脱敏：zod 校验错误只保留字段级说明，`DatabaseError` 按 NOT_FOUND/INVALID_INPUT/STALE 映射为 404/400/409，其余内部错误一律 500 通用文案；日志不记录 token、cookie、请求体。
+- 静态资源路径穿越防护（解码 + 规范化后必须仍在 `webRoot` 内、拒绝空字节、不生成目录列表）。
+- `/api/app`、`/api/db`、`/api/config` 只暴露数据库文件名等非敏感信息，不泄露绝对路径、token 或日志位置。
+- 只读降级：SQLite 无写权限时只读打开，写接口 403；服务端不假装写入成功。
+
+### 10.4 手工验收结果（本地，命令级 + 浏览器）
+
+- `npm run typecheck`（node + web）、`npm run build`、`npm run build:web`、`npm run build:server` 全部通过；`out/web/index.html` 与哈希资源、`out/server/web.cjs` 正常产出（相对 `./assets/...` 路径，Tailwind 样式生效）。
+- `ctx web` 能加载 `out/server/web.cjs` 与 `out/web` 并启动；启动打印 token 登录链接；浏览器打开后经 303 重定向写入会话 cookie 并进入看板，刷新保持登录；无 token 访问 HTML/API 返回 401。
+- 安全校验实测：异常 `Host` → 421；跨源/缺 Origin 的写请求 → 403；超 2 MB body → 413；超频请求 → 429；安全响应头与 `Cache-Control: no-store` 均在响应中。
+- 22 个 REST 端点按桌面 `CortexApi` 契约逐项验证；漏洞筛选/分页/详情/状态流转/删除、资产列表/详情/删除、快照列表/恢复/归档/删除、统计、db/app/config、setup、demo seed 行为与桌面端一致。
+- 报告导出返回 Markdown 内容并触发浏览器下载，服务器不写文件；Agent/CLI/桌面端写入数据库后，SSE 在约 1 秒内刷新 UI。
+- 浏览器手工验证页面渲染：窗口按钮隐藏、无数据库切换器、数据库行只读展示、MCP 页有 Web 模式提示与二次确认（验证截图未提交入库）。
+- 只读数据库降级与写接口 403 提示验证通过。
+- 未新增 `tests/`、`bench/`、`baseline/`、日志、截图或下载产物；验收为本地手工/命令检查。
+
+### 10.5 与计划的差异 / 已知限制
+
+1. **CSP meta 保留**：`src/renderer/index.html` 仍带 Electron 用的 CSP `<meta>`（未改动），Web 构建也保留它；Web 端以服务端响应头的严格 CSP 为权威，两者同时生效时取交集（同源 fetch/SSE 不受影响）。
+2. **无 Web 热更新**：改前端后需重新 `npm run build:web`；`npm run dev` 仍是 Electron 模式，Web 端未接入 Vite dev server/HMR。
+3. **单用户定位**：无账号/角色/权限体系，不做多用户或公网登录；token 每次启动随机生成且不持久化，服务重启后旧链接失效。
+4. **反向代理**：默认 Host 允许列表只含回环、绑定地址与本机接口地址；内网 TLS 反代若保留自定义 Host，需用 `CTX_WEB_ALLOWED_HOSTS` 显式加入，并自行提供 TLS 与额外认证，上游保持 HTTP。
+5. **安装版依赖重新打包**：`ctx web` 需要安装包内 `bin/web-server.cjs` 与 `bin/web/`；`npm run dist:win` / `npm run build:runtime` 已包含该逻辑，但**已发布的旧安装包不含 Web 组件**，需重新打包发布。runtime 构建缺少 Web 产物时仍成功（警告），半成品（有 SPA 无 server bundle）会失败。
+6. **CLI 不接受 `--port 0`**：`--port` 仅允许 1–65535（服务端内部支持系统分配端口，但 CLI 未暴露）。
+7. **导出不落盘**：`POST /api/vulns/export` 返回 Markdown JSON，由浏览器逐份下载（与 §3.2 的目标一致），不再提供服务器端目录参数。
+8. **静态资源规则**：SPA fallback 只对无扩展名路径生效；缺失的哈希资源返回 404 而不是回退 `index.html`。
+9. **只读模式前提**：只有已存在但不可写的数据库文件才走只读降级；不存在的路径会创建新库（有写权限时）。
+10. **未引入新依赖**：Vite、React、Tailwind、esbuild 等均为既有依赖；未新增 `tests/`、`bench/`、`baseline/`、日志/截图/下载产物。
+
+### 10.6 相关文件
+
+新增：`src/server/{index,auth,security,static,routes,setup,types,errors}.ts`、`src/cli/commands/web.ts`、`src/cli/setupInfo.ts`、`src/shared/web.ts`、`src/renderer/src/lib/transport/{index,httpClient}.ts`、`vite.web.config.ts`、`scripts/build-web-server.mjs`。
+
+修改：`src/cli/index.ts`（注册 `ctx web`）、`src/core/db/DatabaseService.ts`（只读选项）、`src/shared/markdownReport.ts` + `src/main/export/markdownReport.ts`（报告模板下沉）、`src/main/ipc/setup.ts`（复用 electron-free setup）、渲染层若干文件（transport 选择与 Web 模式降级）、`package.json`（`build:web` / `build:server`）、`scripts/build-runtime.mjs`（安装版复制）、`scripts/dist.mjs`（发布顺序）、`tsconfig.node.json`（纳入 `vite.web.config.ts` 与 `src/server/**`）、README 与本文档。

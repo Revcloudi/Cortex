@@ -6,6 +6,11 @@ declare global {
   interface Window {
     api: PentestDataHubApi
   }
+
+  interface ImportMetaEnv {
+    /** `web` in the `ctx web` browser bundle; unset for the Electron renderer. */
+    readonly VITE_CORTEX_RUNTIME?: string
+  }
 }
 
 export {}

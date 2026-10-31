@@ -503,21 +503,38 @@ function legacyStepsToMarkdown(raw: string): string | null {
  * All statements use parameter binding (never string concatenation) so untrusted
  * agent input cannot be injected into SQL.
  */
+export interface DatabaseServiceOptions {
+  /**
+   * Open the file without write access (Web UI degradation when the server has
+   * no permission to write the shared database). Reads keep working; every
+   * write throws SQLite's `SQLITE_READONLY`, which the caller must surface
+   * clearly instead of pretending the write succeeded.
+   */
+  readonly?: boolean
+}
+
 export class DatabaseService {
   private readonly db: Database.Database
   readonly dbPath: string
+  /** True when this instance was opened read-only (never migrates WAL/schema). */
+  readonly isReadOnly: boolean
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, options: DatabaseServiceOptions = {}) {
     this.dbPath = dbPath
-    if (dbPath !== ':memory:') {
+    this.isReadOnly = options.readonly === true
+    if (dbPath !== ':memory:' && !this.isReadOnly) {
       mkdirSync(dirname(dbPath), { recursive: true })
     }
-    this.db = new Database(dbPath)
-    this.db.pragma('journal_mode = WAL')
+    this.db = this.isReadOnly
+      ? new Database(dbPath, { readonly: true, fileMustExist: true })
+      : new Database(dbPath)
     this.db.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`)
-    this.db.pragma('synchronous = NORMAL')
     this.db.pragma('foreign_keys = ON')
-    this.migrate()
+    if (!this.isReadOnly) {
+      this.db.pragma('journal_mode = WAL')
+      this.db.pragma('synchronous = NORMAL')
+      this.migrate()
+    }
   }
 
   /**

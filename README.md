@@ -2,7 +2,7 @@
 
 # Cortex
 
-Local-first, MCP-native pentest intelligence hub for authorized engagements. One SQLite memory shared by a **pure stdio MCP server** (agents), a **`ctx` CLI** (terminals) and a **Windows desktop app** (humans).
+Local-first, MCP-native pentest intelligence hub for authorized engagements. One SQLite memory shared by a **pure stdio MCP server** (agents), a **`ctx` CLI** (terminals), a **Windows desktop app** (humans) and an optional **browser Web UI** for the same machine or a trusted intranet.
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
@@ -14,7 +14,93 @@ Local-first, MCP-native pentest intelligence hub for authorized engagements. One
 
 > **Authorized testing only.** Cortex is built for systems you own or have explicit written permission to test. You are responsible for complying with applicable laws, contracts and scope boundaries.
 
-**English** · [简体中文](README.zh-CN.md) · [CLI-only install](#cli-only-macos--linux--windows) · [Windows desktop app](#windows-desktop-app) · [MCP tools](#mcp-access) · [Web plan](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md)
+**English** · [简体中文](README.zh-CN.md) · [Web UI](#web-ui-intranet-only) · [Windows desktop app](#windows-desktop-app) · [CLI-only install](#cli-only-macos--linux--windows) · [MCP tools](#mcp-access)
+
+## Web UI (intranet only)
+
+`ctx web` serves the same React UI from a local HTTP server that reads and writes the same SQLite file as the desktop app, the CLI and the MCP server. It is for **one user on the local machine or a trusted intranet**: there are no accounts, no multi-user access and no public deployment — never expose this port to the internet.
+
+### Quick start (after install or build)
+
+Cortex connects agents over **stdio MCP** by default: run `ctx init` once — no long-running service and no desktop app needs to stay open. Then start the Web UI from any terminal:
+
+```bash
+ctx web
+```
+
+It listens on `http://127.0.0.1:8787` and prints the **full access link** (including the one-time token):
+
+```text
+Full access link: http://127.0.0.1:8787/?token=...
+```
+
+Open that link to enter the dashboard. Reloads keep the session; restarting the server invalidates the old link and prints a new one.
+
+### Build and run from a source checkout
+
+```bash
+npm install
+npm run build         # desktop + MCP + CLI bundles
+npm run build:web     # standalone SPA → out/web
+npm run build:server  # HTTP server bundle → out/server/web.cjs
+npm link              # or use node out/cli/ctx.cjs
+ctx web               # start the server, print the full access link (one-time token)
+```
+
+`npm run build:web && npm run build:server && npm run build:cli` is the minimal set for Web usage from the CLI. If an artifact is missing, `ctx web` prints the exact command to run.
+
+```bash
+ctx web                                      # http://127.0.0.1:8787, opens the token URL
+ctx web --port 9000 --db /data/cortex.db     # explicit port and database
+ctx web --host 192.168.1.20 --allow-intranet # trusted intranet only (explicit opt-in)
+ctx web --no-open --json                     # no browser; JSON with tokenUrls, dbPath, readOnly…
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--port <port>` | Listen port, default `8787` |
+| `--host <host>` | Bind address, default `127.0.0.1`; any non-loopback address also requires `--allow-intranet` |
+| `--db <path>` | SQLite file, default `~/.cortex/data.db` (`%USERPROFILE%\.cortex\data.db`) or `CTX_DB_PATH` |
+| `--allow-intranet` | Explicit opt-in for a non-loopback bind on a trusted intranet |
+| `--no-open` | Do not open the login URL in a browser |
+| `--json` | Global flag; print machine-readable JSON (`tokenUrls`, `dbPath`, `readOnly`, `loopbackOnly`, `intranetAllowed`) |
+
+### Logging in
+
+Startup prints one or more login URLs containing a one-time token (`http://…/?token=…`). Opening one sets an `HttpOnly` + `SameSite=Strict` session cookie (12 h) and redirects so the token disappears from the address bar; reloads keep the session, restarting the server invalidates it. The token exists only in that URL — it is never logged, persisted or accepted from any other query string. Scripts may send `Authorization: Bearer <token>` instead of the cookie.
+
+### Security red lines
+
+- Default is loopback (`127.0.0.1`); a non-loopback bind is refused unless `--allow-intranet` is passed, and then it is only for a **trusted intranet**.
+- On a server, allow only the private ranges in the firewall / security group (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`). Never create a port mapping, public reverse proxy or tunnel for this port.
+- Keep the SQLite file, the token and the logs out of any public directory.
+- Treat the printed login URL as a secret: do not screenshot, share or paste it into chat tools. The token is never logged, and restarting the server invalidates the old link and prints a fresh one.
+- Every API call requires the session cookie or Bearer token; HTML and static assets require it too. There is no CORS: only same-origin requests are accepted, `Host` is validated against DNS rebinding, and writes are additionally gated by `Origin` / `Referer` / `Sec-Fetch-Site`.
+- Strict CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Cache-Control: no-store` on API responses; 2 MB JSON body limit; per-IP rate limit (~300 requests / 10 s); errors are sanitized, and request logs never contain tokens, cookies or bodies. `/api/app`, `/api/db` and `/api/config` expose only the database file name, never its absolute path.
+
+### Web vs desktop differences
+
+- No frameless-window controls: the minimize/maximize/close buttons are hidden in a browser.
+- The database is fixed by the server (`ctx web --db`); the sidebar row is a read-only display and the database picker is unavailable.
+- Report export returns the Markdown to the browser and saves it as a download; the server writes nothing to disk.
+- Clipboard uses `navigator.clipboard` with a legacy fallback; there is no native save dialog.
+- **Connect agents** and first-run setup write agent configs on the machine running `ctx web`, not on the browser's machine; Web mode asks for confirmation first.
+- `GET /api/events` (SSE) refreshes the UI when an agent, the CLI or the desktop app writes the database.
+- If the SQLite file is not writable, the server starts in **read-only mode** (`/api/config` reports `readOnly: true`) and write APIs return 403 with a clear message.
+
+### Optional intranet reverse proxy
+
+If an internal TLS reverse proxy preserves a custom `Host`, add that hostname to the opt-in allow-list; keep the upstream on HTTP and add TLS plus extra authentication at the proxy:
+
+```bash
+CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
+```
+
+### Installed build
+
+`npm run build:runtime` copies `out/web` to `<install>/bin/web/` and `out/server/web.cjs` to `<install>/bin/web-server.cjs`; `npm run dist:win` runs `build:web` + `build:server` before packaging, so a freshly built installer includes the Web UI. A runtime built without the Web artifacts still works for CLI/MCP (it prints a warning); a half-built state (SPA present but server bundle missing) fails the build on purpose.
+
+> Design rationale and the full security checklist: [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md).
 
 ## CLI only (macOS / Linux / Windows)
 
@@ -59,7 +145,7 @@ Once installed, Cortex is the memory layer for every engagement:
 
 1. **Findings go in through MCP.** While the agent hunts, it writes confirmed vulnerabilities, recon asset context and the current task snapshot into the local SQLite database (the installed skills/rules tell it when and how). No manual report assembly.
 2. **Agents read the library back at any time.** Before a new task, the agent queries asset context and existing vulnerabilities, so recon is reused and duplicate findings are avoided.
-3. **Humans review from the desktop app or terminal.** The desktop app provides the vulnerability dashboard, asset library, snapshot sessions and Markdown report export. `ctx` provides vulnerability / asset / snapshot queries, full-text search, diagnostics and Markdown report export.
+3. **Humans review from the desktop app, the terminal or the optional browser Web UI.** The desktop app provides the vulnerability dashboard, asset library, snapshot sessions and Markdown report export. `ctx` provides vulnerability / asset / snapshot queries, full-text search, diagnostics and Markdown report export. `ctx web` serves the same pages to a browser on this machine or a trusted intranet.
 4. **Resume a task in a new chat.** Just name the task, for example: *“Continue the Example Program IDOR task.”* The agent runs `manage_snapshot list`, loads the matching session (by project name, phase or `session_id`) and continues from `unfinished_tasks` / `next_steps`. If several sessions match, it asks you whether to continue one or create a new one.
 
 ```text
@@ -75,6 +161,7 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 - One MCP server with exactly six tools: `save_vulnerability`, `query_vulnerabilities`, `update_vulnerability`, `sync_asset_info`, `query_asset_context`, `manage_snapshot`.
 - `ctx init` detects installed agents and writes their MCP config, the three skills and system-level hard rules idempotently (with backups, a dry-run mode and JSON / TOML / YAML validation).
 - GUI: vulnerability dashboard with server-side filtering/pagination, asset library with interface explorer, cognitive snapshot sessions (project → child hierarchy), Markdown report export, and a compact bilingual MCP page with a one-click **Connect agents** action and the six-tool reference.
+- Optional Web UI (`ctx web`): the same dashboard, asset library, snapshot and MCP pages in a browser on the same machine or a trusted intranet; one-time token login, no accounts, loopback-only by default, SSE refresh when the shared database changes.
 - The sidebar database button can attach another Cortex SQLite file for browsing (desktop view only; agents keep using the default database).
 - The main process watches the SQLite files (`data.db`, `-wal`, `-shm`) with chokidar and pushes `data:changed`, so agent writes usually show up in under a second without losing filters or open detail panels.
 - Bilingual skills: `skills/zh/**` and `skills/en/**`; choose per installation.
@@ -100,8 +187,12 @@ Useful commands:
 npm run typecheck   # Node + Web TypeScript projects
 npm run build:mcp   # out/mcp/stdio.cjs (stdio MCP entry agents launch)
 npm run build:cli   # out/cli/ctx.cjs + out/cli/ctx.cmd
+npm run build:web   # out/web (standalone browser build served by ctx web)
+npm run build:server # out/server/web.cjs (ctx web HTTP server bundle)
 npm start           # preview the built Electron app
 ```
+
+The browser Web UI is a separate build: `npm run build:web` + `npm run build:server` (see [Web UI](#web-ui-intranet-only)); the normal `npm run build` keeps the desktop/CLI bundles unchanged.
 
 The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macOS/Linux: `~/.cortex/data.db`); override with `CTX_DB_PATH`.
 
@@ -205,6 +296,7 @@ Runs on Node without Electron, reads the same SQLite database. All commands acce
 | `ctx snapshots get <session_id>` | Show one snapshot session |
 | `ctx search <keyword>` | Search vulnerabilities, assets and snapshots together |
 | `ctx open [--dev] [--path <exe>]` | Launch or focus the desktop app (Windows install or source build) |
+| `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | Serve the same dashboard in a browser (loopback or trusted intranet only); prints one-time token login URLs |
 
 ## Skills (bilingual)
 
@@ -234,6 +326,8 @@ The installed layout (per-user on Windows):
     mcp-stdio.cjs                               stdio MCP entry
     ctx.cjs  ctx.cmd                            CLI + wrapper
     ctx-path.cjs                                installer PATH helper
+    web-server.cjs                              HTTP server bundle for ctx web
+    web\                                        standalone Web UI (index.html + hashed assets)
     skills\{zh,en}\...                          skill sources for ctx init
     node_modules\                               better-sqlite3 (Node-API)
 ```
@@ -248,6 +342,7 @@ src/
   core/        Electron-free database, paths, logging, version
   mcp/         pure stdio MCP server and the six tools
   cli/         ctx commands and agent config writers
+  server/      ctx web HTTP server (auth, security, static SPA, REST/SSE routes)
   main/        Electron main process (IPC, file watcher, database switching, no MCP server)
   preload/     contextBridge API
   renderer/    React UI + lightweight zh/en i18n (messages in renderer/src/i18n)
@@ -265,8 +360,8 @@ build/         NSIS customizations
 
 ## Security and engineering constraints
 
-- **stdio only**: no listening port, no HTTP endpoint; the MCP process lives and dies with the agent. stdout carries JSON-RPC frames only; logs go to stderr or `CTX_MCP_LOG`.
-- **Process isolation**: `contextIsolation` + `sandbox`, no `nodeIntegration`; the renderer talks only to `window.api` and the main process re-validates every IPC payload.
+- **MCP is stdio only**: the MCP server has no listening port; the agent starts it and it lives and dies with that agent. stdout carries JSON-RPC frames only; logs go to stderr or `CTX_MCP_LOG`. The optional Web UI (`ctx web`) is a separate token-authenticated HTTP server that is off unless started, loopback-only unless `--allow-intranet` is passed.
+- **Process isolation**: `contextIsolation` + `sandbox`, no `nodeIntegration`; the desktop renderer talks only to `window.api` and the main process re-validates every IPC payload (the browser Web build uses same-origin HTTP instead, see [Web UI](#web-ui-intranet-only)).
 - **Zod validation** at MCP and IPC boundaries; parameterized SQL everywhere.
 - **Concurrency**: WAL, busy timeout, immediate transactions and retries keep transient lock contention away from tool calls.
 

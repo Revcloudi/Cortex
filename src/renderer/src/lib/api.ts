@@ -1,5 +1,3 @@
-import type { PentestDataHubApi } from '@shared/ipc'
-
 /** Translator signature shared by `useI18n().t` and the fallbacks below. */
 export type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -20,15 +18,14 @@ export function apiUnavailableMessage(t?: Translate): string {
 }
 
 /**
- * The renderer communicates with the main process only through `window.api`.
- * It is absent when the renderer runs outside Electron (for example `vite dev`
- * in a browser), so call sites guard on `null` and render an error state
- * instead of crashing.
+ * Transport selection lives in `./transport`:
+ * - Electron desktop → the preload bridge (`window.api`);
+ * - `ctx web` browser build → same-origin fetch + SSE (`createHttpApi`).
+ *
+ * Re-exported here so every existing call site keeps importing `getApi` from
+ * `@renderer/lib/api`, and the desktop behavior is unchanged.
  */
-export function getApi(): PentestDataHubApi | null {
-  if (typeof window === 'undefined') return null
-  return typeof window.api === 'undefined' ? null : window.api
-}
+export { getApi, IS_WEB_RUNTIME } from './transport'
 
 export function toErrorMessage(error: unknown, t?: Translate): string {
   if (error instanceof Error) return error.message

@@ -11,6 +11,8 @@
  *     ctx.cmd                <-- Windows wrapper: "%~dp0node.exe" "%~dp0ctx.cjs" %*
  *     ctx                    <-- macOS wrapper: exec node ctx.cjs "$@" (chmod +x)
  *     ctx-path.cjs           <-- installer-only Windows PATH helper
+ *     web-server.cjs         <-- built `ctx web` HTTP server bundle (out/server/web.cjs)
+ *     web/                   <-- standalone SPA served by `ctx web` (out/web/index.html + assets)
  *     skills/{zh,en}/*.skill.md
  *     node_modules/
  *       better-sqlite3/      <-- package.json + lib/ + prebuilds/<platform>-<arch>.node
@@ -19,6 +21,12 @@
  * works in Electron and in the bundled Node runtime: no dual-ABI rebuild is
  * needed. The script verifies the native module actually loads from the bundled
  * runtime (host target only) before finishing.
+ *
+ * Web support is optional: when `out/web` and `out/server/web.cjs` are both
+ * missing the script prints a warning and still produces a valid CLI/MCP
+ * runtime (`ctx` keeps working, `ctx web` reports that no static build was
+ * shipped). A half-built state — `out/web` without `out/server/web.cjs` — is a
+ * hard error so an installer can never ship a UI whose API server is absent.
  *
  * Usage:
  *   node scripts/build-runtime.mjs [--platform win32|darwin] [--arch x64|arm64]
@@ -341,6 +349,60 @@ function copyBundles(outDir, platform) {
   }
 }
 
+/**
+ * Copy the optional Web support into the installed runtime:
+ *   out/web/            -> runtime/web/            (SPA: index.html + hashed assets)
+ *   out/server/web.cjs  -> runtime/web-server.cjs  (HTTP API/SSE server bundle)
+ *
+ * Unlike the CLI/MCP bundles this is optional: a plain `npm run build` does not
+ * build the Web UI, and a desktop-only runtime must still succeed. The one
+ * state that is never acceptable is a SPA without its server (half-built), so
+ * that combination fails loudly instead of shipping a broken `ctx web`.
+ */
+function copyWebAssets(outDir) {
+  const webSource = join(projectRoot, 'out', 'web')
+  const serverBundle = join(projectRoot, 'out', 'server', 'web.cjs')
+  const hasWeb = existsSync(webSource)
+  const hasServer = existsSync(serverBundle)
+
+  if (!hasWeb && !hasServer) {
+    log(
+      '警告: 未找到 Web 构建产物 out/web 与 out/server/web.cjs，本次安装版不包含 Web UI' +
+        '（ctx web 将不可用）。如需启用请先运行 npm run build:web 与 npm run build:server'
+    )
+    return
+  }
+  if (hasWeb && !hasServer) {
+    fail(
+      `发现半成品 Web 构建: ${webSource} 已存在但缺少 ${serverBundle}；` +
+        '请重新运行 npm run build:web 与 npm run build:server（或 npm run dist:win）'
+    )
+  }
+  if (!hasWeb && hasServer) {
+    log(
+      '警告: 找到 out/server/web.cjs 但缺少 out/web，本次安装版不包含 Web UI。' +
+        '如需启用请先运行 npm run build:web'
+    )
+    return
+  }
+  if (!existsSync(join(webSource, 'index.html'))) {
+    fail(`Web 构建不完整: ${join(webSource, 'index.html')} 不存在；请重新运行 npm run build:web`)
+  }
+
+  const targetWeb = join(outDir, 'web')
+  rmSync(targetWeb, { recursive: true, force: true })
+  cpSync(webSource, targetWeb, { recursive: true })
+  if (!existsSync(join(targetWeb, 'index.html'))) {
+    fail(`复制 Web UI 失败: 缺少 ${join(targetWeb, 'index.html')}`)
+  }
+  copyFileSync(serverBundle, join(outDir, 'web-server.cjs'))
+  log(
+    `Web 支持已打包: web/（${readdirSync(targetWeb).length} 项） + web-server.cjs（${(
+      statSync(serverBundle).size / 1024
+    ).toFixed(1)} KB）`
+  )
+}
+
 function copySkills(outDir) {
   const source = join(projectRoot, 'skills')
   if (!existsSync(source)) fail(`未找到 skills/ 目录: ${source}`)
@@ -508,6 +570,7 @@ async function main() {
   prepareOutDir(outDir)
   const nodeBinary = copyNodeBinary(sourceNode, outDir, platform)
   copyBundles(outDir, platform)
+  copyWebAssets(outDir)
   copySkills(outDir)
   copyBetterSqlite3(outDir, platform, arch)
 

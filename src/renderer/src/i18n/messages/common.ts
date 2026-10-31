@@ -26,8 +26,14 @@ export const commonMessages: MessageBundle = {
     'mcp.connect.done': '已写入配置，请重启 Agent',
     'mcp.connect.none': '未检测到 Agent，请先安装客户端',
     'mcp.connect.failed': '接入失败：{error}',
+    'mcp.connect.webConfirm':
+      'Web 模式会在运行 `ctx web` 的本机写入 Agent 配置，确认继续？',
+    'mcp.connect.webHint':
+      'Web 模式下的「接入 Agent」会写入运行 `ctx web` 那台机器的 Agent 配置，而不是浏览器所在设备。',
     'sidebar.databaseHint':
       '桌面端与 Agent 共享同一份本地 SQLite 文件，由主进程文件监听同步；MCP server 由 Agent 以 stdio 自行拉起。',
+    'sidebar.webDatabaseHint':
+      'Web 模式下数据库由服务端 `ctx web --db` 固定，无法在浏览器中切换。',
     'dbPicker.title': '数据库连接',
     'dbPicker.description':
       '桌面端可以切换到任意 Cortex SQLite 数据库查看；Agent 仍使用默认数据库。',
@@ -106,8 +112,14 @@ export const commonMessages: MessageBundle = {
     'mcp.connect.done': 'Configuration written; restart the agents',
     'mcp.connect.none': 'No agent detected; install a client first',
     'mcp.connect.failed': 'Connect failed: {error}',
+    'mcp.connect.webConfirm':
+      'Web mode writes agent configuration files on the host running `ctx web`. Continue?',
+    'mcp.connect.webHint':
+      'In Web mode "Connect agents" writes agent configs on the machine running `ctx web`, not on this browser\'s device.',
     'sidebar.databaseHint':
       'The desktop app and agents share the same local SQLite file; the main process watches the file and pushes updates. The MCP server is launched by the agent over stdio.',
+    'sidebar.webDatabaseHint':
+      'In Web mode the database is fixed by `ctx web --db` on the server and cannot be switched from the browser.',
     'dbPicker.title': 'Database connection',
     'dbPicker.description':
       'The desktop app can open any Cortex SQLite database for browsing; agents keep using the default database.',

@@ -4,6 +4,7 @@ import { NAV_ITEMS, type AppPage } from '@renderer/lib/navigation'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { DatabasePicker } from '@renderer/components/layout/DatabasePicker'
 import { useI18n } from '@renderer/i18n'
+import { IS_WEB_RUNTIME } from '@renderer/lib/api'
 import logoMark from '@renderer/assets/logo-mark.svg'
 import { cn } from '@renderer/lib/utils'
 
@@ -70,35 +71,59 @@ export function Sidebar({ page, onNavigate, databasePath }: SidebarProps) {
       </nav>
 
       <div className="mt-auto border-t border-border px-3 py-4">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              data-testid="db-button"
-              onClick={() => setPickerOpen(true)}
-              aria-haspopup="dialog"
-              aria-label={t('dbPicker.title')}
-              className="flex h-9 w-full items-center gap-2.5 rounded-md border border-border bg-background px-2.5 text-left transition-colors duration-150 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-            >
-              <Database
-                aria-hidden="true"
-                className="h-[15px] w-[15px] shrink-0 text-muted-foreground"
-                strokeWidth={1.75}
-              />
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-none text-foreground">
-                {databaseFileName ?? t('sidebar.databaseButton')}
-              </span>
-              <ChevronDown
-                aria-hidden="true"
-                className="h-[14px] w-[14px] shrink-0 text-muted-foreground"
-                strokeWidth={1.75}
-              />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="center">
-            <span className="break-all">{databasePath ?? t('sidebar.databaseHint')}</span>
-          </TooltipContent>
-        </Tooltip>
+        {IS_WEB_RUNTIME ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                aria-label={databaseFileName ?? t('sidebar.databaseButton')}
+                tabIndex={0}
+                className="flex h-9 w-full items-center gap-2.5 rounded-md border border-border bg-background px-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+              >
+                <Database
+                  aria-hidden="true"
+                  className="h-[15px] w-[15px] shrink-0 text-muted-foreground"
+                  strokeWidth={1.75}
+                />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-none text-foreground">
+                  {databaseFileName ?? t('sidebar.databaseButton')}
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="center">
+              <span className="break-all">{t('sidebar.webDatabaseHint')}</span>
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                data-testid="db-button"
+                onClick={() => setPickerOpen(true)}
+                aria-haspopup="dialog"
+                aria-label={t('dbPicker.title')}
+                className="flex h-9 w-full items-center gap-2.5 rounded-md border border-border bg-background px-2.5 text-left transition-colors duration-150 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+              >
+                <Database
+                  aria-hidden="true"
+                  className="h-[15px] w-[15px] shrink-0 text-muted-foreground"
+                  strokeWidth={1.75}
+                />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-none text-foreground">
+                  {databaseFileName ?? t('sidebar.databaseButton')}
+                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="h-[14px] w-[14px] shrink-0 text-muted-foreground"
+                  strokeWidth={1.75}
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="center">
+              <span className="break-all">{databasePath ?? t('sidebar.databaseHint')}</span>
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         <Tooltip>
           <TooltipTrigger asChild>

@@ -7,8 +7,10 @@
  *
  * Windows (`--win`):
  *   1. `npm run build`        typecheck + Electron bundles + MCP bundle + CLI bundle
- *   2. build-runtime          self-contained runtime/ (node.exe + ctx/mcp + native sqlite)
- *   3. electron-builder       NSIS installer `release/Cortex-<version>-setup.exe`
+ *   2. `npm run build:web`    standalone browser SPA -> out/web (served by `ctx web`)
+ *   3. `npm run build:server` `ctx web` HTTP server bundle -> out/server/web.cjs
+ *   4. build-runtime          self-contained runtime/ (node.exe + ctx/mcp + web + native sqlite)
+ *   5. electron-builder       NSIS installer `release/Cortex-<version>-setup.exe`
  *
  * Only Windows desktop artifacts are released; macOS/Linux are CLI-only (see
  * README) and install from source.
@@ -87,6 +89,10 @@ function localBin(name) {
 }
 
 run(npmCommand, ['run', 'build'])
+// Web support ships inside the installer too: SPA (out/web) + HTTP server bundle.
+// build-runtime copies them into runtime/web/ and runtime/web-server.cjs.
+run(npmCommand, ['run', 'build:web'])
+run(npmCommand, ['run', 'build:server'])
 
 run(process.execPath, [
   join(projectRoot, 'scripts', 'build-runtime.mjs'),
