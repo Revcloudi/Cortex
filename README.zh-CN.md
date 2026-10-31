@@ -1,20 +1,48 @@
+![Cortex — 本地优先的 MCP 原生渗透测试数据中枢](assets/readme-hero.png)
+
 # Cortex
 
-Cortex 是一个本地优先的渗透测试数据中枢：同一份 SQLite 记忆库同时服务于 **纯 stdio MCP Server**（Agent）、**`ctx` CLI**（终端）与 **Electron 桌面端**（人类）。它不是扫描器——Agent 负责写入确认过的漏洞、侦察到的资产上下文与任务认知快照，人类负责检索、过滤、复测与交接。
+本地优先、MCP 原生的授权渗透测试数据中枢：同一份 SQLite 记忆库同时服务于 **纯 stdio MCP Server**（Agent）、**`ctx` CLI**（终端）与 **Windows 桌面端**（人类）。
 
-English docs: [README.md](README.md)
+[![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
+[![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
+[![版本 0.1.1](https://img.shields.io/badge/version-0.1.1-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
+[![MCP 6 tools](https://img.shields.io/badge/MCP-6%20tools-0ea5e9?style=flat-square)](#mcp-接入)
+[![平台](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#仅安装-climacos--linux--windows)
+[![Node >= 22.12](https://img.shields.io/badge/node-%E2%89%A5%2022.12-339933?style=flat-square)](#环境要求)
+[![License MIT](https://img.shields.io/badge/license-MIT-8b5cf6?style=flat-square)](LICENSE)
 
-## 下载与安装
+> **仅限授权测试。** Cortex 仅用于你拥有或已获得明确书面授权的系统；使用者需自行遵守相关法律、合同与测试范围约束。
 
-安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。
+**简体中文** · [English](README.md) · [仅安装 CLI](#仅安装-climacos--linux--windows) · [Windows 桌面端](#windows-桌面端) · [MCP 工具](#mcp-接入)
+
+## 仅安装 CLI（macOS / Linux / Windows）
+
+`ctx` CLI 是纯 Node.js，macOS / Linux 与 Windows 同源，不需要桌面端或安装包：
+
+```bash
+# 需要 Node.js >= 22.12
+git clone git@github.com:Revcloudi/Cortex.git
+cd Cortex
+npm install
+npm run build
+npm link            # 让 `ctx` 进入 PATH；不 link 时用 node out/cli/ctx.cjs
+ctx --version
+ctx init --yes      # 为检测到的 Agent 写入 MCP 配置 + 双语 Skill
+ctx doctor          # 检查数据库、MCP 运行时与 Agent 配置
+```
+
+CLI 与桌面端共享同一份 SQLite 数据库（macOS/Linux 为 `~/.cortex/data.db`，Windows 为 `%USERPROFILE%\.cortex\data.db`）。MCP 是纯 stdio，由 Agent 自行拉起，macOS/Linux 无需安装桌面端。
+
+## Windows 桌面端
+
+Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。macOS / Linux 请使用上面的 CLI-only 安装方式。
 
 | 平台 | 下载 |
 | --- | --- |
 | Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
-| macOS Apple Silicon（arm64） | [Cortex-0.1.1-arm64.dmg](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-arm64.dmg) |
-| macOS Intel（x64） | [Cortex-0.1.1-x64.dmg](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-x64.dmg) |
 
-> 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。当前构建未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"），macOS 首次打开请右键 → 打开，或执行一次 `xattr -dr com.apple.quarantine "/Applications/Cortex.app"`。
+> 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。安装包未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"）。
 
 ### 安装时会询问
 
@@ -24,9 +52,7 @@ English docs: [README.md](README.md)
 2. **Skill 语言**：中文 / English（安装对应语言的 `vuln-db` / `asset-context` / `snapshot` Skill）；
 3. 可选：是否把 `bin` 加入当前用户 PATH。
 
-随后安装器会用这些选择非交互执行 `ctx init`。卸载只删除程序，保留 `%USERPROFILE%\.cortex\data.db`。
-
-**macOS（DMG）** 把 Cortex 拖入 Applications 即可。DMG 没有安装向导，因此同样的选择（Agent、Skill 语言、界面语言）放在应用**首次启动的欢迎对话框**里；Windows 安装时跳过配置也会在首次启动看到该对话框。
+随后安装器会用这些选择非交互执行 `ctx init`；如果安装时跳过配置，首次启动也会显示同样的欢迎对话框。卸载只删除程序，保留 `%USERPROFILE%\.cortex\data.db`。
 
 桌面端界面支持**中英文随时切换**（侧边栏底部），选择会被记住。Skill 语言只影响写入 Agent 的文件，之后仍可用 `ctx init --skill-lang` 修改。
 
@@ -43,8 +69,8 @@ English docs: [README.md](README.md)
 
 ## 环境要求
 
-- 源码构建需要 Node.js **≥ 22.12**；Windows 安装包与 macOS DMG 内置 Node 运行时，最终用户无需安装 Node。
-- 打包产物：Windows 10/11 x64，或 macOS 12+（arm64 / x64）。
+- CLI 与源码构建需要 Node.js **≥ 22.12**；Windows 桌面安装包内置 Node 运行时，最终用户无需安装 Node。
+- 桌面端仅提供 Windows 10/11 x64；macOS/Linux 使用上面的仅 CLI 方式。
 
 ## 从源码构建
 
@@ -71,7 +97,7 @@ npm start           # preview 构建产物
 
 - 开发模式：`npm run dev`
 - 已构建：`npm start`（link 过 CLI 后可 `ctx open`）
-- 安装包：`npm run dist:win`（Windows）/ `npm run dist:mac`（macOS 或 CI），两者都会内置 Node 运行时；产物在 `release/` 下。
+- 安装包：`npm run dist:win`（会一并构建内置 Node 运行时）；产物在 `release/` 下。
 
 ### 让 `ctx` 成为全局命令
 
@@ -92,7 +118,6 @@ MCP Server 只使用 **stdio**：由 Agent 在自己的进程里拉起，不监�
 | --- | --- |
 | 源码构建 | `node <repo>/out/mcp/stdio.cjs` |
 | Windows 安装版 | `<install>\bin\node.exe <install>\bin\mcp-stdio.cjs` |
-| macOS 安装版 | `/Applications/Cortex.app/Contents/bin/node /Applications/Cortex.app/Contents/bin/mcp-stdio.cjs` |
 
 DeepSeek Harness（`~/.dsh/profiles/<profile>/cordis.patch.yml`）：
 
@@ -166,7 +191,7 @@ Node 运行、不依赖 Electron，读取同一份 SQLite。所有命令支持 `
 | `ctx snapshots list [--keyword]` | 认知快照列表 |
 | `ctx snapshots get <session_id>` | 查看单条会话 |
 | `ctx search <keyword>` | 同时搜索漏洞 / 资产 / 快照 |
-| `ctx open [--dev] [--path <exe>]` | 启动/聚焦桌面端（Windows 安装版、macOS App 或源码构建） |
+| `ctx open [--dev] [--path <exe>]` | 启动/聚焦桌面端（Windows 安装版或源码构建） |
 
 ## Skill（双语）
 
@@ -182,26 +207,25 @@ skills/
 
 ```bash
 npm run dist:win           # 构建 + 内置运行时 → Windows x64 NSIS（release/Cortex-0.1.1-setup.exe）
-npm run dist:mac           # 构建 + 内置运行时 → macOS dmg（必须在 macOS 或 CI 构建）
 npm run build:runtime      # 只生成 runtime/（手动/高级打包用）
 ```
 
 安装布局（Windows 为 per-user）：
 
 ```text
-Windows: %LOCALAPPDATA%\Programs\Cortex\      macOS: /Applications/Cortex.app/Contents/
-  Cortex.exe                                    MacOS/Cortex
-  resources/app.asar                            resources/app.asar
-  bin\                                          bin/
-    node.exe | node                             内置 Node LTS 运行时
+%LOCALAPPDATA%\Programs\Cortex\
+  Cortex.exe                                    Electron 壳
+  resources/app.asar                            主进程 / preload / 渲染层构建产物
+  bin\
+    node.exe                                    内置 Node LTS 运行时
     mcp-stdio.cjs                               stdio MCP 入口
-    ctx.cjs  ctx.cmd | ctx                      CLI 与包装脚本
+    ctx.cjs  ctx.cmd                            CLI 与包装脚本
     ctx-path.cjs                                安装器 PATH 助手
     skills\{zh,en}\...                          ctx init 的 Skill 源
     node_modules\                               better-sqlite3（Node-API）
 ```
 
-`.github/workflows/release.yml` 在 `v*` / `cortex-v*` tag 推送时构建 Windows + macOS（arm64/x64），并把**三个安装包**（Windows x64 setup、macOS arm64 dmg、macOS x64 dmg）上传到 GitHub Releases。macOS 构建未签名（无 Apple 开发者证书），因此需要上面的 Gatekeeper 说明。
+`.github/workflows/release.yml` 在 `v*` / `cortex-v*` tag 推送时构建 Windows 安装包并发布到 GitHub Releases。macOS/Linux 使用上面的 CLI-only 方式，因此不产出 macOS 安装包。
 
 ## 工程结构
 

@@ -1,25 +1,21 @@
 #!/usr/bin/env node
 /**
- * One-command Cortex release build.
+ * One-command Cortex Windows release build.
  *
  * Usage:
  *   node scripts/dist.mjs --win
- *   node scripts/dist.mjs --mac [--arch arm64|x64]
  *
  * Windows (`--win`):
  *   1. `npm run build`        typecheck + Electron bundles + MCP bundle + CLI bundle
  *   2. build-runtime          self-contained runtime/ (node.exe + ctx/mcp + native sqlite)
  *   3. electron-builder       NSIS installer `release/Cortex-<version>-setup.exe`
  *
- * macOS (`--mac`, default arm64):
- *   1. `npm run build`
- *   2. build-runtime          runtime/ for darwin-<arch> (node + ctx + native sqlite)
- *   3. electron-builder       `release/Cortex-<version>-<arch>.dmg` (unsigned)
+ * Only Windows desktop artifacts are released; macOS/Linux are CLI-only (see
+ * README) and install from source.
  *
  * Mirrors are configurable so builds work behind the GFW:
  *   ELECTRON_MIRROR, ELECTRON_BUILDER_BINARIES_MIRROR
  * (defaults to npmmirror; override with your own values when needed).
- * macOS builds are unsigned: CSC_IDENTITY_AUTO_DISCOVERY defaults to false.
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, statSync } from 'node:fs'
@@ -40,23 +36,14 @@ function log(message) {
   console.log(`[dist] ${message}`)
 }
 
-function optionValue(name) {
-  const index = argv.indexOf(name)
-  if (index === -1) return undefined
-  return argv[index + 1]
-}
-
 function usage() {
   console.log(`Cortex 发布构建
 
 用法:
   node scripts/dist.mjs --win
-  node scripts/dist.mjs --mac [--arch arm64|x64]
 
 说明:
-  --win    Windows x64 NSIS 安装包 → release/Cortex-<version>-setup.exe
-  --mac    macOS dmg（默认 arm64）→ release/Cortex-<version>-<arch>.dmg
-  可同时传 --win --mac。`)
+  --win    Windows x64 NSIS 安装包 → release/Cortex-<version>-setup.exe`)
 }
 
 if (argv.includes('--help') || argv.includes('-h')) {
@@ -64,23 +51,9 @@ if (argv.includes('--help') || argv.includes('-h')) {
   process.exit(0)
 }
 
-const targets = []
-if (argv.includes('--win')) targets.push('win')
-if (argv.includes('--mac')) targets.push('mac')
-if (targets.length === 0) {
+if (!argv.includes('--win')) {
   usage()
-  fail('请指定 --win 或 --mac')
-}
-
-if (argv.includes('--arch') && optionValue('--arch') === undefined) {
-  fail('--arch 缺少取值（arm64 | x64）')
-}
-const requestedMacArch = (optionValue('--arch') ?? 'arm64').toLowerCase()
-if (!['arm64', 'x64'].includes(requestedMacArch)) {
-  fail(`不支持的 macOS 架构: ${requestedMacArch}（可用: arm64 | x64）`)
-}
-if (targets.includes('win') && argv.includes('--arch') && requestedMacArch !== 'x64') {
-  fail('Windows 安装包只支持 x64；--arch 仅用于 --mac')
+  fail('请指定 --win（macOS/Linux 仅提供 CLI，从源码安装）')
 }
 
 const MIRROR_ENV = {
@@ -115,34 +88,18 @@ function localBin(name) {
 
 run(npmCommand, ['run', 'build'])
 
-if (targets.includes('win')) {
-  run(process.execPath, [
-    join(projectRoot, 'scripts', 'build-runtime.mjs'),
-    '--platform',
-    'win32',
-    '--arch',
-    'x64'
-  ])
-  run(localBin('electron-builder'), ['--win', 'nsis', '--x64'], MIRROR_ENV)
-}
-
-if (targets.includes('mac')) {
-  run(process.execPath, [
-    join(projectRoot, 'scripts', 'build-runtime.mjs'),
-    '--platform',
-    'darwin',
-    '--arch',
-    requestedMacArch
-  ])
-  run(localBin('electron-builder'), ['--mac', 'dmg', '--arch', requestedMacArch], {
-    ...MIRROR_ENV,
-    CSC_IDENTITY_AUTO_DISCOVERY: process.env.CSC_IDENTITY_AUTO_DISCOVERY ?? 'false'
-  })
-}
+run(process.execPath, [
+  join(projectRoot, 'scripts', 'build-runtime.mjs'),
+  '--platform',
+  'win32',
+  '--arch',
+  'x64'
+])
+run(localBin('electron-builder'), ['--win', 'nsis', '--x64'], MIRROR_ENV)
 
 if (existsSync(RELEASE_DIR)) {
   const artifacts = readdirSync(RELEASE_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /\.(exe|dmg|zip|blockmap)$/i.test(entry.name))
+    .filter((entry) => entry.isFile() && /\.(exe|blockmap)$/i.test(entry.name))
     .map((entry) => {
       const size = statSync(join(RELEASE_DIR, entry.name)).size
       return `  ${entry.name}  ${(size / 1024 / 1024).toFixed(1)} MB`

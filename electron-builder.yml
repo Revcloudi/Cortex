@@ -10,12 +10,11 @@
 #     skills/{zh,en}/*.skill.md
 #     node_modules/better-sqlite3  (Node-API, shared with the Electron build)
 #
-# macOS: Cortex.app/Contents/bin has the same layout with `node` instead of
-# `node.exe`. Artifacts are unsigned (`identity: null`), so Gatekeeper requires
-# the user to open the app explicitly on first launch.
+# Only Windows desktop artifacts are released; macOS/Linux are CLI-only and
+# install from source (see README).
 #
 # The database lives outside the app: %USERPROFILE%\.cortex\data.db
-# (~/.cortex/data.db on macOS), so uninstalling never touches user data.
+# (~/.cortex/data.db on macOS/Linux CLI), so uninstalling never touches it.
 appId: com.cortex.app
 productName: Cortex
 copyright: Copyright © 2026 Cortex
@@ -59,9 +58,8 @@ asarUnpack:
   - node_modules/better-sqlite3/**
 extraFiles:
   # extraFiles (not extraResources) on purpose: the agent runtime must be
-  # <install>/bin on Windows and Cortex.app/Contents/bin on macOS, not
-  # resources/bin. `ctx open`, `ctx doctor` and the documented agent configs
-  # all point at .../bin.
+  # <install>/bin (the CLI, installer and documented agent configs all point
+  # there), not resources/bin.
   - from: runtime
     to: bin
 win:
@@ -84,21 +82,3 @@ nsis:
   shortcutName: Cortex
   uninstallDisplayName: Cortex
   menuCategory: false
-mac:
-  category: public.app-category.developer-tools
-  target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
-    - target: zip
-      arch:
-        - x64
-        - arm64
-  artifactName: Cortex-${version}-${arch}.${ext}
-  # Unsigned build: no Developer ID certificate is expected on CI. Disabling
-  # the hardened runtime keeps the bundled Node runtime + native addon usable
-  # without entitlements.
-  identity: null
-  hardenedRuntime: false
-  notarize: false

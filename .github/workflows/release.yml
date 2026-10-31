@@ -1,9 +1,9 @@
 name: release
 
-# Build Cortex installers on a `v*` / `cortex-v*` tag. The three build jobs only
-# upload workflow artifacts; a single release job then publishes all assets at
-# once (avoids concurrent create-release races between Windows and both macOS
-# jobs). `workflow_dispatch` runs the builds but skips publishing (no tag).
+# Build the Windows installer on a `v*` / `cortex-v*` tag. The build job only
+# uploads a workflow artifact; the release job then publishes the single
+# installer to GitHub Releases. macOS/Linux are CLI-only and install from source
+# (see README), so no macOS artifacts are produced.
 on:
   push:
     tags:
@@ -19,8 +19,6 @@ env:
   # Mirrors: the build machines are often behind the GFW.
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
-  # macOS builds are unsigned (electron-builder.yml: identity: null).
-  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
 jobs:
   cleanup:
@@ -58,45 +56,10 @@ jobs:
           path: release/Cortex-*-setup.exe
           if-no-files-found: error
 
-  macos:
-    name: macOS ${{ matrix.arch }}
-    runs-on: macos-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [arm64, x64]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Electron + CLI + MCP bundles
-        run: npm run build
-
-      - name: Build macOS runtime
-        run: node scripts/build-runtime.mjs --platform darwin --arch ${{ matrix.arch }}
-
-      - name: Build dmg
-        run: npx electron-builder --mac dmg --arch ${{ matrix.arch }}
-
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: cortex-macos-${{ matrix.arch }}
-          path: release/Cortex-*.dmg
-          if-no-files-found: error
-
   release:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [windows, macos]
+    needs: [windows]
     runs-on: ubuntu-latest
     steps:
       - name: Download all installer artifacts

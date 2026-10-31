@@ -1,20 +1,48 @@
+![Cortex — local-first, MCP-native pentest intelligence memory](assets/readme-hero.png)
+
 # Cortex
 
-Cortex is a local-first pentest intelligence hub: one SQLite memory shared by a **pure stdio MCP server** (for agents), a **`ctx` CLI** (for terminals) and an **Electron desktop app** (for humans). It is not a scanner — agents write confirmed vulnerabilities, recon asset context and task snapshots; humans review, filter, retest and hand over.
+Local-first, MCP-native pentest intelligence hub for authorized engagements. One SQLite memory shared by a **pure stdio MCP server** (agents), a **`ctx` CLI** (terminals) and a **Windows desktop app** (humans).
 
-中文文档：[README.zh-CN.md](README.zh-CN.md)
+[![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
+[![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
+[![Version 0.1.1](https://img.shields.io/badge/version-0.1.1-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
+[![MCP 6 tools](https://img.shields.io/badge/MCP-6%20tools-0ea5e9?style=flat-square)](#mcp-access)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#cli-only-macos--linux--windows)
+[![Node >= 22.12](https://img.shields.io/badge/node-%E2%89%A5%2022.12-339933?style=flat-square)](#requirements)
+[![License MIT](https://img.shields.io/badge/license-MIT-8b5cf6?style=flat-square)](LICENSE)
 
-## Download & install
+> **Authorized testing only.** Cortex is built for systems you own or have explicit written permission to test. You are responsible for complying with applicable laws, contracts and scope boundaries.
 
-Direct installers are published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**.
+**English** · [简体中文](README.zh-CN.md) · [CLI-only install](#cli-only-macos--linux--windows) · [Windows desktop app](#windows-desktop-app) · [MCP tools](#mcp-access)
+
+## CLI only (macOS / Linux / Windows)
+
+The `ctx` CLI is plain Node.js — macOS and Linux use the same source as Windows. No desktop app or installer is needed:
+
+```bash
+# Node.js >= 22.12 required
+git clone git@github.com:Revcloudi/Cortex.git
+cd Cortex
+npm install
+npm run build
+npm link            # exposes `ctx` on PATH; without link: node out/cli/ctx.cjs
+ctx --version
+ctx init --yes      # writes MCP config + bilingual skills for detected agents
+ctx doctor          # verify DB, MCP runtime and agent configs
+```
+
+The CLI shares the same SQLite database as the desktop app (`~/.cortex/data.db` on macOS/Linux, `%USERPROFILE%\.cortex\data.db` on Windows). MCP is stdio-only, so agents launch it directly; no desktop app is required on macOS/Linux.
+
+## Windows desktop app
+
+The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**. macOS and Linux are supported through the CLI-only path above.
 
 | Platform | Download |
 | --- | --- |
 | Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
-| macOS Apple Silicon (arm64) | [Cortex-0.1.1-arm64.dmg](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-arm64.dmg) |
-| macOS Intel (x64) | [Cortex-0.1.1-x64.dmg](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-x64.dmg) |
 
-> The links always point at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). All builds are unsigned: Windows SmartScreen may warn ("More info → Run anyway"), and on macOS right-click the app → Open (or run `xattr -dr com.apple.quarantine "/Applications/Cortex.app"` once).
+> The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
 
 ### During installation
 
@@ -24,9 +52,7 @@ Direct installers are published to GitHub Releases by the release workflow. Curr
 2. **Skill language**: 中文 or English (installs the matching `vuln-db` / `asset-context` / `snapshot` skills);
 3. optionally, whether to add `bin` to the current-user PATH.
 
-The installer then runs `ctx init` non-interactively with those choices. Uninstalling removes the program only — `%USERPROFILE%\.cortex\data.db` is preserved.
-
-**macOS (DMG)** — drag Cortex into Applications. Because a DMG has no installer wizard, the same choices (agents, skill language, UI language) are shown in a **first-run welcome dialog** inside the app. The dialog also appears after a Windows install if you skipped the setup step.
+The installer then runs `ctx init` non-interactively with those choices. The same first-run welcome dialog appears if you skip the installer step. Uninstalling removes the program only — `%USERPROFILE%\.cortex\data.db` is preserved.
 
 The desktop UI supports **中文 / English switching** at any time from the sidebar; the choice is remembered. The skill language only affects the files installed into your agents and can be changed later with `ctx init --skill-lang`.
 
@@ -43,8 +69,8 @@ The desktop UI supports **中文 / English switching** at any time from the side
 
 ## Requirements
 
-- Node.js **≥ 22.12** for source builds. The Windows installer and macOS DMG bundle their own Node runtime, so end users do not need Node.
-- Windows 10/11 x64 or macOS 12+ (arm64/x64) for the packaged apps.
+- Node.js **≥ 22.12** for the CLI and source builds. The Windows desktop installer bundles its own Node runtime, so Windows end users do not need Node.
+- The packaged desktop app is Windows 10/11 x64; macOS/Linux use the CLI-only path.
 
 ## Build from source
 
@@ -71,7 +97,7 @@ The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macO
 
 - Development: `npm run dev`
 - Already built: `npm start` (or `ctx open` after linking the CLI)
-- Installer: `npm run dist:win` (Windows) / `npm run dist:mac` (macOS host or CI); both include the bundled Node runtime. Run the artifact from `release/`.
+- Installer: `npm run dist:win` (builds the bundled Node runtime too); the artifact is written to `release/`.
 
 ### Make `ctx` available as a command
 
@@ -92,7 +118,6 @@ The MCP server is **stdio only**: the agent starts it in its own process; there 
 | --- | --- |
 | Source build | `node <repo>/out/mcp/stdio.cjs` |
 | Windows install | `<install>\bin\node.exe <install>\bin\mcp-stdio.cjs` |
-| macOS install | `/Applications/Cortex.app/Contents/bin/node /Applications/Cortex.app/Contents/bin/mcp-stdio.cjs` |
 
 DeepSeek Harness (`~/.dsh/profiles/<profile>/cordis.patch.yml`):
 
@@ -166,7 +191,7 @@ Runs on Node without Electron, reads the same SQLite database. All commands acce
 | `ctx snapshots list [--keyword]` | List cognitive snapshot sessions |
 | `ctx snapshots get <session_id>` | Show one snapshot session |
 | `ctx search <keyword>` | Search vulnerabilities, assets and snapshots together |
-| `ctx open [--dev] [--path <exe>]` | Launch or focus the desktop app (Windows install, macOS app or source build) |
+| `ctx open [--dev] [--path <exe>]` | Launch or focus the desktop app (Windows install or source build) |
 
 ## Skills (bilingual)
 
@@ -182,26 +207,25 @@ skills/
 
 ```bash
 npm run dist:win           # build + bundled runtime → Windows x64 NSIS installer (release/Cortex-0.1.1-setup.exe)
-npm run dist:mac           # build + bundled runtime → macOS dmg (must run on macOS or CI)
 npm run build:runtime      # only materialize runtime/ (manual/advanced packaging)
 ```
 
-The installed layout (`<install>`, per-user on Windows):
+The installed layout (per-user on Windows):
 
 ```text
-Windows: %LOCALAPPDATA%\Programs\Cortex\      macOS: /Applications/Cortex.app/Contents/
-  Cortex.exe                                    MacOS/Cortex
-  resources/app.asar                            resources/app.asar
-  bin\                                          bin/
-    node.exe | node                             bundled Node LTS runtime
+%LOCALAPPDATA%\Programs\Cortex\
+  Cortex.exe                                    Electron shell
+  resources/app.asar                            main / preload / renderer bundles
+  bin\
+    node.exe                                    bundled Node LTS runtime
     mcp-stdio.cjs                               stdio MCP entry
-    ctx.cjs  ctx.cmd | ctx                      CLI + wrapper
+    ctx.cjs  ctx.cmd                            CLI + wrapper
     ctx-path.cjs                                installer PATH helper
     skills\{zh,en}\...                          skill sources for ctx init
     node_modules\                               better-sqlite3 (Node-API)
 ```
 
-`.github/workflows/release.yml` builds Windows + macOS (arm64/x64) artifacts on `v*` / `cortex-v*` tags and uploads exactly three installers (Windows x64 setup, macOS arm64 dmg, macOS x64 dmg) to GitHub Releases. macOS builds are unsigned (no Apple Developer certificate), hence the Gatekeeper note above.
+`.github/workflows/release.yml` builds the Windows installer on `v*` / `cortex-v*` tags and publishes it to GitHub Releases. macOS/Linux are CLI-only (see “CLI only” above), so no macOS artifacts are produced.
 
 ## Project layout
 
