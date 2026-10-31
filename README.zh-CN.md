@@ -89,8 +89,6 @@ CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 
 `npm run build:runtime` 会把 `out/web` 复制到 `<install>/bin/web/`、`out/server/web.cjs` 复制到 `<install>/bin/web-server.cjs`；`npm run dist:win` 会在打包前执行 `build:web` + `build:server`，因此重新构建的 Windows 安装包包含 Web 组件。缺少 Web 产物的 runtime 构建仍可用于 CLI/MCP（会打印警告）；半成品状态（有 SPA 但没有 server bundle）会明确失败。
 
-> 设计取舍与完整安全清单见 [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md)。
-
 ## Windows 桌面端
 
 Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。macOS / Linux 请使用下面的 CLI 方式。

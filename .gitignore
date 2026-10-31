@@ -39,3 +39,6 @@ baseline/
 *.har
 *.trace
 
+# Internal development docs (kept locally, never pushed)
+docs/
+

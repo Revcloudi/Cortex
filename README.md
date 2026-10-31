@@ -89,8 +89,6 @@ CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 
 `npm run build:runtime` copies `out/web` to `<install>/bin/web/` and `out/server/web.cjs` to `<install>/bin/web-server.cjs`; `npm run dist:win` runs `build:web` + `build:server` before packaging, so a freshly built installer includes the Web UI. A runtime built without the Web artifacts still works for CLI/MCP (it prints a warning); a half-built state (SPA present but server bundle missing) fails the build on purpose.
 
-> Design rationale and the full security checklist: [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md).
-
 ## Windows desktop app
 
 The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**. macOS and Linux are supported through the CLI build below.
