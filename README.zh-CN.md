@@ -26,8 +26,11 @@ Cortex：本地优先的渗透测试情报中枢。同一份 SQLite 记忆库同
 ```bash
 # 需要 Node.js >= 22.12
 npm install -g @lievclouds/cortex
+ctx init --yes            # 写入 Claude Code / DSH / Codex / Cursor 的 MCP 配置 + Skill + 强制规则
 ctx web
 ```
+
+`ctx init --yes` 会自动检测本机已安装的 Agent，并写入 MCP 配置、三个 Skill 与系统级强制规则；只装指定 Agent 时用 `ctx init --yes --agents dsh,codex,claude`，英文 Skill 用 `--skill-lang en`。
 
 ### 命令行参数
 
@@ -107,9 +110,12 @@ Node 运行、不依赖 Electron，读取同一份 SQLite。所有命令支持 `
 
 ```bash
 npm install -g @lievclouds/cortex
+ctx init --yes            # 写入 Claude Code / DSH / Codex / Cursor 的 MCP 配置 + Skill + 强制规则
 ctx --version            # 验证命令可用
 ctx doctor               # 检查数据库、MCP 运行时与 Agent 配置
 ```
+
+`ctx init --yes` 会自动检测本机已安装的 Agent；只装指定 Agent 时用 `ctx init --yes --agents dsh,codex,claude`，英文 Skill 用 `--skill-lang en`；手动配置可用 `ctx mcp print-config <agent>`。
 
 首次启动会在 `%USERPROFILE%\.cortex\data.db`（macOS/Linux：`~/.cortex/data.db`）创建数据库，可用 `CTX_DB_PATH` 覆盖。
 
