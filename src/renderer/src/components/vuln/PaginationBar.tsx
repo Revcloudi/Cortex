@@ -44,9 +44,9 @@ export function PaginationBar({
     <nav
       data-testid="vuln-pagination"
       aria-label={t('vuln.pagination.aria')}
-      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-border px-3 py-2"
+      className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-border px-3 py-1.5"
     >
-      <span className="text-[11.5px] tabular-nums text-muted-foreground">
+      <span className="text-[11px] tabular-nums text-muted-foreground">
         {t('vuln.pagination.summary', { page: currentPage, totalPages, total })}
       </span>
 

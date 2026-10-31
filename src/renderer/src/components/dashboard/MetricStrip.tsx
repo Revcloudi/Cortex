@@ -22,17 +22,17 @@ interface MetricCellProps {
 
 function MetricCell({ testId, label, value, context, accent = false }: MetricCellProps) {
   return (
-    <div data-testid={testId} className="flex min-w-0 flex-col bg-background px-5 py-4">
+    <div data-testid={testId} className="flex min-w-0 flex-col bg-background px-5 py-3">
       <span className="text-[11.5px] text-muted-foreground">{label}</span>
       <span
         className={cn(
-          'mt-2 text-[30px] font-medium leading-none tracking-tight tabular-nums',
+          'mt-1.5 text-[26px] font-medium leading-none tracking-tight tabular-nums',
           accent ? 'text-accent' : 'text-foreground'
         )}
       >
         {value}
       </span>
-      <div className="mt-auto pt-4 text-[11px] leading-relaxed text-muted-foreground">{context}</div>
+      <div className="mt-auto pt-2 text-[10.5px] leading-relaxed text-muted-foreground">{context}</div>
     </div>
   )
 }
@@ -73,10 +73,10 @@ export function MetricStrip({ stats, loading, error }: MetricStripProps) {
           'dashboard.metric.hosts',
           'dashboard.metric.today'
         ].map((key) => (
-          <div key={key} className="flex flex-col bg-background px-5 py-4">
+          <div key={key} className="flex flex-col bg-background px-5 py-3">
             <span className="text-[11.5px] text-muted-foreground">{t(key)}</span>
-            <Skeleton className="mt-2.5 h-7 w-14" />
-            <div className="mt-auto pt-4">
+            <Skeleton className="mt-2 h-6 w-14" />
+            <div className="mt-auto pt-2">
               <Skeleton className="h-3 w-24" />
             </div>
           </div>

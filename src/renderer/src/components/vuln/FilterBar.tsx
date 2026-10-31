@@ -87,7 +87,7 @@ export function FilterBar({
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder={t('vuln.filter.searchPlaceholder')}
-          className="pl-9 pr-9"
+          className="h-8 pl-9 pr-9 text-[12px]"
         />
         {search ? (
           <button
@@ -109,7 +109,7 @@ export function FilterBar({
         data-testid="severity-filter"
         role="group"
         aria-label={t('vuln.filter.severityAria')}
-        className="inline-flex h-9 items-center rounded-md border border-border bg-muted p-1"
+        className="inline-flex h-8 items-center rounded-md border border-border bg-muted p-0.5"
       >
         {severityOptions.map((option) => {
           const active = severity === option.value
@@ -120,7 +120,7 @@ export function FilterBar({
               aria-pressed={active}
               onClick={() => onSeverityChange(option.value)}
               className={cn(
-                'inline-flex h-7 items-center gap-1 rounded-[5px] border px-2 text-[12px] transition-colors duration-150 focus-visible:bg-background focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                'inline-flex h-6 items-center gap-1 rounded-[5px] border px-1.5 text-[11.5px] transition-colors duration-150 focus-visible:bg-background focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                 active
                   ? 'border-border bg-background font-medium text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -128,7 +128,7 @@ export function FilterBar({
             >
               {option.label}
               {option.count !== null ? (
-                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">
                   {option.count}
                 </span>
               ) : null}
@@ -144,7 +144,7 @@ export function FilterBar({
         <SelectTrigger
           data-testid="status-filter"
           aria-label={t('vuln.filter.statusAria')}
-          className="w-[136px]"
+          className="h-8 w-[128px] text-[12px]"
         >
           <SelectValue placeholder={t('vuln.filter.allStatuses')} />
         </SelectTrigger>
@@ -159,7 +159,7 @@ export function FilterBar({
       </Select>
 
       <div className="ml-auto flex items-center gap-2">
-        <span className="text-[11.5px] tabular-nums text-muted-foreground">{resultLabel}</span>
+        <span className="text-[11px] tabular-nums text-muted-foreground">{resultLabel}</span>
         <Button
           variant="ghost"
           size="xs"
