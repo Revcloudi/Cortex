@@ -7,6 +7,7 @@ Cortex：本地优先的渗透测试情报中枢。同一份 SQLite 记忆库同
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
 [![版本 0.1.1](https://img.shields.io/badge/version-0.1.1-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
+[![npm](https://img.shields.io/npm/v/@lievclouds/cortex?style=flat-square&label=npm)](https://www.npmjs.com/package/@lievclouds/cortex)
 [![MCP 6 tools](https://img.shields.io/badge/MCP-6%20tools-0ea5e9?style=flat-square)](#mcp-接入)
 [![平台](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#cli-ctx)
 [![Node >= 22.12](https://img.shields.io/badge/node-%E2%89%A5%2022.12-339933?style=flat-square)](#环境要求)
@@ -20,17 +21,11 @@ Cortex：本地优先的渗透测试情报中枢。同一份 SQLite 记忆库同
 
 `ctx web` 用本机 HTTP 服务把同一套 React 界面提供到浏览器，读写与桌面端、CLI、MCP 完全相同的 SQLite 文件。定位是**本机或受信任内网的单用户**：没有账号体系、不支持多用户，也绝不做公网部署——不要把该端口暴露到互联网。
 
-从源码构建并启动：
+推荐直接用 npm 安装并启动：
 
 ```bash
 # 需要 Node.js >= 22.12
-git clone git@github.com:Revcloudi/Cortex.git
-cd Cortex
-npm install
-npm run build            # typecheck + Electron + MCP + CLI
-npm run build:web        # Web 端 SPA（ctx web 必需）
-npm run build:server     # Web 端 HTTP 服务端 bundle（ctx web 必需）
-npm link                 # 可选：让 ctx 进入 PATH
+npm install -g @lievclouds/cortex
 ctx web
 ```
 
@@ -85,13 +80,9 @@ ctx web --no-open --json                     # 不打开浏览器；输出含 to
 CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 ```
 
-### 安装版
-
-`npm run build:runtime` 会把 `out/web` 复制到 `<install>/bin/web/`、`out/server/web.cjs` 复制到 `<install>/bin/web-server.cjs`；`npm run dist:win` 会在打包前执行 `build:web` + `build:server`，因此重新构建的 Windows 安装包包含 Web 组件。缺少 Web 产物的 runtime 构建仍可用于 CLI/MCP（会打印警告）；半成品状态（有 SPA 但没有 server bundle）会明确失败。
-
 ## Windows 桌面端
 
-Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。macOS / Linux 请使用下面的 CLI 方式。
+Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。macOS / Linux 请使用 npm 安装（见 [CLI (ctx)](#cli-ctx)）。
 
 | 平台 | 下载 |
 | --- | --- |
@@ -110,30 +101,14 @@ Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex
 
 ## CLI (ctx)
 
-Node 运行、不依赖 Electron，读取同一份 SQLite。所有命令支持 `--json`；退出码 0 成功、1 参数/IO 错误、2 数据不存在。先编译并验证命令可用：
+Node 运行、不依赖 Electron，读取同一份 SQLite。所有命令支持 `--json`；退出码 0 成功、1 参数/IO 错误、2 数据不存在。
+
+推荐直接用 npm 安装（需要 Node.js >= 22.12）：
 
 ```bash
-# 需要 Node.js >= 22.12
-git clone git@github.com:Revcloudi/Cortex.git
-cd Cortex
-npm install
-npm run build            # typecheck + Electron + MCP + CLI
-npm run build:web        # Web 端 SPA（使用 ctx web 时必需）
-npm run build:server     # Web 端 HTTP 服务（使用 ctx web 时必需）
-npm link                 # 让 `ctx` 进入 PATH；不 link 时用 node out/cli/ctx.cjs
+npm install -g @lievclouds/cortex
 ctx --version            # 验证命令可用
 ctx doctor               # 检查数据库、MCP 运行时与 Agent 配置
-```
-
-`npm run build` 只构建桌面端、CLI 与 MCP；浏览器 Web 端是独立构建，使用 `ctx web` 前需要再执行 `npm run build:web` 和 `npm run build:server`（见 [Web 端（仅内网）](#web-端仅内网)）。
-
-其他常用命令：
-
-```bash
-npm run dev          # Electron + Vite 开发模式
-npm run typecheck    # Node + Web 两个 TS 项目
-npm start            # 预览已构建的桌面端
-npm run dist:win     # Windows 安装包（含内置 Node 运行时，产物在 release/ 下）
 ```
 
 首次启动会在 `%USERPROFILE%\.cortex\data.db`（macOS/Linux：`~/.cortex/data.db`）创建数据库，可用 `CTX_DB_PATH` 覆盖。
@@ -184,7 +159,7 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 ## 环境要求
 
 - CLI 与源码构建需要 Node.js **≥ 22.12**；Windows 桌面安装包内置 Node 运行时，最终用户无需安装 Node。
-- 桌面端仅提供 Windows 10/11 x64；macOS/Linux 使用上面的仅 CLI 方式。
+- 桌面端仅提供 Windows 10/11 x64；macOS/Linux 使用 npm 安装（见 [CLI (ctx)](#cli-ctx)）。
 
 ## MCP 接入
 
@@ -261,6 +236,35 @@ skills/
 
 `ctx init` 把所选语言复制到 Agent 技能目录（`~/.agents/skills/<name>/SKILL.md`，以及 Codex / Claude Code 各自技能目录）。桌面端 MCP 页与安装器使用同一个生成器，配置不会漂移。
 
+## 从源码构建
+
+仅在开发、自定义构建或需要桌面端安装包时使用；普通使用请直接 `npm install -g @lievclouds/cortex`。
+
+```bash
+# 需要 Node.js >= 22.12
+git clone git@github.com:Revcloudi/Cortex.git
+cd Cortex
+npm install
+npm run build            # typecheck + Electron + MCP + CLI
+npm run build:web        # 独立 Web SPA（使用 ctx web 时必需）
+npm run build:server     # Web HTTP 服务端 bundle（使用 ctx web 时必需）
+npm link                 # 让 ctx 进入 PATH；不 link 时用 node out/cli/ctx.cjs
+ctx --version
+```
+
+其他开发命令：
+
+```bash
+npm run dev          # Electron + Vite 开发模式
+npm run typecheck    # Node + Web 两个 TS 项目
+npm start            # 预览已构建的桌面端
+npm run dist:win     # Windows 安装包（含内置 Node 运行时，产物在 release/ 下）
+```
+
+### 安装版构建
+
+`npm run build:runtime` 会把 `out/web` 复制到 `<install>/bin/web/`、`out/server/web.cjs` 复制到 `<install>/bin/web-server.cjs`；`npm run dist:win` 会在打包前执行 `build:web` + `build:server`，因此重新构建的 Windows 安装包包含 Web 组件。缺少 Web 产物的 runtime 构建仍可用于 CLI/MCP（会打印警告）；半成品状态（有 SPA 但没有 server bundle）会明确失败。
+
 ## 打包与发布
 
 ```bash
@@ -285,7 +289,7 @@ npm run build:runtime      # 只生成 runtime/（手动/高级打包用）
     node_modules\                               better-sqlite3（Node-API）
 ```
 
-`.github/workflows/release.yml` 在 `v*` / `cortex-v*` tag 推送时构建 Windows 安装包并发布到 GitHub Releases。macOS/Linux 使用上面的 CLI 方式，因此不产出 macOS 安装包。
+`.github/workflows/release.yml` 在 `v*` / `cortex-v*` tag 推送时构建 Windows 安装包并发布到 GitHub Releases。macOS/Linux 通过 npm 安装，因此不产出 macOS 安装包。
 
 ## 工程结构
 

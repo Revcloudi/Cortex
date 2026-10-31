@@ -7,6 +7,7 @@ Cortex: local-first pentest intelligence hub. One SQLite memory shared by a pure
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
 [![Version 0.1.1](https://img.shields.io/badge/version-0.1.1-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
+[![npm](https://img.shields.io/npm/v/@lievclouds/cortex?style=flat-square&label=npm)](https://www.npmjs.com/package/@lievclouds/cortex)
 [![MCP 6 tools](https://img.shields.io/badge/MCP-6%20tools-0ea5e9?style=flat-square)](#mcp-access)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#cli-ctx)
 [![Node >= 22.12](https://img.shields.io/badge/node-%E2%89%A5%2022.12-339933?style=flat-square)](#requirements)
@@ -20,17 +21,11 @@ Cortex: local-first pentest intelligence hub. One SQLite memory shared by a pure
 
 `ctx web` serves the same React UI from a local HTTP server that reads and writes the same SQLite file as the desktop app, the CLI and the MCP server. It is for **one user on the local machine or a trusted intranet**: there are no accounts, no multi-user access and no public deployment — never expose this port to the internet.
 
-Build and start from a source checkout:
+Install directly from npm and start it:
 
 ```bash
 # Node.js >= 22.12 required
-git clone git@github.com:Revcloudi/Cortex.git
-cd Cortex
-npm install
-npm run build            # typecheck + Electron + MCP + CLI
-npm run build:web        # Web SPA (required for ctx web)
-npm run build:server     # Web HTTP server bundle (required for ctx web)
-npm link                 # optional: expose `ctx` on PATH
+npm install -g @lievclouds/cortex
 ctx web
 ```
 
@@ -85,13 +80,9 @@ If an internal TLS reverse proxy preserves a custom `Host`, add that hostname to
 CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 ```
 
-### Installed build
-
-`npm run build:runtime` copies `out/web` to `<install>/bin/web/` and `out/server/web.cjs` to `<install>/bin/web-server.cjs`; `npm run dist:win` runs `build:web` + `build:server` before packaging, so a freshly built installer includes the Web UI. A runtime built without the Web artifacts still works for CLI/MCP (it prints a warning); a half-built state (SPA present but server bundle missing) fails the build on purpose.
-
 ## Windows desktop app
 
-The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**. macOS and Linux are supported through the CLI build below.
+The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**. macOS and Linux: install from npm (see [CLI (ctx)](#cli-ctx)).
 
 | Platform | Download |
 | --- | --- |
@@ -110,30 +101,14 @@ Uninstalling removes the program only — `%USERPROFILE%\.cortex\data.db` is pre
 
 ## CLI (ctx)
 
-Runs on Node without Electron and reads the same SQLite database. All commands accept `--json`; exit codes are 0 success, 1 parameter/IO error, 2 data not found. Build and verify the command first:
+Runs on Node without Electron and reads the same SQLite database. All commands accept `--json`; exit codes are 0 success, 1 parameter/IO error, 2 data not found.
+
+Recommended: install from npm (Node.js >= 22.12 required):
 
 ```bash
-# Node.js >= 22.12 required
-git clone git@github.com:Revcloudi/Cortex.git
-cd Cortex
-npm install
-npm run build            # typecheck + Electron + MCP + CLI
-npm run build:web        # Web SPA (required for ctx web)
-npm run build:server     # Web HTTP server (required for ctx web)
-npm link                 # exposes `ctx` on PATH; without link: node out/cli/ctx.cjs
+npm install -g @lievclouds/cortex
 ctx --version            # verify the command works
 ctx doctor               # verify DB, MCP runtime and agent configs
-```
-
-`npm run build` only builds the desktop app, CLI and MCP; the browser Web UI is a separate build — run `npm run build:web` and `npm run build:server` before using `ctx web` (see [Web UI (intranet only)](#web-ui-intranet-only)).
-
-Other useful commands:
-
-```bash
-npm run dev          # Electron + Vite dev mode
-npm run typecheck    # Node + Web TypeScript projects
-npm start            # preview the built desktop app
-npm run dist:win     # Windows installer (bundled Node runtime, artifact in release/)
 ```
 
 The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macOS/Linux: `~/.cortex/data.db`); override with `CTX_DB_PATH`.
@@ -184,7 +159,7 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 ## Requirements
 
 - Node.js **≥ 22.12** for the CLI and source builds. The Windows desktop installer bundles its own Node runtime, so Windows end users do not need Node.
-- The packaged desktop app is Windows 10/11 x64; macOS/Linux use the CLI build path.
+- The packaged desktop app is Windows 10/11 x64; macOS/Linux install from npm (see [CLI (ctx)](#cli-ctx)).
 
 ## MCP access
 
@@ -261,6 +236,35 @@ skills/
 
 `ctx init` copies the selected language to the agent skill directories (`~/.agents/skills/<name>/SKILL.md`, plus client-specific skill directories for Codex / Claude Code). The desktop MCP page and the installer both use the same generator, so configs and skills never drift apart.
 
+## Build from source
+
+Only for development, custom builds, or building the desktop installer; normal use should go through `npm install -g @lievclouds/cortex`.
+
+```bash
+# Node.js >= 22.12 required
+git clone git@github.com:Revcloudi/Cortex.git
+cd Cortex
+npm install
+npm run build            # typecheck + Electron + MCP + CLI
+npm run build:web        # standalone Web SPA (required for ctx web)
+npm run build:server     # Web HTTP server bundle (required for ctx web)
+npm link                 # exposes `ctx` on PATH; without link: node out/cli/ctx.cjs
+ctx --version
+```
+
+Other development commands:
+
+```bash
+npm run dev          # Electron + Vite dev mode
+npm run typecheck    # Node + Web TypeScript projects
+npm start            # preview the built desktop app
+npm run dist:win     # Windows installer (bundled Node runtime, artifact in release/)
+```
+
+### Installer build
+
+`npm run build:runtime` copies `out/web` to `<install>/bin/web/` and `out/server/web.cjs` to `<install>/bin/web-server.cjs`; `npm run dist:win` runs `build:web` + `build:server` before packaging, so a freshly built installer includes the Web UI. A runtime built without the Web artifacts still works for CLI/MCP (it prints a warning); a half-built state (SPA present but server bundle missing) fails the build on purpose.
+
 ## Packaging and releases
 
 ```bash
@@ -285,7 +289,7 @@ The installed layout (per-user on Windows):
     node_modules\                               better-sqlite3 (Node-API)
 ```
 
-`.github/workflows/release.yml` builds the Windows installer on `v*` / `cortex-v*` tags and publishes it to GitHub Releases. macOS/Linux use the CLI build (see [CLI (ctx)](#cli-ctx) above), so no macOS artifacts are produced.
+`.github/workflows/release.yml` builds the Windows installer on `v*` / `cortex-v*` tags and publishes it to GitHub Releases. macOS/Linux install from npm (see [CLI (ctx)](#cli-ctx) above), so no macOS artifacts are produced.
 
 ## Project layout
 

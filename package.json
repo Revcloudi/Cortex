@@ -1,14 +1,50 @@
 {
-  "name": "cortex",
+  "name": "@lievclouds/cortex",
   "version": "0.1.1",
   "description": "Shared memory for authorized pentest work: vulnerabilities, assets and task progress stay in one place, so testers and AI can resume testing, review findings and deliver reports.",
   "main": "./out/main/index.js",
   "bin": {
-    "ctx": "./out/cli/ctx.cjs"
+    "ctx": "out/cli/ctx.cjs"
   },
   "author": "Revcloudi",
   "license": "MIT",
-  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Revcloudi/Cortex.git"
+  },
+  "homepage": "https://github.com/Revcloudi/Cortex#readme",
+  "bugs": {
+    "url": "https://github.com/Revcloudi/Cortex/issues"
+  },
+  "keywords": [
+    "cortex",
+    "pentest",
+    "mcp",
+    "security",
+    "vulnerability",
+    "asset-inventory",
+    "sqlite",
+    "cli",
+    "ai-agent",
+    "report"
+  ],
+  "files": [
+    "out/cli/ctx.cjs",
+    "out/cli/ctx.cmd",
+    "out/mcp/stdio.cjs",
+    "out/server/web.cjs",
+    "out/web/**",
+    "skills/**",
+    "LICENSE",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
@@ -19,6 +55,7 @@
     "build:server": "node scripts/build-web-server.mjs",
     "build:runtime": "node scripts/build-runtime.mjs",
     "dist:win": "node scripts/dist.mjs --win",
+    "prepublishOnly": "npm run build:cli && npm run build:mcp && npm run build:web && npm run build:server",
     "ctx": "node out/cli/ctx.cjs",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
