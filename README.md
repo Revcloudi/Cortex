@@ -14,7 +14,7 @@ Local-first, MCP-native pentest intelligence hub for authorized engagements. One
 
 > **Authorized testing only.** Cortex is built for systems you own or have explicit written permission to test. You are responsible for complying with applicable laws, contracts and scope boundaries.
 
-**English** · [简体中文](README.zh-CN.md) · [CLI-only install](#cli-only-macos--linux--windows) · [Windows desktop app](#windows-desktop-app) · [MCP tools](#mcp-access)
+**English** · [简体中文](README.zh-CN.md) · [CLI-only install](#cli-only-macos--linux--windows) · [Windows desktop app](#windows-desktop-app) · [MCP tools](#mcp-access) · [Web plan](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md)
 
 ## CLI only (macOS / Linux / Windows)
 

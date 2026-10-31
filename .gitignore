@@ -29,3 +29,13 @@ detector.json
 # IDE
 .idea/
 .vscode/
+
+# Test / benchmark / baseline artifacts (never committed)
+tests/
+test/
+bench/
+baseline/
+*.baseline
+*.har
+*.trace
+

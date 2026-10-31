@@ -14,7 +14,7 @@
 
 > **仅限授权测试。** Cortex 仅用于你拥有或已获得明确书面授权的系统；使用者需自行遵守相关法律、合同与测试范围约束。
 
-**简体中文** · [English](README.md) · [仅安装 CLI](#仅安装-climacos--linux--windows) · [Windows 桌面端](#windows-桌面端) · [MCP 工具](#mcp-接入)
+**简体中文** · [English](README.md) · [仅安装 CLI](#仅安装-climacos--linux--windows) · [Windows 桌面端](#windows-桌面端) · [MCP 工具](#mcp-接入) · [Web 支持计划](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md)
 
 ## 仅安装 CLI（macOS / Linux / Windows）
 
