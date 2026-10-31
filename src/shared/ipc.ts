@@ -43,6 +43,11 @@ export const IPC_CHANNELS = {
   runSetup: 'setup:run',
   seedDemoData: 'demo:seed',
   writeClipboard: 'clipboard:write',
+  minimizeWindow: 'window:minimize',
+  toggleMaximizeWindow: 'window:toggle-maximize',
+  closeWindow: 'window:close',
+  getWindowMaximized: 'window:get-maximized',
+  windowMaximizedChanged: 'window:maximized-changed',
   dataChanged: 'data:changed'
 } as const
 
@@ -117,6 +122,14 @@ export interface CortexApi {
   seedDemoData(): Promise<SeedDemoResult>
   /** Write text through Electron's native clipboard (renderer clipboard APIs are unreliable under file://). */
   writeClipboard(text: string): Promise<void>
+  /** Custom window controls for the frameless desktop window. */
+  minimizeWindow(): Promise<void>
+  /** Toggle maximize/restore and return the resulting maximized state. */
+  toggleMaximizeWindow(): Promise<boolean>
+  closeWindow(): Promise<void>
+  isWindowMaximized(): Promise<boolean>
+  /** Subscribe to maximize/restore changes for the custom titlebar. */
+  onWindowMaximizedChanged(callback: (maximized: boolean) => void): () => void
   /** Subscribe to data-change notifications pushed by the main process. */
   onDataChanged(callback: () => void): () => void
 }

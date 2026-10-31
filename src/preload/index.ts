@@ -116,6 +116,25 @@ const api: CortexApi = {
   writeClipboard(text: string): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.writeClipboard, text) as Promise<void>
   },
+  minimizeWindow(): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.minimizeWindow) as Promise<void>
+  },
+  toggleMaximizeWindow(): Promise<boolean> {
+    return ipcRenderer.invoke(IPC_CHANNELS.toggleMaximizeWindow) as Promise<boolean>
+  },
+  closeWindow(): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.closeWindow) as Promise<void>
+  },
+  isWindowMaximized(): Promise<boolean> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getWindowMaximized) as Promise<boolean>
+  },
+  onWindowMaximizedChanged(callback: (maximized: boolean) => void): () => void {
+    const listener = (_event: unknown, maximized: boolean): void => callback(maximized)
+    ipcRenderer.on(IPC_CHANNELS.windowMaximizedChanged, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.windowMaximizedChanged, listener)
+    }
+  },
   onDataChanged(callback: () => void): () => void {
     const listener = (): void => callback()
     ipcRenderer.on(IPC_CHANNELS.dataChanged, listener)

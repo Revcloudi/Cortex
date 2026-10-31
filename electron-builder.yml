@@ -79,9 +79,6 @@ nsis:
   runAfterFinish: true
   deleteAppDataOnUninstall: false
   include: build/installer.nsh
-  installerSidebar: build/installerSidebar.bmp
-  uninstallerSidebar: build/uninstallerSidebar.bmp
-  installerHeader: build/installerHeader.bmp
   shortcutName: Cortex
   uninstallDisplayName: Cortex
   menuCategory: false

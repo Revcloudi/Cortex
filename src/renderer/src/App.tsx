@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Toaster } from 'sonner'
 import { Sidebar } from '@renderer/components/layout/Sidebar'
+import { Titlebar } from '@renderer/components/layout/Titlebar'
 import { TooltipProvider } from '@renderer/components/ui/tooltip'
 import { DashboardPage } from '@renderer/pages/DashboardPage'
 import { AssetPage } from '@renderer/pages/AssetPage'
@@ -33,21 +34,25 @@ export default function App() {
   return (
     <I18nProvider>
       <TooltipProvider delayDuration={200}>
-        <div className="flex h-full overflow-hidden bg-canvas">
-          <Sidebar page={page} onNavigate={setPage} databasePath={info?.dbPath ?? null} />
+        <div className="flex h-full flex-col overflow-hidden bg-canvas">
+          <Titlebar />
 
-          <div className="flex min-w-0 flex-1 flex-col">
-            <main className="min-h-0 flex-1 overflow-y-auto">
-              {page === 'dashboard' ? (
-                <DashboardPage dataVersion={dataVersion} onOpenMcp={() => setPage('mcp')} />
-              ) : page === 'assets' ? (
-                <AssetPage dataVersion={dataVersion} />
-              ) : page === 'snapshots' ? (
-                <SnapshotPage dataVersion={dataVersion} />
-              ) : (
-                <McpPage />
-              )}
-            </main>
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <Sidebar page={page} onNavigate={setPage} databasePath={info?.dbPath ?? null} />
+
+            <div className="flex min-w-0 flex-1 flex-col">
+              <main className="min-h-0 flex-1 overflow-y-auto">
+                {page === 'dashboard' ? (
+                  <DashboardPage dataVersion={dataVersion} onOpenMcp={() => setPage('mcp')} />
+                ) : page === 'assets' ? (
+                  <AssetPage dataVersion={dataVersion} />
+                ) : page === 'snapshots' ? (
+                  <SnapshotPage dataVersion={dataVersion} />
+                ) : (
+                  <McpPage />
+                )}
+              </main>
+            </div>
           </div>
 
           <Toaster

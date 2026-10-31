@@ -115,6 +115,7 @@ function createWindow(): BrowserWindow {
     minWidth: 1120,
     minHeight: 720,
     show: false,
+    frame: false,
     autoHideMenuBar: true,
     backgroundColor: '#fbfaf8',
     title: CORTEX_APP_NAME,
@@ -132,6 +133,13 @@ function createWindow(): BrowserWindow {
   })
 
   window.on('focus', () => broadcastDataChanged())
+
+  window.on('maximize', () => {
+    window.webContents.send(IPC_CHANNELS.windowMaximizedChanged, true)
+  })
+  window.on('unmaximize', () => {
+    window.webContents.send(IPC_CHANNELS.windowMaximizedChanged, false)
+  })
 
   const rendererUrl = process.env['ELECTRON_RENDERER_URL']
   const productionPageUrl = pathToFileURL(join(__dirname, '../renderer/index.html')).toString()
