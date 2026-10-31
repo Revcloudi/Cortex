@@ -8,49 +8,110 @@
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
 [![版本 0.1.1](https://img.shields.io/badge/version-0.1.1-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
 [![MCP 6 tools](https://img.shields.io/badge/MCP-6%20tools-0ea5e9?style=flat-square)](#mcp-接入)
-[![平台](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#仅安装-climacos--linux--windows)
+[![平台](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#cli-ctx)
 [![Node >= 22.12](https://img.shields.io/badge/node-%E2%89%A5%2022.12-339933?style=flat-square)](#环境要求)
 [![License MIT](https://img.shields.io/badge/license-MIT-8b5cf6?style=flat-square)](LICENSE)
 
 > **仅限授权测试。** Cortex 仅用于你拥有或已获得明确书面授权的系统；使用者需自行遵守相关法律、合同与测试范围约束。
 
-**简体中文** · [English](README.md) · [Web 端（仅内网）](#web-端仅内网) · [Windows 桌面端](#windows-桌面端) · [仅安装 CLI](#仅安装-climacos--linux--windows) · [MCP 工具](#mcp-接入)
+**简体中文** · [English](README.md) · [CLI (ctx)](#cli-ctx) · [启动 Web 端](#启动-web-端) · [Windows 桌面端](#windows-桌面端) · [MCP 工具](#mcp-接入)
 
-## Web 端（仅内网）
+## CLI (ctx)
 
-`ctx web` 用本机 HTTP 服务把同一套 React 界面提供到浏览器，读写与桌面端、CLI、MCP 完全相同的 SQLite 文件。定位是**本机或受信任内网的单用户**：没有账号体系、不支持多用户，也绝不做公网部署——不要把该端口暴露到互联网。
+Node 运行、不依赖 Electron，读取同一份 SQLite。所有命令支持 `--json`；退出码 0 成功、1 参数/IO 错误、2 数据不存在。先编译并验证命令可用：
 
-### 最快启动（完成安装或构建后）
+```bash
+# 需要 Node.js >= 22.12
+git clone git@github.com:Revcloudi/Cortex.git
+cd Cortex
+npm install
+npm run build            # typecheck + Electron + MCP + CLI
+npm run build:web        # Web 端 SPA（使用 ctx web 时必需）
+npm run build:server     # Web 端 HTTP 服务（使用 ctx web 时必需）
+npm link                 # 让 `ctx` 进入 PATH；不 link 时用 node out/cli/ctx.cjs
+ctx --version            # 验证命令可用
+ctx doctor               # 检查数据库、MCP 运行时与 Agent 配置
+```
 
-Cortex 默认以 **stdio MCP** 方式接入 Agent：`ctx init` 执行一次即可，不需要常驻服务，也不需要保持桌面端运行。之后直接在终端执行：
+`npm run build` 只构建桌面端、CLI 与 MCP；浏览器 Web 端是独立构建，使用 `ctx web` 前需要再执行 `npm run build:web` 和 `npm run build:server`（见 [Web 端（仅内网）](#web-端仅内网)）。
+
+其他常用命令：
+
+```bash
+npm run dev          # Electron + Vite 开发模式
+npm run typecheck    # Node + Web 两个 TS 项目
+npm start            # 预览已构建的桌面端
+npm run dist:win     # Windows 安装包（含内置 Node 运行时，产物在 release/ 下）
+```
+
+首次启动会在 `%USERPROFILE%\.cortex\data.db`（macOS/Linux：`~/.cortex/data.db`）创建数据库，可用 `CTX_DB_PATH` 覆盖。
+
+| 命令 | 说明 |
+| --- | --- |
+| `ctx init [--dry-run] [--yes] [--agents dsh,codex,claude,cursor] [--skill-lang zh\|en]` | 检测 Agent、展示计划 diff、备份后写入 MCP 配置 + Skill + 系统规则 |
+| `ctx doctor` | 检查数据库、schema、MCP/CLI 运行时、Agent 配置、GUI 安装与版本 |
+| `ctx mcp print-config [agent]` | 打印 DSH / Codex / Claude Code / Cursor 的 stdio 配置片段 |
+| `ctx vulns list [--severity] [--host] [--limit]` | 漏洞列表 |
+| `ctx vulns get <id>` | 查看完整漏洞：描述/影响/接口/Markdown 复现步骤（含请求与响应）/修复建议/复测记录/状态 |
+| `ctx vulns export <id[,id...]> [--out <dir>] [--all] [--severity …] [--host …] [--limit …]` | 导出与桌面端相同模板的 Markdown 报告；默认目录 `./cortex-reports` |
+| `ctx assets list [--search] [--status]` | 资产列表 |
+| `ctx assets get <host_port>` | 查看资产详情：完整接口（含原始请求）、敏感泄露与测试参数 |
+| `ctx snapshots list [--keyword]` | 认知快照列表 |
+| `ctx snapshots get <session_id>` | 查看单条会话 |
+| `ctx search <keyword>` | 同时搜索漏洞 / 资产 / 快照 |
+| `ctx open [--dev] [--path <exe>]` | 启动/聚焦桌面端（Windows 安装版或源码构建） |
+| `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | 在浏览器中使用同一套看板（仅回环或受信任内网） |
+
+## 启动 Web 端
 
 ```bash
 ctx web
 ```
 
-服务默认监听 `http://127.0.0.1:8787`，并在命令行打印**完整访问链接**（含一次性 token）：
+## Windows 桌面端
+
+Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。macOS / Linux 请使用上面的 CLI 方式。
+
+| 平台 | 下载 |
+| --- | --- |
+| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
+
+> 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。安装包未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"）。
+
+### 安装后接入 Agent
+
+安装器只负责安装 Cortex 和快捷方式。启动 Cortex，打开 **MCP 接入** 页面，然后任选其一：
+
+- 点击 **接入 Agent**：自动检测本机 Agent，写入 MCP 配置与对应语言的 Skill（Skill 语言跟随界面语言），之后重启 Agent；或
+- 在终端执行 `ctx init --yes`（显式指定可用 `ctx init --yes --agents dsh --skill-lang en`）。
+
+卸载只删除程序，保留 `%USERPROFILE%\.cortex\data.db`。桌面端界面支持**中英文随时切换**；Skill 语言之后也可用 `ctx init --skill-lang` 修改。
+
+## 日常使用
+
+安装完成后，Cortex 就是每个测试任务的“记忆层”：
+
+1. **漏洞挖掘过程通过 MCP 入库**：Agent 按已安装的 Skill/规则，把确认的漏洞、侦察到的资产上下文和当前任务快照写入本地 SQLite，不需要手工整理报告。
+2. **Agent 随时可以读库**：开始新任务前先查已有资产上下文和漏洞记录，复用侦察成果、避免重复上报。
+3. **人类在桌面端、终端或可选的浏览器 Web 端查看**：桌面端提供漏洞看板、资产库、认知快照和 Markdown 报告导出；`ctx` 提供漏洞/资产/会话查询、全文搜索、诊断和 Markdown 报告导出；`ctx web` 把同一套页面提供给本机或受信任内网的浏览器。
+4. **新对话直接接着跑历史任务**：直接说“继续 Example Program 的 IDOR 验证任务”。Agent 会先 `manage_snapshot list`，按项目名、阶段或 `session_id` 找到匹配会话并 `load`，从未完成事项和下一步继续；如果匹配到多个会话，会先让你选择继续哪个或新建。
 
 ```text
-完整访问链接: http://127.0.0.1:8787/?token=...
+你：继续「Example Program」的 IDOR 验证任务，把未完成的检查跑完
+Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
+       query_asset_context / query_vulnerabilities → 继续测试
 ```
 
-在浏览器打开该链接即可进入看板；刷新页面保持登录，重启服务后旧链接失效并打印新链接。
+## Web 端（仅内网）
 
-### 从源码构建与启动
+`ctx web` 用本机 HTTP 服务把同一套 React 界面提供到浏览器，读写与桌面端、CLI、MCP 完全相同的 SQLite 文件。定位是**本机或受信任内网的单用户**：没有账号体系、不支持多用户，也绝不做公网部署——不要把该端口暴露到互联网。
 
-```bash
-npm install
-npm run build         # 桌面端 + MCP + CLI 构建
-npm run build:web     # 独立 SPA → out/web
-npm run build:server  # HTTP 服务端 bundle → out/server/web.cjs
-npm link              # 或不 link，直接用 node out/cli/ctx.cjs
-ctx web               # 启动服务并打印完整访问链接（含一次性 token）
-```
+### 命令行参数
 
-只用 CLI 访问 Web 时，最少需要 `npm run build:web && npm run build:server && npm run build:cli`；缺少构建产物时 `ctx web` 会直接提示需要执行的命令。
+构建步骤见上方 [CLI (ctx)](#cli-ctx)；下面是常用启动参数：
 
 ```bash
-ctx web                                      # http://127.0.0.1:8787，并打开 token 登录链接
+ctx web                                      # 默认 127.0.0.1:8787
 ctx web --port 9000 --db /data/cortex.db     # 指定端口与数据库
 ctx web --host 192.168.1.20 --allow-intranet # 仅限受信任内网（必须显式确认）
 ctx web --no-open --json                     # 不打开浏览器；输出含 tokenUrls、dbPath、readOnly 等的 JSON
@@ -102,58 +163,6 @@ CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 
 > 设计取舍与完整安全清单见 [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md)。
 
-## 仅安装 CLI（macOS / Linux / Windows）
-
-`ctx` CLI 是纯 Node.js，macOS / Linux 与 Windows 同源，不需要桌面端或安装包：
-
-```bash
-# 需要 Node.js >= 22.12
-git clone git@github.com:Revcloudi/Cortex.git
-cd Cortex
-npm install
-npm run build
-npm link            # 让 `ctx` 进入 PATH；不 link 时用 node out/cli/ctx.cjs
-ctx --version
-ctx init --yes      # 为检测到的 Agent 写入 MCP 配置 + 双语 Skill
-ctx doctor          # 检查数据库、MCP 运行时与 Agent 配置
-```
-
-CLI 与桌面端共享同一份 SQLite 数据库（macOS/Linux 为 `~/.cortex/data.db`，Windows 为 `%USERPROFILE%\.cortex\data.db`）。MCP 是纯 stdio，由 Agent 自行拉起，macOS/Linux 无需安装桌面端。
-
-## Windows 桌面端
-
-Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。macOS / Linux 请使用上面的 CLI-only 安装方式。
-
-| 平台 | 下载 |
-| --- | --- |
-| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
-
-> 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。安装包未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"）。
-
-### 安装后接入 Agent
-
-安装器只负责安装 Cortex 和快捷方式。启动 Cortex，打开 **MCP 接入** 页面，然后任选其一：
-
-- 点击 **接入 Agent**：自动检测本机 Agent，写入 MCP 配置与对应语言的 Skill（Skill 语言跟随界面语言），之后重启 Agent；或
-- 在终端执行 `ctx init --yes`（显式指定可用 `ctx init --yes --agents dsh --skill-lang en`）。
-
-卸载只删除程序，保留 `%USERPROFILE%\.cortex\data.db`。桌面端界面支持**中英文随时切换**；Skill 语言之后也可用 `ctx init --skill-lang` 修改。
-
-## 日常使用
-
-安装完成后，Cortex 就是每个测试任务的“记忆层”：
-
-1. **漏洞挖掘过程通过 MCP 入库**：Agent 按已安装的 Skill/规则，把确认的漏洞、侦察到的资产上下文和当前任务快照写入本地 SQLite，不需要手工整理报告。
-2. **Agent 随时可以读库**：开始新任务前先查已有资产上下文和漏洞记录，复用侦察成果、避免重复上报。
-3. **人类在桌面端、终端或可选的浏览器 Web 端查看**：桌面端提供漏洞看板、资产库、认知快照和 Markdown 报告导出；`ctx` 提供漏洞/资产/会话查询、全文搜索、诊断和 Markdown 报告导出；`ctx web` 把同一套页面提供给本机或受信任内网的浏览器。
-4. **新对话直接接着跑历史任务**：直接说“继续 Example Program 的 IDOR 验证任务”。Agent 会先 `manage_snapshot list`，按项目名、阶段或 `session_id` 找到匹配会话并 `load`，从未完成事项和下一步继续；如果匹配到多个会话，会先让你选择继续哪个或新建。
-
-```text
-你：继续「Example Program」的 IDOR 验证任务，把未完成的检查跑完
-Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
-       query_asset_context / query_vulnerabilities → 继续测试
-```
-
 ## 功能
 
 - 漏洞模型：Host、入口、类型、等级、URL、描述、影响、受影响接口、Markdown 复现步骤、修复建议、加解密说明、测试边界、只追加的复测历史、关联漏洞与状态流转。
@@ -170,48 +179,6 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 
 - CLI 与源码构建需要 Node.js **≥ 22.12**；Windows 桌面安装包内置 Node 运行时，最终用户无需安装 Node。
 - 桌面端仅提供 Windows 10/11 x64；macOS/Linux 使用上面的仅 CLI 方式。
-
-## 从源码构建
-
-```bash
-git clone git@github.com:Revcloudi/Cortex.git
-cd Cortex
-npm install
-npm run build       # typecheck + Electron + MCP + CLI 构建
-npm run dev         # Electron + Vite 开发模式
-```
-
-常用命令：
-
-```bash
-npm run typecheck   # Node + Web 两个 TS 项目
-npm run build:mcp   # out/mcp/stdio.cjs（Agent 拉起的 stdio MCP 入口）
-npm run build:cli   # out/cli/ctx.cjs + out/cli/ctx.cmd
-npm run build:web   # out/web（ctx web 使用的独立浏览器构建）
-npm run build:server # out/server/web.cjs（ctx web HTTP 服务端 bundle）
-npm start           # preview 构建产物
-```
-
-浏览器 Web 端是独立构建：`npm run build:web` + `npm run build:server`（见 [Web 端（仅内网）](#web-端仅内网)）；常规 `npm run build` 保持桌面端/CLI 构建不变。
-
-首次启动会在 `%USERPROFILE%\.cortex\data.db`（macOS/Linux：`~/.cortex/data.db`）创建数据库，可用 `CTX_DB_PATH` 覆盖。
-
-### 打开桌面端
-
-- 开发模式：`npm run dev`
-- 已构建：`npm start`（link 过 CLI 后可 `ctx open`）
-- 安装包：`npm run dist:win`（会一并构建内置 Node 运行时）；产物在 `release/` 下。
-
-### 让 `ctx` 成为全局命令
-
-执行 `npm run build` 之后：
-
-```bash
-npm link        # 在 npm 全局 bin 注册 ctx 命令（标准 Node 安装已在其 PATH 中）
-ctx --version
-```
-
-不执行 link 时：`node out/cli/ctx.cjs --version` 或 `npm run ctx -- --version`。
 
 ## MCP 接入
 
@@ -278,26 +245,6 @@ node out/cli/ctx.cjs doctor                            # 诊断配置与运行�
 
 `ctx init` 会把已有文件备份为 `.bak-YYYYMMDD-HHmmss`，用 marker 幂等合并（旧的 `PENTEST` 标记会自动迁移），写入前校验 JSON / TOML / YAML，并安装所选语言的 Skill。重启对应 Agent（不是重启 GUI）后，用只读工具调用（如 `manage_snapshot({ "action": "list" })`）验证链路。
 
-## CLI（ctx）
-
-Node 运行、不依赖 Electron，读取同一份 SQLite。所有命令支持 `--json`；退出码 0 成功、1 参数/IO 错误、2 数据不存在。
-
-| 命令 | 说明 |
-| --- | --- |
-| `ctx init [--dry-run] [--yes] [--agents dsh,codex,claude,cursor] [--skill-lang zh\|en]` | 检测 Agent、展示计划 diff、备份后写入 MCP 配置 + Skill + 系统规则 |
-| `ctx doctor` | 检查数据库、schema、MCP/CLI 运行时、Agent 配置、GUI 安装与版本 |
-| `ctx mcp print-config [agent]` | 打印 DSH / Codex / Claude Code / Cursor 的 stdio 配置片段 |
-| `ctx vulns list [--severity] [--host] [--limit]` | 漏洞列表 |
-| `ctx vulns get <id>` | 查看完整漏洞：描述/影响/接口/Markdown 复现步骤（含请求与响应）/修复建议/复测记录/状态 |
-| `ctx vulns export <id[,id...]> [--out <dir>] [--all] [--severity …] [--host …] [--limit …]` | 导出与桌面端相同模板的 Markdown 报告；默认目录 `./cortex-reports` |
-| `ctx assets list [--search] [--status]` | 资产列表 |
-| `ctx assets get <host_port>` | 查看资产详情：完整接口（含原始请求）、敏感泄露与测试参数 |
-| `ctx snapshots list [--keyword]` | 认知快照列表 |
-| `ctx snapshots get <session_id>` | 查看单条会话 |
-| `ctx search <keyword>` | 同时搜索漏洞 / 资产 / 快照 |
-| `ctx open [--dev] [--path <exe>]` | 启动/聚焦桌面端（Windows 安装版或源码构建） |
-| `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | 在浏览器中使用同一套看板（仅回环或受信任内网）；启动时打印一次性 token 登录链接 |
-
 ## Skill（双语）
 
 ```
@@ -332,7 +279,7 @@ npm run build:runtime      # 只生成 runtime/（手动/高级打包用）
     node_modules\                               better-sqlite3（Node-API）
 ```
 
-`.github/workflows/release.yml` 在 `v*` / `cortex-v*` tag 推送时构建 Windows 安装包并发布到 GitHub Releases。macOS/Linux 使用上面的 CLI-only 方式，因此不产出 macOS 安装包。
+`.github/workflows/release.yml` 在 `v*` / `cortex-v*` tag 推送时构建 Windows 安装包并发布到 GitHub Releases。macOS/Linux 使用上面的 CLI 方式，因此不产出 macOS 安装包。
 
 ## 工程结构
 

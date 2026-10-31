@@ -8,49 +8,110 @@ Local-first, MCP-native pentest intelligence hub for authorized engagements. One
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
 [![Version 0.1.1](https://img.shields.io/badge/version-0.1.1-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
 [![MCP 6 tools](https://img.shields.io/badge/MCP-6%20tools-0ea5e9?style=flat-square)](#mcp-access)
-[![Platforms](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#cli-only-macos--linux--windows)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#cli-ctx)
 [![Node >= 22.12](https://img.shields.io/badge/node-%E2%89%A5%2022.12-339933?style=flat-square)](#requirements)
 [![License MIT](https://img.shields.io/badge/license-MIT-8b5cf6?style=flat-square)](LICENSE)
 
 > **Authorized testing only.** Cortex is built for systems you own or have explicit written permission to test. You are responsible for complying with applicable laws, contracts and scope boundaries.
 
-**English** · [简体中文](README.zh-CN.md) · [Web UI](#web-ui-intranet-only) · [Windows desktop app](#windows-desktop-app) · [CLI-only install](#cli-only-macos--linux--windows) · [MCP tools](#mcp-access)
+**English** · [简体中文](README.zh-CN.md) · [CLI (ctx)](#cli-ctx) · [Start the Web UI](#start-the-web-ui) · [Windows desktop app](#windows-desktop-app) · [MCP tools](#mcp-access)
 
-## Web UI (intranet only)
+## CLI (ctx)
 
-`ctx web` serves the same React UI from a local HTTP server that reads and writes the same SQLite file as the desktop app, the CLI and the MCP server. It is for **one user on the local machine or a trusted intranet**: there are no accounts, no multi-user access and no public deployment — never expose this port to the internet.
+Runs on Node without Electron and reads the same SQLite database. All commands accept `--json`; exit codes are 0 success, 1 parameter/IO error, 2 data not found. Build and verify the command first:
 
-### Quick start (after install or build)
+```bash
+# Node.js >= 22.12 required
+git clone git@github.com:Revcloudi/Cortex.git
+cd Cortex
+npm install
+npm run build            # typecheck + Electron + MCP + CLI
+npm run build:web        # Web SPA (required for ctx web)
+npm run build:server     # Web HTTP server (required for ctx web)
+npm link                 # exposes `ctx` on PATH; without link: node out/cli/ctx.cjs
+ctx --version            # verify the command works
+ctx doctor               # verify DB, MCP runtime and agent configs
+```
 
-Cortex connects agents over **stdio MCP** by default: run `ctx init` once — no long-running service and no desktop app needs to stay open. Then start the Web UI from any terminal:
+`npm run build` only builds the desktop app, CLI and MCP; the browser Web UI is a separate build — run `npm run build:web` and `npm run build:server` before using `ctx web` (see [Web UI (intranet only)](#web-ui-intranet-only)).
+
+Other useful commands:
+
+```bash
+npm run dev          # Electron + Vite dev mode
+npm run typecheck    # Node + Web TypeScript projects
+npm start            # preview the built desktop app
+npm run dist:win     # Windows installer (bundled Node runtime, artifact in release/)
+```
+
+The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macOS/Linux: `~/.cortex/data.db`); override with `CTX_DB_PATH`.
+
+| Command | Description |
+| --- | --- |
+| `ctx init [--dry-run] [--yes] [--agents dsh,codex,claude,cursor] [--skill-lang zh\|en]` | Detect agents, show the planned diff, back up, then write MCP configs + skills + system rules |
+| `ctx doctor` | Check database, schema, MCP/CLI runtime, agent configs, GUI install and versions |
+| `ctx mcp print-config [agent]` | Print the stdio config snippet for DSH / Codex / Claude Code / Cursor |
+| `ctx vulns list [--severity] [--host] [--limit]` | List vulnerabilities |
+| `ctx vulns get <id>` | Show one full vulnerability: description, impact, interfaces, Markdown reproduction steps (HTTP requests/responses), remediation, retests and status |
+| `ctx vulns export <id[,id...]> [--out <dir>] [--all] [--severity …] [--host …] [--limit …]` | Export Markdown reports using the same template as the desktop app; default output directory `./cortex-reports` |
+| `ctx assets list [--search] [--status]` | List asset contexts |
+| `ctx assets get <host_port>` | Show one asset context with full interfaces (raw requests), leaks and test parameters |
+| `ctx snapshots list [--keyword]` | List cognitive snapshot sessions |
+| `ctx snapshots get <session_id>` | Show one snapshot session |
+| `ctx search <keyword>` | Search vulnerabilities, assets and snapshots together |
+| `ctx open [--dev] [--path <exe>]` | Launch or focus the desktop app (Windows install or source build) |
+| `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | Serve the same dashboard in a browser (loopback or trusted intranet only) |
+
+## Start the Web UI
 
 ```bash
 ctx web
 ```
 
-It listens on `http://127.0.0.1:8787` and prints the **full access link** (including the one-time token):
+## Windows desktop app
+
+The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**. macOS and Linux are supported through the CLI build above.
+
+| Platform | Download |
+| --- | --- |
+| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
+
+> The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
+
+### Connect agents after installation
+
+The installer only installs Cortex and its shortcuts. Start Cortex, open **MCP Access**, then either:
+
+- click **Connect agents** — detects local agents, writes their MCP config and the bilingual skills (skill language follows the UI language), then restart the agent; or
+- run `ctx init --yes` in a terminal (`ctx init --yes --agents dsh --skill-lang en` to choose explicitly).
+
+Uninstalling removes the program only — `%USERPROFILE%\.cortex\data.db` is preserved. The UI supports **中文 / English switching** at any time; skill language can also be changed later with `ctx init --skill-lang`.
+
+## Daily workflow
+
+Once installed, Cortex is the memory layer for every engagement:
+
+1. **Findings go in through MCP.** While the agent hunts, it writes confirmed vulnerabilities, recon asset context and the current task snapshot into the local SQLite database (the installed skills/rules tell it when and how). No manual report assembly.
+2. **Agents read the library back at any time.** Before a new task, the agent queries asset context and existing vulnerabilities, so recon is reused and duplicate findings are avoided.
+3. **Humans review from the desktop app, the terminal or the optional browser Web UI.** The desktop app provides the vulnerability dashboard, asset library, snapshot sessions and Markdown report export. `ctx` provides vulnerability / asset / snapshot queries, full-text search, diagnostics and Markdown report export. `ctx web` serves the same pages to a browser on this machine or a trusted intranet.
+4. **Resume a task in a new chat.** Just name the task, for example: *“Continue the Example Program IDOR task.”* The agent runs `manage_snapshot list`, loads the matching session (by project name, phase or `session_id`) and continues from `unfinished_tasks` / `next_steps`. If several sessions match, it asks you whether to continue one or create a new one.
 
 ```text
-Full access link: http://127.0.0.1:8787/?token=...
+You:  continue the "Example Program" IDOR task and resume the unfinished checks
+Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
+       query_asset_context / query_vulnerabilities -> continue testing
 ```
 
-Open that link to enter the dashboard. Reloads keep the session; restarting the server invalidates the old link and prints a new one.
+## Web UI (intranet only)
 
-### Build and run from a source checkout
+`ctx web` serves the same React UI from a local HTTP server that reads and writes the same SQLite file as the desktop app, the CLI and the MCP server. It is for **one user on the local machine or a trusted intranet**: there are no accounts, no multi-user access and no public deployment — never expose this port to the internet.
 
-```bash
-npm install
-npm run build         # desktop + MCP + CLI bundles
-npm run build:web     # standalone SPA → out/web
-npm run build:server  # HTTP server bundle → out/server/web.cjs
-npm link              # or use node out/cli/ctx.cjs
-ctx web               # start the server, print the full access link (one-time token)
-```
+### Command-line options
 
-`npm run build:web && npm run build:server && npm run build:cli` is the minimal set for Web usage from the CLI. If an artifact is missing, `ctx web` prints the exact command to run.
+Build steps are covered above in [CLI (ctx)](#cli-ctx); common options:
 
 ```bash
-ctx web                                      # http://127.0.0.1:8787, opens the token URL
+ctx web                                      # default 127.0.0.1:8787
 ctx web --port 9000 --db /data/cortex.db     # explicit port and database
 ctx web --host 192.168.1.20 --allow-intranet # trusted intranet only (explicit opt-in)
 ctx web --no-open --json                     # no browser; JSON with tokenUrls, dbPath, readOnly…
@@ -102,58 +163,6 @@ CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 
 > Design rationale and the full security checklist: [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md).
 
-## CLI only (macOS / Linux / Windows)
-
-The `ctx` CLI is plain Node.js — macOS and Linux use the same source as Windows. No desktop app or installer is needed:
-
-```bash
-# Node.js >= 22.12 required
-git clone git@github.com:Revcloudi/Cortex.git
-cd Cortex
-npm install
-npm run build
-npm link            # exposes `ctx` on PATH; without link: node out/cli/ctx.cjs
-ctx --version
-ctx init --yes      # writes MCP config + bilingual skills for detected agents
-ctx doctor          # verify DB, MCP runtime and agent configs
-```
-
-The CLI shares the same SQLite database as the desktop app (`~/.cortex/data.db` on macOS/Linux, `%USERPROFILE%\.cortex\data.db` on Windows). MCP is stdio-only, so agents launch it directly; no desktop app is required on macOS/Linux.
-
-## Windows desktop app
-
-The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**. macOS and Linux are supported through the CLI-only path above.
-
-| Platform | Download |
-| --- | --- |
-| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
-
-> The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
-
-### Connect agents after installation
-
-The installer only installs Cortex and its shortcuts. Start Cortex, open **MCP Access**, then either:
-
-- click **Connect agents** — detects local agents, writes their MCP config and the bilingual skills (skill language follows the UI language), then restart the agent; or
-- run `ctx init --yes` in a terminal (`ctx init --yes --agents dsh --skill-lang en` to choose explicitly).
-
-Uninstalling removes the program only — `%USERPROFILE%\.cortex\data.db` is preserved. The UI supports **中文 / English switching** at any time; skill language can also be changed later with `ctx init --skill-lang`.
-
-## Daily workflow
-
-Once installed, Cortex is the memory layer for every engagement:
-
-1. **Findings go in through MCP.** While the agent hunts, it writes confirmed vulnerabilities, recon asset context and the current task snapshot into the local SQLite database (the installed skills/rules tell it when and how). No manual report assembly.
-2. **Agents read the library back at any time.** Before a new task, the agent queries asset context and existing vulnerabilities, so recon is reused and duplicate findings are avoided.
-3. **Humans review from the desktop app, the terminal or the optional browser Web UI.** The desktop app provides the vulnerability dashboard, asset library, snapshot sessions and Markdown report export. `ctx` provides vulnerability / asset / snapshot queries, full-text search, diagnostics and Markdown report export. `ctx web` serves the same pages to a browser on this machine or a trusted intranet.
-4. **Resume a task in a new chat.** Just name the task, for example: *“Continue the Example Program IDOR task.”* The agent runs `manage_snapshot list`, loads the matching session (by project name, phase or `session_id`) and continues from `unfinished_tasks` / `next_steps`. If several sessions match, it asks you whether to continue one or create a new one.
-
-```text
-You:  continue the "Example Program" IDOR task and resume the unfinished checks
-Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
-       query_asset_context / query_vulnerabilities -> continue testing
-```
-
 ## Features
 
 - Vulnerability model: host, entry point, type, severity, URL, description, impact, affected interfaces, Markdown reproduction, remediation, crypto notes, test boundaries, append-only retests, related IDs and status.
@@ -169,49 +178,7 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 ## Requirements
 
 - Node.js **≥ 22.12** for the CLI and source builds. The Windows desktop installer bundles its own Node runtime, so Windows end users do not need Node.
-- The packaged desktop app is Windows 10/11 x64; macOS/Linux use the CLI-only path.
-
-## Build from source
-
-```bash
-git clone git@github.com:Revcloudi/Cortex.git
-cd Cortex
-npm install
-npm run build       # typecheck + Electron bundles + MCP bundle + CLI bundle
-npm run dev         # Electron + Vite dev mode
-```
-
-Useful commands:
-
-```bash
-npm run typecheck   # Node + Web TypeScript projects
-npm run build:mcp   # out/mcp/stdio.cjs (stdio MCP entry agents launch)
-npm run build:cli   # out/cli/ctx.cjs + out/cli/ctx.cmd
-npm run build:web   # out/web (standalone browser build served by ctx web)
-npm run build:server # out/server/web.cjs (ctx web HTTP server bundle)
-npm start           # preview the built Electron app
-```
-
-The browser Web UI is a separate build: `npm run build:web` + `npm run build:server` (see [Web UI](#web-ui-intranet-only)); the normal `npm run build` keeps the desktop/CLI bundles unchanged.
-
-The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macOS/Linux: `~/.cortex/data.db`); override with `CTX_DB_PATH`.
-
-### Open the desktop app
-
-- Development: `npm run dev`
-- Already built: `npm start` (or `ctx open` after linking the CLI)
-- Installer: `npm run dist:win` (builds the bundled Node runtime too); the artifact is written to `release/`.
-
-### Make `ctx` available as a command
-
-After `npm run build`:
-
-```bash
-npm link        # registers a ctx shim in the npm global bin (already on PATH for a standard Node install)
-ctx --version
-```
-
-Without linking: `node out/cli/ctx.cjs --version` or `npm run ctx -- --version`.
+- The packaged desktop app is Windows 10/11 x64; macOS/Linux use the CLI build path.
 
 ## MCP access
 
@@ -278,26 +245,6 @@ node out/cli/ctx.cjs doctor                            # diagnose config + runti
 
 `ctx init` backs up existing files as `.bak-YYYYMMDD-HHmmss`, merges marker-managed blocks idempotently (old `PENTEST` markers are migrated), validates JSON / TOML / YAML before writing, and installs the selected skill language. Restart the agent afterwards (not the GUI); then verify a read-only tool call such as `manage_snapshot({ "action": "list" })`.
 
-## CLI (`ctx`)
-
-Runs on Node without Electron, reads the same SQLite database. All commands accept `--json`; exit codes are 0 success, 1 parameter/IO error, 2 data not found.
-
-| Command | Description |
-| --- | --- |
-| `ctx init [--dry-run] [--yes] [--agents dsh,codex,claude,cursor] [--skill-lang zh\|en]` | Detect agents, show the planned diff, back up, then write MCP configs + skills + system rules |
-| `ctx doctor` | Check database, schema, MCP/CLI runtime, agent configs, GUI install and versions |
-| `ctx mcp print-config [agent]` | Print the stdio config snippet for DSH / Codex / Claude Code / Cursor |
-| `ctx vulns list [--severity] [--host] [--limit]` | List vulnerabilities |
-| `ctx vulns get <id>` | Show one full vulnerability: description, impact, interfaces, Markdown reproduction steps (HTTP requests/responses), remediation, retests and status |
-| `ctx vulns export <id[,id...]> [--out <dir>] [--all] [--severity …] [--host …] [--limit …]` | Export Markdown reports using the same template as the desktop app; default output directory `./cortex-reports` |
-| `ctx assets list [--search] [--status]` | List asset contexts |
-| `ctx assets get <host_port>` | Show one asset context with full interfaces (raw requests), leaks and test parameters |
-| `ctx snapshots list [--keyword]` | List cognitive snapshot sessions |
-| `ctx snapshots get <session_id>` | Show one snapshot session |
-| `ctx search <keyword>` | Search vulnerabilities, assets and snapshots together |
-| `ctx open [--dev] [--path <exe>]` | Launch or focus the desktop app (Windows install or source build) |
-| `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | Serve the same dashboard in a browser (loopback or trusted intranet only); prints one-time token login URLs |
-
 ## Skills (bilingual)
 
 ```
@@ -332,7 +279,7 @@ The installed layout (per-user on Windows):
     node_modules\                               better-sqlite3 (Node-API)
 ```
 
-`.github/workflows/release.yml` builds the Windows installer on `v*` / `cortex-v*` tags and publishes it to GitHub Releases. macOS/Linux are CLI-only (see “CLI only” above), so no macOS artifacts are produced.
+`.github/workflows/release.yml` builds the Windows installer on `v*` / `cortex-v*` tags and publishes it to GitHub Releases. macOS/Linux use the CLI build (see [CLI (ctx)](#cli-ctx) above), so no macOS artifacts are produced.
 
 ## Project layout
 
