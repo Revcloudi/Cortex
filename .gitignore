@@ -1,0 +1,31 @@
+node_modules
+out
+dist
+dist-electron
+*.log
+logs
+.DS_Store
+Thumbs.db
+.env
+.env.local
+coverage
+.cache
+*.db
+*.db-shm
+*.db-wal
+/screenshots/
+.tmp/
+.backup/
+# electron-builder output + downloaded Node runtime (rebuilt by
+# scripts/build-runtime.mjs / electron-builder, never committed)
+release/
+runtime/
+# Packaging artifacts that may also appear outside release/ during local builds
+*.dmg
+*.blockmap
+dev.log
+detector.json
+
+# IDE
+.idea/
+.vscode/

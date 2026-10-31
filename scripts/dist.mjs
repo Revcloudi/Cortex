@@ -1,0 +1,156 @@
+#!/usr/bin/env node
+/**
+ * One-command Cortex release build.
+ *
+ * Usage:
+ *   node scripts/dist.mjs --win
+ *   node scripts/dist.mjs --mac [--arch arm64|x64]
+ *
+ * Windows (`--win`):
+ *   1. `npm run build`        typecheck + Electron bundles + MCP bundle + CLI bundle
+ *   2. build-runtime          self-contained runtime/ (node.exe + ctx/mcp + native sqlite)
+ *   3. electron-builder       NSIS installer `release/Cortex-<version>-setup.exe`
+ *
+ * macOS (`--mac`, default arm64):
+ *   1. `npm run build`
+ *   2. build-runtime          runtime/ for darwin-<arch> (node + ctx + native sqlite)
+ *   3. electron-builder       `release/Cortex-<version>-<arch>.dmg` (unsigned)
+ *
+ * Mirrors are configurable so builds work behind the GFW:
+ *   ELECTRON_MIRROR, ELECTRON_BUILDER_BINARIES_MIRROR
+ * (defaults to npmmirror; override with your own values when needed).
+ * macOS builds are unsigned: CSC_IDENTITY_AUTO_DISCOVERY defaults to false.
+ */
+import { spawnSync } from 'node:child_process'
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const projectRoot = fileURLToPath(new URL('..', import.meta.url))
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+const argv = process.argv.slice(2)
+const RELEASE_DIR = join(projectRoot, 'release')
+
+function fail(message) {
+  console.error(`[dist] 错误: ${message}`)
+  process.exit(1)
+}
+
+function log(message) {
+  console.log(`[dist] ${message}`)
+}
+
+function optionValue(name) {
+  const index = argv.indexOf(name)
+  if (index === -1) return undefined
+  return argv[index + 1]
+}
+
+function usage() {
+  console.log(`Cortex 发布构建
+
+用法:
+  node scripts/dist.mjs --win
+  node scripts/dist.mjs --mac [--arch arm64|x64]
+
+说明:
+  --win    Windows x64 NSIS 安装包 → release/Cortex-<version>-setup.exe
+  --mac    macOS dmg（默认 arm64）→ release/Cortex-<version>-<arch>.dmg
+  可同时传 --win --mac。`)
+}
+
+if (argv.includes('--help') || argv.includes('-h')) {
+  usage()
+  process.exit(0)
+}
+
+const targets = []
+if (argv.includes('--win')) targets.push('win')
+if (argv.includes('--mac')) targets.push('mac')
+if (targets.length === 0) {
+  usage()
+  fail('请指定 --win 或 --mac')
+}
+
+if (argv.includes('--arch') && optionValue('--arch') === undefined) {
+  fail('--arch 缺少取值（arm64 | x64）')
+}
+const requestedMacArch = (optionValue('--arch') ?? 'arm64').toLowerCase()
+if (!['arm64', 'x64'].includes(requestedMacArch)) {
+  fail(`不支持的 macOS 架构: ${requestedMacArch}（可用: arm64 | x64）`)
+}
+if (targets.includes('win') && argv.includes('--arch') && requestedMacArch !== 'x64') {
+  fail('Windows 安装包只支持 x64；--arch 仅用于 --mac')
+}
+
+const MIRROR_ENV = {
+  ELECTRON_MIRROR: process.env.ELECTRON_MIRROR ?? 'https://npmmirror.com/mirrors/electron/',
+  ELECTRON_BUILDER_BINARIES_MIRROR:
+    process.env.ELECTRON_BUILDER_BINARIES_MIRROR ??
+    'https://npmmirror.com/mirrors/electron-builder-binaries/'
+}
+
+function run(command, args, extraEnv = {}) {
+  log(`${command} ${args.join(' ')}`)
+  const useShell = process.platform === 'win32' && /\.cmd$/i.test(command)
+  const result = spawnSync(command, args, {
+    cwd: projectRoot,
+    stdio: 'inherit',
+    env: { ...process.env, ...extraEnv },
+    shell: useShell
+  })
+  if (result.error) {
+    fail(`${command} 启动失败: ${result.error.message}`)
+  }
+  if (result.status !== 0) {
+    fail(`${command} ${args.join(' ')} 失败 (exit ${result.status ?? 'unknown'})`)
+  }
+}
+
+function localBin(name) {
+  const binary = join(projectRoot, 'node_modules', '.bin', process.platform === 'win32' ? `${name}.cmd` : name)
+  if (!existsSync(binary)) fail(`未找到 ${name}，请先 npm install`)
+  return binary
+}
+
+run(npmCommand, ['run', 'build'])
+
+if (targets.includes('win')) {
+  run(process.execPath, [
+    join(projectRoot, 'scripts', 'build-runtime.mjs'),
+    '--platform',
+    'win32',
+    '--arch',
+    'x64'
+  ])
+  run(localBin('electron-builder'), ['--win', 'nsis', '--x64'], MIRROR_ENV)
+}
+
+if (targets.includes('mac')) {
+  run(process.execPath, [
+    join(projectRoot, 'scripts', 'build-runtime.mjs'),
+    '--platform',
+    'darwin',
+    '--arch',
+    requestedMacArch
+  ])
+  run(localBin('electron-builder'), ['--mac', 'dmg', '--arch', requestedMacArch], {
+    ...MIRROR_ENV,
+    CSC_IDENTITY_AUTO_DISCOVERY: process.env.CSC_IDENTITY_AUTO_DISCOVERY ?? 'false'
+  })
+}
+
+if (existsSync(RELEASE_DIR)) {
+  const artifacts = readdirSync(RELEASE_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.(exe|dmg|zip|blockmap)$/i.test(entry.name))
+    .map((entry) => {
+      const size = statSync(join(RELEASE_DIR, entry.name)).size
+      return `  ${entry.name}  ${(size / 1024 / 1024).toFixed(1)} MB`
+    })
+  if (artifacts.length > 0) {
+    log('产物:')
+    console.log(artifacts.join('\n'))
+  }
+}
+
+log(`完成，产物位于 ${RELEASE_DIR}`)
