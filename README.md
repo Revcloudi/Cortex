@@ -44,17 +44,14 @@ The Windows installer is published to GitHub Releases by the release workflow. C
 
 > The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
 
-### During installation
+### Connect agents after installation
 
-**Windows (NSIS installer)** — setup asks:
+The installer only installs Cortex and its shortcuts. Start Cortex, open **MCP Access**, then either:
 
-1. **Which agents to connect**: DeepSeek Harness / Codex CLI / Claude Code / Cursor (multi-select; detected clients are pre-checked);
-2. **Skill language**: 中文 or English (installs the matching `vuln-db` / `asset-context` / `snapshot` skills);
-3. optionally, whether to add `bin` to the current-user PATH.
+- click **Connect agents** — detects local agents, writes their MCP config and the bilingual skills (skill language follows the UI language), then restart the agent; or
+- run `ctx init --yes` in a terminal (`ctx init --yes --agents dsh --skill-lang en` to choose explicitly).
 
-The installer then runs `ctx init` non-interactively with those choices. The same first-run welcome dialog appears if you skip the installer step. Uninstalling removes the program only — `%USERPROFILE%\.cortex\data.db` is preserved.
-
-The desktop UI supports **中文 / English switching** at any time from the sidebar; the choice is remembered. The skill language only affects the files installed into your agents and can be changed later with `ctx init --skill-lang`.
+Uninstalling removes the program only — `%USERPROFILE%\.cortex\data.db` is preserved. The UI supports **中文 / English switching** at any time; skill language can also be changed later with `ctx init --skill-lang`.
 
 ## Daily workflow
 
@@ -62,7 +59,7 @@ Once installed, Cortex is the memory layer for every engagement:
 
 1. **Findings go in through MCP.** While the agent hunts, it writes confirmed vulnerabilities, recon asset context and the current task snapshot into the local SQLite database (the installed skills/rules tell it when and how). No manual report assembly.
 2. **Agents read the library back at any time.** Before a new task, the agent queries asset context and existing vulnerabilities, so recon is reused and duplicate findings are avoided.
-3. **Humans review from the desktop app or terminal.** The desktop app provides the vulnerability dashboard, asset library, snapshot sessions and Markdown report export. `ctx` provides vulnerability / asset / snapshot queries, full-text search and diagnostics (report export is desktop-only for now).
+3. **Humans review from the desktop app or terminal.** The desktop app provides the vulnerability dashboard, asset library, snapshot sessions and Markdown report export. `ctx` provides vulnerability / asset / snapshot queries, full-text search, diagnostics and Markdown report export.
 4. **Resume a task in a new chat.** Just name the task, for example: *“Continue the Example Program IDOR task.”* The agent runs `manage_snapshot list`, loads the matching session (by project name, phase or `session_id`) and continues from `unfinished_tasks` / `next_steps`. If several sessions match, it asks you whether to continue one or create a new one.
 
 ```text
@@ -77,7 +74,7 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 - Asset context: full URLs, project, tech stack, structured interfaces (`path` / `method` / `params` / raw request), leaked info, non-secret `test_parameters` and related vulnerabilities. Legacy `interface_dir` arrays are normalized automatically.
 - One MCP server with exactly six tools: `save_vulnerability`, `query_vulnerabilities`, `update_vulnerability`, `sync_asset_info`, `query_asset_context`, `manage_snapshot`.
 - `ctx init` detects installed agents and writes their MCP config, the three skills and system-level hard rules idempotently (with backups, a dry-run mode and JSON / TOML / YAML validation).
-- GUI: vulnerability dashboard with server-side filtering/pagination, asset library with interface explorer, cognitive snapshot sessions (project → child hierarchy), Markdown report export, and a bilingual MCP access page with the launch command and a compact tool reference.
+- GUI: vulnerability dashboard with server-side filtering/pagination, asset library with interface explorer, cognitive snapshot sessions (project → child hierarchy), Markdown report export, and a compact bilingual MCP page with a one-click **Connect agents** action and the six-tool reference.
 - The sidebar database button can attach another Cortex SQLite file for browsing (desktop view only; agents keep using the default database).
 - The main process watches the SQLite files (`data.db`, `-wal`, `-shm`) with chokidar and pushes `data:changed`, so agent writes usually show up in under a second without losing filters or open detail panels.
 - Bilingual skills: `skills/zh/**` and `skills/en/**`; choose per installation.
@@ -200,9 +197,10 @@ Runs on Node without Electron, reads the same SQLite database. All commands acce
 | `ctx doctor` | Check database, schema, MCP/CLI runtime, agent configs, GUI install and versions |
 | `ctx mcp print-config [agent]` | Print the stdio config snippet for DSH / Codex / Claude Code / Cursor |
 | `ctx vulns list [--severity] [--host] [--limit]` | List vulnerabilities |
-| `ctx vulns get <id>` | Show one full vulnerability |
+| `ctx vulns get <id>` | Show one full vulnerability: description, impact, interfaces, Markdown reproduction steps (HTTP requests/responses), remediation, retests and status |
+| `ctx vulns export <id[,id...]> [--out <dir>] [--all] [--severity …] [--host …] [--limit …]` | Export Markdown reports using the same template as the desktop app; default output directory `./cortex-reports` |
 | `ctx assets list [--search] [--status]` | List asset contexts |
-| `ctx assets get <host_port>` | Show one asset context |
+| `ctx assets get <host_port>` | Show one asset context with full interfaces (raw requests), leaks and test parameters |
 | `ctx snapshots list [--keyword]` | List cognitive snapshot sessions |
 | `ctx snapshots get <session_id>` | Show one snapshot session |
 | `ctx search <keyword>` | Search vulnerabilities, assets and snapshots together |
@@ -250,7 +248,7 @@ src/
   core/        Electron-free database, paths, logging, version
   mcp/         pure stdio MCP server and the six tools
   cli/         ctx commands and agent config writers
-  main/        Electron main process (IPC, file watcher, first-run setup, no MCP server)
+  main/        Electron main process (IPC, file watcher, database switching, no MCP server)
   preload/     contextBridge API
   renderer/    React UI + lightweight zh/en i18n (messages in renderer/src/i18n)
 skills/        bilingual agent skills (zh / en)

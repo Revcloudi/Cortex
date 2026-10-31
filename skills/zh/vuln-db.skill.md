@@ -206,16 +206,7 @@ ctx init --agents dsh,claude      # 只处理指定 Agent（dsh / claude / codex
 
 `ctx init` 会安装 MCP 配置、三个 Skill 与系统级规则，备份为 `.bak-YYYYMMDD-HHmmss`，校验写入后的 JSON/TOML/YAML 可解析，最后提示重启 Agent。安装完成后运行 `ctx doctor` 自检。
 
-兼容入口（保留，便于旧脚本与 CI 复用）：
-
-```powershell
-node scripts/install-agent.mjs dsh      # DeepSeek Harness
-node scripts/install-agent.mjs codex    # OpenAI Codex CLI
-node scripts/install-agent.mjs claude   # Claude Code
-node scripts/install-agent.mjs all      # 全部
-```
-
-也可以直接复制 MCP 接入页对应 Agent 卡片里的配置片段（与 `ctx mcp print-config` 同一生成器，路径一致）。
+也可以运行 `ctx mcp print-config <agent>` 打印配置片段，或在 MCP 接入页点击「接入 Agent」自动写入。
 
 ### 各 Agent 的安装落点
 

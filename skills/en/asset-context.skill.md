@@ -269,8 +269,6 @@ ctx init --dry-run
 ctx init --agents dsh,claude,codex,cursor
 ```
 
-Compatibility entry point (retained for old scripts and CI): `node scripts/install-agent.mjs dsh|codex|claude|all`.
-
 - DSH: skill installed to `~/.agents/skills/asset-context/SKILL.md`, hard rules written to `~/.dsh/AGENTS.md`;
 - Codex: skill installed to `~/.codex/skills/asset-context/SKILL.md` and the shared `.agents/skills`, rules written to `~/.codex/AGENTS.md`;
 - Claude Code: skill installed to `~/.claude/skills/asset-context/SKILL.md`, rules written to `~/.claude/CLAUDE.md`;

@@ -102,7 +102,7 @@ export function buildRuleBlock(spec: RuleBlockSpec): string {
  * Remove the unmarked legacy vuln-db enforcement section written by
  * pre-marker installers. Once the managed block exists it owns that content;
  * the legacy copy would otherwise keep stale tool names next to fresh rules.
- * Ported from `scripts/install-agent.mjs` and kept pure and idempotent.
+ * Kept pure and idempotent.
  */
 export function removeLegacyVulnSection(content: string): string {
   const legacyStart = content.indexOf(LEGACY_VULN_HEADING)

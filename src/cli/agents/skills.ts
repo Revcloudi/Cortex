@@ -14,7 +14,7 @@ import type { AgentId, AgentPlan, FilePlan, SkillLanguage } from './index'
  *
  * Every agent gets the shared `~/.agents/skills/<name>/SKILL.md` copy (the only
  * location DSH reads). Codex and Claude Code additionally get their own copy
- * under `<agent home>/skills`, matching how `install-agent.mjs` did it.
+ * under `<agent home>/skills`, matching the legacy layout.
  */
 
 export const SKILL_NAMES = ['vuln-db', 'asset-context', 'snapshot'] as const

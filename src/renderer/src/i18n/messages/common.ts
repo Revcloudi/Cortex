@@ -17,6 +17,11 @@ export const commonMessages: MessageBundle = {
     'nav.mcp': 'MCP 接入',
     'sidebar.databaseConnected': '数据库已连接',
     'sidebar.databaseButton': '数据库',
+    'mcp.connect.button': '接入 Agent',
+    'mcp.connect.busy': '正在接入…',
+    'mcp.connect.done': '已写入配置，请重启 Agent',
+    'mcp.connect.none': '未检测到 Agent，请先安装客户端',
+    'mcp.connect.failed': '接入失败：{error}',
     'sidebar.databaseHint':
       '桌面端与 Agent 共享同一份本地 SQLite 文件，由主进程文件监听同步；MCP server 由 Agent 以 stdio 自行拉起。',
     'dbPicker.title': '数据库连接',
@@ -88,6 +93,11 @@ export const commonMessages: MessageBundle = {
     'nav.mcp': 'MCP Access',
     'sidebar.databaseConnected': 'Database connected',
     'sidebar.databaseButton': 'Database',
+    'mcp.connect.button': 'Connect agents',
+    'mcp.connect.busy': 'Connecting…',
+    'mcp.connect.done': 'Configuration written; restart the agents',
+    'mcp.connect.none': 'No agent detected; install a client first',
+    'mcp.connect.failed': 'Connect failed: {error}',
     'sidebar.databaseHint':
       'The desktop app and agents share the same local SQLite file; the main process watches the file and pushes updates. The MCP server is launched by the agent over stdio.',
     'dbPicker.title': 'Database connection',

@@ -206,16 +206,7 @@ ctx init --agents dsh,claude      # only handle the specified agents (dsh / clau
 
 `ctx init` installs the MCP config, the three skills and the system-level rules, backs files up as `.bak-YYYYMMDD-HHmmss`, validates that the written JSON/TOML/YAML parses, and finally prompts you to restart the agent. Run `ctx doctor` for a self-check after installation.
 
-Compatibility entry point (retained for old scripts and CI):
-
-```powershell
-node scripts/install-agent.mjs dsh      # DeepSeek Harness
-node scripts/install-agent.mjs codex    # OpenAI Codex CLI
-node scripts/install-agent.mjs claude   # Claude Code
-node scripts/install-agent.mjs all      # all of them
-```
-
-You can also copy the config snippet from the corresponding agent card on the MCP Access page (same generator and same paths as `ctx mcp print-config`).
+You can also print a snippet with `ctx mcp print-config <agent>`, or use the **Connect agents** button on the MCP page.
 
 ### Installation locations per agent
 

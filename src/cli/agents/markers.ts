@@ -36,8 +36,8 @@ export const RULE_MARKERS: MarkerPair = { begin: RULE_BLOCK_BEGIN, end: RULE_BLO
 export const ASSET_MARKERS: MarkerPair = { begin: ASSET_BLOCK_BEGIN, end: ASSET_BLOCK_END }
 
 /**
- * Pre-rename pairs written by earlier releases and by
- * `scripts/install-agent.mjs`. They are only read, never written.
+ * Pre-rename marker pairs written by earlier Cortex releases. They are only
+ * read and migrated, never written.
  */
 export const LEGACY_MCP_MARKERS: MarkerPair = {
   begin: '# ── PENTEST-DATA-HUB BEGIN ────────────────────────────────────',

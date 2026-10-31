@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Toaster } from 'sonner'
 import { Sidebar } from '@renderer/components/layout/Sidebar'
-import { SetupWizard } from '@renderer/components/setup/SetupWizard'
 import { TooltipProvider } from '@renderer/components/ui/tooltip'
 import { DashboardPage } from '@renderer/pages/DashboardPage'
 import { AssetPage } from '@renderer/pages/AssetPage'
@@ -46,12 +45,10 @@ export default function App() {
               ) : page === 'snapshots' ? (
                 <SnapshotPage dataVersion={dataVersion} />
               ) : (
-                <McpPage info={info} />
+                <McpPage />
               )}
             </main>
           </div>
-
-          <SetupWizard />
 
           <Toaster
             theme="light"

@@ -14,7 +14,6 @@ import {
   formatLocalTime,
   renderTable,
   shouldUseColor,
-  truncate,
   type ColorOptions,
   type TableColumn
 } from '../format'
@@ -153,10 +152,13 @@ function renderDetailHuman(asset: AssetContext, useColor: boolean): string {
       const prefix = item.method !== undefined ? `${item.method} ${item.path}` : item.path
       lines.push(`  - ${prefix}`)
       if (item.params !== undefined && item.params.length > 0) {
-        lines.push(`      参数: ${truncate(item.params, 300)}`)
+        lines.push(`      参数: ${item.params}`)
       }
       if (item.request !== undefined && item.request.length > 0) {
-        lines.push(`      原始请求: 已记录（${item.request.length} 字符）`)
+        lines.push('      原始请求:')
+        for (const requestLine of item.request.split(/\r?\n/)) {
+          lines.push(requestLine.length > 0 ? `        ${requestLine}` : '')
+        }
       }
     }
   }
@@ -166,9 +168,9 @@ function renderDetailHuman(asset: AssetContext, useColor: boolean): string {
     lines.push('  （无）')
   } else {
     for (const info of asset.leaked_infos) {
-      lines.push(`  - [${leakedInfoTypeLabel(info.info_type)}] ${truncate(info.source, 160)}`)
-      lines.push(`      值: ${truncate(info.value, 200)}`)
-      lines.push(`      影响: ${truncate(info.potential_impact, 300)}`)
+      lines.push(`  - [${leakedInfoTypeLabel(info.info_type)}] ${info.source}`)
+      lines.push(`      值: ${info.value}`)
+      lines.push(`      影响: ${info.potential_impact}`)
     }
   }
 

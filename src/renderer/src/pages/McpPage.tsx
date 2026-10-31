@@ -1,59 +1,100 @@
-import type { AppInfo } from '@shared/types'
-import { stdioCommandDisplay } from '@shared/mcpConfig'
-import { Database } from 'lucide-react'
+import { useState } from 'react'
+import { Loader2, Plug } from 'lucide-react'
+import { Button } from '@renderer/components/ui/button'
 import { CopyButton } from '@renderer/components/common/CopyButton'
 import { McpToolsTable } from '@renderer/components/mcp/McpToolsTable'
 import { useI18n } from '@renderer/i18n'
-
-interface McpPageProps {
-  info: AppInfo | null
-}
+import { getApi, toErrorMessage } from '@renderer/lib/api'
+import { cn } from '@renderer/lib/utils'
 
 /**
- * MCP access page: one-screen summary with the launch command, the database
- * file and the six tools. Agent setup snippets live in `ctx init` / docs; the
- * page deliberately fits without scrolling.
+ * MCP access page: one compact action row (connect agents / copy the init
+ * command) plus the six-tool reference. No installer-time agent setup: the
+ * configuration is written here, after the user has installed the app.
  */
-export function McpPage({ info }: McpPageProps) {
-  const { t } = useI18n()
+export function McpPage() {
+  const { t, lang } = useI18n()
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
 
-  const runtime = info?.mcpRuntime ?? null
-  const launchCommand = runtime ? stdioCommandDisplay(runtime) : null
+  const connect = async (): Promise<void> => {
+    const api = getApi()
+    if (!api) {
+      setMessage({ text: t('common.apiUnavailable'), error: true })
+      return
+    }
+    setBusy(true)
+    setMessage(null)
+    try {
+      const info = await api.getSetupInfo()
+      const agents = info.agents.filter((agent) => agent.detected).map((agent) => agent.id)
+      if (agents.length === 0) {
+        setMessage({ text: t('mcp.connect.none'), error: true })
+        return
+      }
+      const result = await api.runSetup({
+        agents,
+        skillLanguage: lang,
+        uiLanguage: lang
+      })
+      if (result.success) {
+        setMessage({ text: t('mcp.connect.done'), error: false })
+      } else {
+        setMessage({
+          text: t('mcp.connect.failed', {
+            error: result.warnings[0] ?? t('common.unknownError')
+          }),
+          error: true
+        })
+      }
+    } catch (error) {
+      setMessage({
+        text: t('mcp.connect.failed', { error: toErrorMessage(error, t) }),
+        error: true
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
-    <section className="mx-auto flex h-full w-full max-w-[1240px] flex-col gap-4 px-8 py-6">
-      <div
-        data-testid="mcp-transport"
-        className="rounded-[10px] border border-border bg-background px-5 py-4"
-      >
-        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-          {t('mcp.stdio.launchCommand')}
-        </p>
-        <div className="mt-2 flex items-start justify-between gap-2 rounded-md border border-border bg-sidebar px-3 py-2">
-          <code className="min-w-0 whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-foreground">
-            {launchCommand ?? t('mcp.stdio.loadingCommand')}
+    <section
+      data-testid="mcp-page"
+      className="mx-auto flex h-full w-full max-w-[1240px] flex-col px-8 py-6"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <code className="rounded-md border border-border bg-sidebar px-2.5 py-1.5 font-mono text-[11px] text-foreground">
+            ctx init --yes
           </code>
-          {launchCommand ? (
-            <CopyButton
-              value={launchCommand}
-              label={t('mcp.stdio.copyCommand')}
-              toastMessage={t('mcp.stdio.copiedCommand')}
-            />
-          ) : null}
+          <CopyButton
+            value="ctx init --yes"
+            label={t('common.copy')}
+            toastMessage={t('common.copied')}
+          />
         </div>
+        <Button size="sm" onClick={() => void connect()} disabled={busy}>
+          {busy ? (
+            <Loader2 aria-hidden="true" className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Plug aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          {busy ? t('mcp.connect.busy') : t('mcp.connect.button')}
+        </Button>
       </div>
 
-      <div className="flex items-start gap-2.5 rounded-[10px] border border-border bg-background px-5 py-3.5">
-        <Database aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0">
-          <p className="text-[10.5px] text-muted-foreground">{t('mcp.database.file')}</p>
-          <p className="mt-0.5 break-all font-mono text-[11.5px] leading-relaxed text-foreground">
-            {info?.dbPath ?? '—'}
-          </p>
-        </div>
-      </div>
+      {message !== null ? (
+        <p
+          className={cn(
+            'mt-2 text-[11.5px] leading-relaxed',
+            message.error ? 'text-red-700' : 'text-emerald-700'
+          )}
+        >
+          {message.text}
+        </p>
+      ) : null}
 
-      <div className="min-h-0 flex-1">
+      <div className="mt-4 min-h-0 flex-1">
         <McpToolsTable />
       </div>
     </section>

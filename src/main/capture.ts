@@ -417,7 +417,7 @@ export async function runCaptureMode(
     await ensureSheetClosed()
     await delay(350)
     await clickNav('MCP 接入')
-    await waitForSelector('[data-testid="mcp-transport"]', true)
+    await waitForSelector('[data-testid="mcp-page"]', true)
     await delay(900)
     await captureStep('10-mcp-page.png')
 

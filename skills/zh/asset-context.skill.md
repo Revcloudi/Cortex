@@ -269,8 +269,6 @@ ctx init --dry-run
 ctx init --agents dsh,claude,codex,cursor
 ```
 
-兼容入口（保留，便于旧脚本与 CI 复用）：`node scripts/install-agent.mjs dsh|codex|claude|all`。
-
 - DSH：Skill 安装到 `~/.agents/skills/asset-context/SKILL.md`，硬性规则写入 `~/.dsh/AGENTS.md`；
 - Codex：Skill 安装到 `~/.codex/skills/asset-context/SKILL.md` 与共享 `.agents/skills`，规则写入 `~/.codex/AGENTS.md`；
 - Claude Code：Skill 安装到 `~/.claude/skills/asset-context/SKILL.md`，规则写入 `~/.claude/CLAUDE.md`；

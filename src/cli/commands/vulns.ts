@@ -1,4 +1,6 @@
 import type { CAC } from 'cac'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import {
   SEVERITIES,
   SEVERITY_LABELS,
@@ -8,6 +10,10 @@ import {
   type VulnHostQueryResult,
   type Vulnerability
 } from '../../shared/types'
+import {
+  buildReportFilename,
+  buildVulnerabilityReportMarkdown
+} from '../../main/export/markdownReport'
 import { createCliContext, openDatabase, type CliContext } from '../context'
 import { CliError, notFound } from '../errors'
 import {
@@ -36,6 +42,13 @@ export interface VulnsListOptions {
   severity?: string
   host?: string
   limit?: string | number
+}
+
+export interface VulnsExportOptions extends VulnsListOptions {
+  /** Output directory; defaults to ./cortex-reports. */
+  out?: string
+  /** Export every record matching the filters instead of explicit IDs. */
+  all?: boolean
 }
 
 const LIST_COLUMNS: TableColumn[] = [
@@ -248,14 +261,28 @@ function appendParagraph(
   lines.push('', color.bold(heading, options), text.trimEnd())
 }
 
+/** Detail view sections stay visible even when the record omitted the content. */
+function appendDetailParagraph(
+  lines: string[],
+  heading: string,
+  text: string,
+  options: ColorOptions
+): void {
+  lines.push('', color.bold(heading, options))
+  lines.push(text.trim().length > 0 ? text.trimEnd() : '（未记录）')
+}
+
 function appendList(
   lines: string[],
   heading: string,
   values: readonly string[],
   options: ColorOptions
 ): void {
-  if (values.length === 0) return
   lines.push('', color.bold(`${heading}（${values.length}）`, options))
+  if (values.length === 0) {
+    lines.push('  （无）')
+    return
+  }
   for (const value of values) lines.push(bullet(value))
 }
 
@@ -290,15 +317,15 @@ export function renderVulnerabilityDetail(vulnerability: Vulnerability, useColor
   lines.push(`${color.dim('目标:', options)} ${vulnerability.target_url}`)
   lines.push(`${color.dim('创建:', options)} ${formatLocalTime(vulnerability.created_at)}`)
 
-  appendParagraph(lines, '描述', vulnerability.description, options)
-  appendParagraph(lines, '影响', vulnerability.impact, options)
+  appendDetailParagraph(lines, '描述', vulnerability.description, options)
+  appendDetailParagraph(lines, '影响', vulnerability.impact, options)
   appendList(lines, '受影响接口', vulnerability.affected_interfaces, options)
-  appendParagraph(lines, '复现步骤', vulnerability.reproduction_steps, options)
+  appendDetailParagraph(lines, '复现步骤（Markdown，含请求/响应）', vulnerability.reproduction_steps, options)
   appendList(lines, '修复建议', vulnerability.remediation, options)
   if (isMeaningfulSection(vulnerability.crypto_details)) {
     appendParagraph(lines, '加密 / 签名细节', vulnerability.crypto_details, options)
   }
-  appendParagraph(lines, '测试边界', vulnerability.test_boundaries, options)
+  appendDetailParagraph(lines, '测试边界', vulnerability.test_boundaries, options)
 
   if (vulnerability.retest_results.length > 0) {
     lines.push('', color.bold(`复测记录（${vulnerability.retest_results.length}）`, options))
@@ -346,22 +373,116 @@ export async function runVulnGet(
   }
 }
 
+function parseExportIds(raw: string | undefined): string[] {
+  const value = raw?.trim() ?? ''
+  if (value.length === 0) return []
+  const ids = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+  return [...new Set(ids)]
+}
+
+function collectExportRecords(
+  database: ReturnType<typeof openDatabase>,
+  ids: string[],
+  options: VulnsExportOptions
+): Vulnerability[] {
+  if (ids.length > 0) {
+    return ids.map((id) => {
+      const record = database.getById(id)
+      if (record === null) throw notFound(`未找到 ID 为 ${id} 的漏洞`)
+      return record
+    })
+  }
+  if (options.all !== true) {
+    throw new CliError('缺少漏洞 ID：ctx vulns export <id[,id...]> 或 --all', 1)
+  }
+
+  const severity = parseSeverityOption(options.severity)
+  const limit = parseLimitOption(options.limit)
+  const host = options.host?.trim() ?? ''
+  const idsToExport =
+    host.length > 0
+      ? database
+          .queryByHost(host)
+          .filter((item) => severity === 'all' || item.severity === severity)
+          .slice(0, limit)
+          .map((item) => item.vuln_id)
+      : database.list({ severity, page: 1, pageSize: limit }).items.map((item) => item.id)
+
+  return idsToExport.map((id) => {
+    const record = database.getById(id)
+    if (record === null) throw notFound(`未找到 ID 为 ${id} 的漏洞`)
+    return record
+  })
+}
+
+/** Export vulnerabilities as Markdown report files (same format as the GUI export). */
+export async function runVulnsExport(
+  rawIds: string | undefined,
+  options: VulnsExportOptions,
+  context: CliContext
+): Promise<void> {
+  const ids = parseExportIds(rawIds)
+  const database = openDatabase(context)
+  try {
+    const records = collectExportRecords(database, ids, options)
+    const outDir = resolve(options.out?.trim().length ? (options.out as string) : 'cortex-reports')
+    mkdirSync(outDir, { recursive: true })
+
+    const files: string[] = []
+    for (const record of records) {
+      let filename = buildReportFilename(record)
+      let target = join(outDir, filename)
+      if (existsSync(target)) {
+        filename = `${filename.replace(/\.md$/i, '')}-${record.id}.md`
+        target = join(outDir, filename)
+      }
+      writeFileSync(target, buildVulnerabilityReportMarkdown(record), 'utf8')
+      files.push(target)
+    }
+
+    if (context.json) {
+      writeJson(context, { outDir, files })
+      return
+    }
+    const lines = [`已导出 ${files.length} 份 Markdown 报告到 ${outDir}`]
+    for (const file of files) lines.push(`  - ${file}`)
+    context.stdout(lines.join('\n'))
+  } finally {
+    database.close()
+  }
+}
+
 export function registerVulnCommands(cli: CAC): void {
   cli
-    .command('vulns <action> [id]', '漏洞查询：list 列表 / get 详情')
-    .option('--severity <severity>', '严重程度：Critical|High|Medium|Low|Info|all（list）')
-    .option('--host <host>', '按 Host 精确过滤（大小写不敏感，list）')
-    .option('--limit <n>', `返回条数，默认 ${DEFAULT_LIST_LIMIT}，范围 1-${MAX_LIST_LIMIT}（list）`)
-    .action(async (action: string, id: string | undefined, options: VulnsListOptions) => {
-      const context = createCliContext()
-      if (action === 'list') {
-        await runVulnsList(options, context)
-        return
+    .command('vulns <action> [id]', '漏洞查询：list 列表 / get 详情 / export 导出 Markdown 报告')
+    .option('--severity <severity>', '严重程度：Critical|High|Medium|Low|Info|all（list / export --all）')
+    .option('--host <host>', '按 Host 精确过滤（大小写不敏感，list / export --all）')
+    .option('--limit <n>', `返回条数，默认 ${DEFAULT_LIST_LIMIT}，范围 1-${MAX_LIST_LIMIT}（list / export --all）`)
+    .option('--out <dir>', '导出目录，默认 ./cortex-reports（export）')
+    .option('--all', '导出所有匹配的漏洞（export）')
+    .action(
+      async (
+        action: string,
+        id: string | undefined,
+        options: VulnsExportOptions
+      ) => {
+        const context = createCliContext()
+        if (action === 'list') {
+          await runVulnsList(options, context)
+          return
+        }
+        if (action === 'get') {
+          await runVulnGet(id, context)
+          return
+        }
+        if (action === 'export') {
+          await runVulnsExport(id, options, context)
+          return
+        }
+        throw new CliError(`未知 vulns 子命令: ${action}（可选 list | get | export）`, 1)
       }
-      if (action === 'get') {
-        await runVulnGet(id, context)
-        return
-      }
-      throw new CliError(`未知 vulns 子命令: ${action}（可选 list | get）`, 1)
-    })
+    )
 }

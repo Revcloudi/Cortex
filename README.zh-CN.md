@@ -44,17 +44,14 @@ Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex
 
 > 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。安装包未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"）。
 
-### 安装时会询问
+### 安装后接入 Agent
 
-**Windows（NSIS 安装器）** 会依次询问：
+安装器只负责安装 Cortex 和快捷方式。启动 Cortex，打开 **MCP 接入** 页面，然后任选其一：
 
-1. **接入哪些 Agent**：DeepSeek Harness / Codex CLI / Claude Code / Cursor（多选，检测到的客户端默认勾选）；
-2. **Skill 语言**：中文 / English（安装对应语言的 `vuln-db` / `asset-context` / `snapshot` Skill）；
-3. 可选：是否把 `bin` 加入当前用户 PATH。
+- 点击 **接入 Agent**：自动检测本机 Agent，写入 MCP 配置与对应语言的 Skill（Skill 语言跟随界面语言），之后重启 Agent；或
+- 在终端执行 `ctx init --yes`（显式指定可用 `ctx init --yes --agents dsh --skill-lang en`）。
 
-随后安装器会用这些选择非交互执行 `ctx init`；如果安装时跳过配置，首次启动也会显示同样的欢迎对话框。卸载只删除程序，保留 `%USERPROFILE%\.cortex\data.db`。
-
-桌面端界面支持**中英文随时切换**（侧边栏底部），选择会被记住。Skill 语言只影响写入 Agent 的文件，之后仍可用 `ctx init --skill-lang` 修改。
+卸载只删除程序，保留 `%USERPROFILE%\.cortex\data.db`。桌面端界面支持**中英文随时切换**；Skill 语言之后也可用 `ctx init --skill-lang` 修改。
 
 ## 日常使用
 
@@ -62,7 +59,7 @@ Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex
 
 1. **漏洞挖掘过程通过 MCP 入库**：Agent 按已安装的 Skill/规则，把确认的漏洞、侦察到的资产上下文和当前任务快照写入本地 SQLite，不需要手工整理报告。
 2. **Agent 随时可以读库**：开始新任务前先查已有资产上下文和漏洞记录，复用侦察成果、避免重复上报。
-3. **人类在桌面端或终端查看**：桌面端提供漏洞看板、资产库、认知快照和 Markdown 报告导出；`ctx` 提供漏洞/资产/会话查询、全文搜索与诊断（报告导出目前仅在桌面端）。
+3. **人类在桌面端或终端查看**：桌面端提供漏洞看板、资产库、认知快照和 Markdown 报告导出；`ctx` 提供漏洞/资产/会话查询、全文搜索、诊断和 Markdown 报告导出。
 4. **新对话直接接着跑历史任务**：直接说“继续 Example Program 的 IDOR 验证任务”。Agent 会先 `manage_snapshot list`，按项目名、阶段或 `session_id` 找到匹配会话并 `load`，从未完成事项和下一步继续；如果匹配到多个会话，会先让你选择继续哪个或新建。
 
 ```text
@@ -77,7 +74,7 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 - 资产上下文：完整 URL、项目、技术栈、结构化 `interfaces`（`path` / `method` / `params` / 原始请求）、敏感泄露、非密 `test_parameters` 与关联漏洞；旧版 `interface_dir` 自动规范化。
 - 固定 6 个 MCP 工具：`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`。
 - `ctx init` 自动检测 Agent，幂等写入 MCP 配置、3 个 Skill 与系统级强制规则（带备份、`--dry-run`、JSON/TOML/YAML 校验）。
-- 桌面端：漏洞看板（服务端过滤/分页）、资产库（接口浏览器）、认知快照（项目 → 子会话层级）、Markdown 报告导出、双语 MCP 接入页（启动命令 + 精简工具表）。
+- 桌面端：漏洞看板（服务端过滤/分页）、资产库（接口浏览器）、认知快照（项目 → 子会话层级）、Markdown 报告导出、双语 MCP 接入页（一键「接入 Agent」+ 精简工具表）。
 - 侧边栏数据库按钮可切换到任意 Cortex SQLite 文件查看（仅桌面端；Agent 仍使用默认数据库）。
 - 主进程用 chokidar 监听 SQLite 文件（`data.db`、`-wal`、`-shm`）并推送 `data:changed`，Agent 写入通常 1 秒内可见，且不丢失筛选与打开的详情。
 - Skill 双语：`skills/zh/**` 与 `skills/en/**`，安装时选择。
@@ -200,9 +197,10 @@ Node 运行、不依赖 Electron，读取同一份 SQLite。所有命令支持 `
 | `ctx doctor` | 检查数据库、schema、MCP/CLI 运行时、Agent 配置、GUI 安装与版本 |
 | `ctx mcp print-config [agent]` | 打印 DSH / Codex / Claude Code / Cursor 的 stdio 配置片段 |
 | `ctx vulns list [--severity] [--host] [--limit]` | 漏洞列表 |
-| `ctx vulns get <id>` | 查看完整漏洞 |
+| `ctx vulns get <id>` | 查看完整漏洞：描述/影响/接口/Markdown 复现步骤（含请求与响应）/修复建议/复测记录/状态 |
+| `ctx vulns export <id[,id...]> [--out <dir>] [--all] [--severity …] [--host …] [--limit …]` | 导出与桌面端相同模板的 Markdown 报告；默认目录 `./cortex-reports` |
 | `ctx assets list [--search] [--status]` | 资产列表 |
-| `ctx assets get <host_port>` | 查看资产上下文 |
+| `ctx assets get <host_port>` | 查看资产详情：完整接口（含原始请求）、敏感泄露与测试参数 |
 | `ctx snapshots list [--keyword]` | 认知快照列表 |
 | `ctx snapshots get <session_id>` | 查看单条会话 |
 | `ctx search <keyword>` | 同时搜索漏洞 / 资产 / 快照 |
@@ -250,7 +248,7 @@ src/
   core/        Electron-free 数据库、路径、日志、版本
   mcp/         纯 stdio MCP Server 与 6 个工具
   cli/         ctx 命令与 Agent 配置写入
-  main/        Electron 主进程（IPC、文件监听、首次启动向导，不启动 MCP）
+  main/        Electron 主进程（IPC、文件监听、数据库切换，不启动 MCP）
   preload/     contextBridge API
   renderer/    React 界面 + 轻量 zh/en i18n（消息在 renderer/src/i18n）
 skills/        双语 Agent Skill（zh / en）
