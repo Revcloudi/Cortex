@@ -14,7 +14,7 @@
 
 > **仅限授权测试。** Cortex 仅用于你拥有或已获得明确书面授权的系统；使用者需自行遵守相关法律、合同与测试范围约束。
 
-**简体中文** · [English](README.md) · [仅安装 CLI](#仅安装-climacos--linux--windows) · [Windows 桌面端](#windows-桌面端) · [使用示例](#使用示例) · [MCP 工具](#mcp-接入)
+**简体中文** · [English](README.md) · [仅安装 CLI](#仅安装-climacos--linux--windows) · [Windows 桌面端](#windows-桌面端) · [MCP 工具](#mcp-接入)
 
 ## 仅安装 CLI（macOS / Linux / Windows）
 
@@ -189,114 +189,6 @@ node out/cli/ctx.cjs doctor                            # 诊断配置与运行�
 ```
 
 `ctx init` 会把已有文件备份为 `.bak-YYYYMMDD-HHmmss`，用 marker 幂等合并（旧的 `PENTEST` 标记会自动迁移），写入前校验 JSON / TOML / YAML，并安装所选语言的 Skill。重启对应 Agent（不是重启 GUI）后，用只读工具调用（如 `manage_snapshot({ "action": "list" })`）验证链路。
-
-## 使用示例
-
-MCP 走 **stdio JSON-RPC**，没有可 curl 的 HTTP 端点。执行 `ctx init` 后由 Agent 拉起 MCP 并调用 6 个工具；桌面端与 `ctx` 读取同一份 SQLite，Agent 写入后 GUI/CLI 立即能看到。
-
-| 工具 | 什么时候用 |
-| --- | --- |
-| `query_asset_context` | 测试资产前：复用项目名、技术栈、接口、泄露与测试参数。 |
-| `sync_asset_info` | 侦察/JS 审计/抓包后：写入指纹、结构化接口、敏感泄露与非密测试参数。 |
-| `query_vulnerabilities` | 保存前查重，或回顾已有漏洞记录。 |
-| `save_vulnerability` | 写入确认漏洞（含 Markdown 复现步骤）。 |
-| `update_vulnerability` | 状态流转，或追加复测结论而不覆盖原始证据。 |
-| `manage_snapshot` | 保存/恢复当前任务的战术状态（“会话记忆”）。 |
-
-### 1. 复用侦察成果并写入资产上下文
-
-先让 Agent 读取已有记忆（DSH 中工具名是 `mcp__cortex__*`，其他客户端用不带前缀的名字）：
-
-```text
-query_asset_context({ "host_port": "https://app.example.com/login" })
-query_asset_context({ "project_name": "示例项目" })
-```
-
-侦察完成后写入本次结果（`sync_asset_info` 参数）：
-
-```json
-{
-  "mode": "merge",
-  "host_port": "https://app.example.com/login",
-  "project_name": "示例项目",
-  "tech_stack": "Nginx, Spring Boot, Vue",
-  "interfaces": [
-    {
-      "path": "/api/v1/files/download",
-      "method": "GET",
-      "params": "file_id=1",
-      "request": "GET /api/v1/files/download?file_id=1 HTTP/1.1\r\nHost: app.example.com\r\n"
-    }
-  ],
-  "test_parameters": [
-    {
-      "name": "file_id",
-      "endpoint": "GET /api/v1/files/download?id={id}",
-      "location": "query",
-      "values": ["1", "2", "3"],
-      "pattern": "自增整数"
-    }
-  ]
-}
-```
-
-规则：`host_port` 优先传完整 URL；`mode: "replace"` 写完整快照，`mode: "merge"` 增量合并；JS/CSS/图片只作为证据，不是接口。
-
-### 2. 查重、写入与复测
-
-```text
-query_vulnerabilities({ "host": "app.example.com:443" })
-```
-
-新漏洞调用 `save_vulnerability`（字段含 `vuln_name`、`host`、`severity`、`target_url`、`description`、`impact`、Markdown 格式的 `reproduction_steps`、`remediation`、`status` 等）。复测已有漏洞时只追加：
-
-````text
-update_vulnerability({
-  "vuln_id": "VULN-20260101-001",
-  "retest": {
-    "time_range": "2026-01-02 10:00–10:04",
-    "conclusion": "### 复测结论\n\n- **结果**：仍可复现\n\n```http\nGET /api/v1/files/download?file_id=1 HTTP/1.1\nHost: app.example.com\n```"
-  }
-})
-````
-
-不要用 `save_vulnerability` 覆盖原始证据；复测和状态流转都用 `update_vulnerability`。
-
-### 3. 会话记忆（认知快照）
-
-快照与漏洞/资产存在同一个 SQLite 数据库里，Agent 重启后仍可恢复。新会话开始时：
-
-```text
-manage_snapshot({ "action": "list" })
-manage_snapshot({ "action": "load", "session_id": "SESS-20260101-001" })
-```
-
-阶段完成 / 上下文将满 / 会话结束前保存：
-
-```json
-{
-  "action": "save",
-  "payload": {
-    "project_name": "示例项目",
-    "target_hosts": ["app.example.com"],
-    "current_phase": "IDOR 验证",
-    "unfinished_tasks": ["验证 /api/v1/orders/{id} 是否能读租户 B 数据"],
-    "failed_paths": ["/admin 需要 SSO"],
-    "next_steps": "枚举下载接口的 file_id"
-  }
-}
-```
-
-- 项目会话可挂**一层**子会话（`parent_session_id`）；同一任务只维护一个活跃会话。
-- 同项目已有会话时，`save` 会返回 `SESSION_EXISTS` + 候选，必须让用户选择「继续已有会话」或 `force_new: true`，不要自行猜测。
-- `attach_assets({ "hosts": ["app.example.com"] })` 把目标并入会话；`restore_previous` 回滚一次覆盖。
-- 快照只放结论/战术状态（`notes`、`tested_interfaces`、`related_vuln_ids`），不要放大段 HTTP 报文/截图；payload ≤32,000 字符，`notes` 只用路径引用证据。
-- 归档会话在数据库中只读；需要复用时先在桌面端取消归档。
-
-### 4. 查看与交接
-
-- 桌面端：漏洞看板、资产库、认知快照（项目 → 子会话）、Markdown 导出；侧边栏数据库按钮可打开其它 SQLite 文件查看。
-- CLI：`ctx vulns list --severity High`、`ctx assets get app.example.com`、`ctx snapshots list`、`ctx search 支付`、`ctx doctor`。
 
 ## CLI（ctx）
 
