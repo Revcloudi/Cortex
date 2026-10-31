@@ -1001,6 +1001,16 @@ export interface AppInfo {
   mcpRuntime: McpRuntimeInfo
 }
 
+/** Result of the desktop database-picker actions. */
+export interface DatabaseSwitchResult {
+  cancelled: boolean
+  /** Human-readable error when the chosen file could not be opened. */
+  error: string | null
+  /** Database path currently attached after the switch. */
+  dbPath: string | null
+  appInfo: AppInfo | null
+}
+
 /* -------------------------------------------------------------------------- */
 /*  First-run setup wizard / installer-driven agent configuration             */
 /* -------------------------------------------------------------------------- */

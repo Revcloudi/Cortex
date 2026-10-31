@@ -36,6 +36,8 @@ export const IPC_CHANNELS = {
   archiveSnapshot: 'snapshots:archive',
   deleteSnapshot: 'snapshots:delete',
   getDatabaseInfo: 'db:info',
+  chooseDatabase: 'db:choose',
+  resetDatabase: 'db:reset',
   getAppInfo: 'app:info',
   getSetupInfo: 'setup:info',
   runSetup: 'setup:run',
@@ -53,6 +55,7 @@ import type {
   AssetListItem,
   DashboardStats,
   DatabaseInfo,
+  DatabaseSwitchResult,
   DeleteAssetResult,
   DeleteSnapshotResult,
   DeleteVulnResult,
@@ -102,6 +105,10 @@ export interface CortexApi {
   restoreSnapshotPrevious(sessionId: string): Promise<SnapshotSession>
   /** Read-only database status for the MCP page / doctor view. */
   getDatabaseInfo(): Promise<DatabaseInfo>
+  /** Open a native file picker and attach the selected SQLite database in the desktop app. */
+  chooseDatabase(): Promise<DatabaseSwitchResult>
+  /** Re-attach the default database (`~/.cortex/data.db`). */
+  resetDatabase(): Promise<DatabaseSwitchResult>
   getAppInfo(): Promise<AppInfo>
   /** Agent detection + first-run setup state for the setup wizard. */
   getSetupInfo(): Promise<SetupInfo>

@@ -7,6 +7,7 @@ import type {
   AssetListItem,
   DashboardStats,
   DatabaseInfo,
+  DatabaseSwitchResult,
   DeleteAssetResult,
   DeleteSnapshotResult,
   DeleteVulnResult,
@@ -93,6 +94,12 @@ const api: CortexApi = {
   },
   getDatabaseInfo(): Promise<DatabaseInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.getDatabaseInfo) as Promise<DatabaseInfo>
+  },
+  chooseDatabase(): Promise<DatabaseSwitchResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chooseDatabase) as Promise<DatabaseSwitchResult>
+  },
+  resetDatabase(): Promise<DatabaseSwitchResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.resetDatabase) as Promise<DatabaseSwitchResult>
   },
   getAppInfo(): Promise<AppInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.getAppInfo) as Promise<AppInfo>

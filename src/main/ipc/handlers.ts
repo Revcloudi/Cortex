@@ -19,6 +19,7 @@ import {
 } from './schemas'
 import type {
   AppInfo,
+  DatabaseSwitchResult,
   DeleteSnapshotResult,
   ExportReportsResult,
   SetupInfo,
@@ -39,6 +40,7 @@ export interface IpcHandlerDeps {
   notifyDataChanged: () => void
   seedDemo: () => number
   appInfo: AppInfo
+  switchDatabase: (dbPath: string | null) => Promise<AppInfo>
 }
 
 /**
@@ -254,6 +256,48 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return deps.appInfo
   })
 
+  ipcMain.handle(
+    IPC_CHANNELS.chooseDatabase,
+    async (): Promise<DatabaseSwitchResult> => {
+      const choice = await dialog.showOpenDialog({
+        title: 'Select a Cortex SQLite database',
+        properties: ['openFile'],
+        filters: [
+          { name: 'SQLite database', extensions: ['db', 'sqlite', 'sqlite3'] },
+          { name: 'All files', extensions: ['*'] }
+        ]
+      })
+      if (choice.canceled || choice.filePaths.length === 0) {
+        return { cancelled: true, error: null, dbPath: null, appInfo: null }
+      }
+      try {
+        const info = await deps.switchDatabase(choice.filePaths[0])
+        return { cancelled: false, error: null, dbPath: info.dbPath, appInfo: info }
+      } catch (error) {
+        return {
+          cancelled: false,
+          error: error instanceof Error ? error.message : String(error),
+          dbPath: null,
+          appInfo: null
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.resetDatabase, async (): Promise<DatabaseSwitchResult> => {
+    try {
+      const info = await deps.switchDatabase(null)
+      return { cancelled: false, error: null, dbPath: info.dbPath, appInfo: info }
+    } catch (error) {
+      return {
+        cancelled: false,
+        error: error instanceof Error ? error.message : String(error),
+        dbPath: null,
+        appInfo: null
+      }
+    }
+  })
+
   ipcMain.handle(IPC_CHANNELS.getSetupInfo, (): SetupInfo => buildSetupInfo())
 
   ipcMain.handle(
@@ -300,6 +344,8 @@ export function unregisterIpcHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.archiveSnapshot)
   ipcMain.removeHandler(IPC_CHANNELS.deleteSnapshot)
   ipcMain.removeHandler(IPC_CHANNELS.getDatabaseInfo)
+  ipcMain.removeHandler(IPC_CHANNELS.chooseDatabase)
+  ipcMain.removeHandler(IPC_CHANNELS.resetDatabase)
   ipcMain.removeHandler(IPC_CHANNELS.getAppInfo)
   ipcMain.removeHandler(IPC_CHANNELS.getSetupInfo)
   ipcMain.removeHandler(IPC_CHANNELS.runSetup)

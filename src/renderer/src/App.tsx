@@ -35,7 +35,7 @@ export default function App() {
     <I18nProvider>
       <TooltipProvider delayDuration={200}>
         <div className="flex h-full overflow-hidden bg-canvas">
-          <Sidebar page={page} onNavigate={setPage} />
+          <Sidebar page={page} onNavigate={setPage} databasePath={info?.dbPath ?? null} />
 
           <div className="flex min-w-0 flex-1 flex-col">
             <main className="min-h-0 flex-1 overflow-y-auto">

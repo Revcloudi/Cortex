@@ -11,6 +11,9 @@ export type Translate = (key: string, params?: Record<string, string | number>) 
 export const API_UNAVAILABLE_MESSAGE =
   'Cannot reach the main-process API. Start the app through the Electron client.'
 
+/** Fired after the sidebar switches the desktop database (renderer-side only). */
+export const DATABASE_CHANGED_EVENT = 'cortex:database-changed'
+
 /** Localized "main-process API is missing" message, with an English fallback. */
 export function apiUnavailableMessage(t?: Translate): string {
   return t ? t('common.apiUnavailable') : API_UNAVAILABLE_MESSAGE

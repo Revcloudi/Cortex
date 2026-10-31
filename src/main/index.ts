@@ -15,6 +15,7 @@ import { runCaptureMode } from './capture'
 import { registerIpcHandlers, unregisterIpcHandlers } from './ipc/handlers'
 import { logger } from './logger'
 import { developmentNodeCommand, installedBinDir, nodeExecutableName } from './runtimePaths'
+import { configuredDatabasePath, persistDatabasePath } from './settings'
 import { createDatabaseWatcher, type DatabaseWatcher } from './watcher'
 
 const isDev = !app.isPackaged
@@ -175,32 +176,109 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-async function bootstrap(): Promise<void> {
-  const dbPath = resolveDbPath()
-  logger.info(`[cortex] v${CORTEX_VERSION} database: ${dbPath}`)
-  ensureDbDirectory(dbPath)
-  database = new DatabaseService(dbPath)
-  hardenDatabasePermissions(dbPath)
-
-  if (seedDemoRequested) {
-    const inserted = seedDemoData(database)
-    if (inserted > 0) logger.info(`[cortex] seeded ${inserted} demo vulnerabilities`)
-  }
-
+function registerDatabaseHandlers(): void {
   const db = database
-  databaseWatcher = createDatabaseWatcher({
-    dbPath,
-    onChange: broadcastDataChanged,
-    logger
-  })
-
+  if (!db) return
+  if (ipcRegistered) {
+    unregisterIpcHandlers()
+    ipcRegistered = false
+  }
   registerIpcHandlers({
     db,
     notifyDataChanged: broadcastDataChanged,
     seedDemo: () => seedDemoData(db),
-    appInfo: buildAppInfo(db)
+    appInfo: buildAppInfo(db),
+    switchDatabase
   })
   ipcRegistered = true
+}
+
+/**
+ * Attach a SQLite file to the desktop process.
+ *
+ * The new database is opened (and its watcher started) before the previous one
+ * is closed, so a failed switch (for example a non-SQLite file) leaves the
+ * current database intact. IPC handlers are re-registered because they close
+ * over the `DatabaseService` instance.
+ */
+async function attachDatabase(
+  targetPath: string,
+  options: { seed?: boolean } = {}
+): Promise<AppInfo> {
+  ensureDbDirectory(targetPath)
+  const nextDatabase = new DatabaseService(targetPath)
+  let nextWatcher: DatabaseWatcher | null = null
+  try {
+    hardenDatabasePermissions(targetPath)
+    nextWatcher = createDatabaseWatcher({
+      dbPath: targetPath,
+      onChange: broadcastDataChanged,
+      logger
+    })
+
+    if (databaseWatcher) {
+      try {
+        await databaseWatcher.stop()
+      } catch (error) {
+        logger.warn('[cortex] failed to stop previous database watcher', error)
+      }
+      databaseWatcher = null
+    }
+    if (database) {
+      try {
+        database.close()
+      } catch (error) {
+        logger.warn('[cortex] failed to close previous database', error)
+      }
+      database = null
+    }
+
+    database = nextDatabase
+    databaseWatcher = nextWatcher
+
+    if (options.seed) {
+      const inserted = seedDemoData(nextDatabase)
+      if (inserted > 0) logger.info(`[cortex] seeded ${inserted} demo vulnerabilities`)
+    }
+
+    registerDatabaseHandlers()
+    broadcastDataChanged()
+    return buildAppInfo(nextDatabase)
+  } catch (error) {
+    try {
+      await nextWatcher?.stop()
+    } catch {
+    }
+    try {
+      nextDatabase.close()
+    } catch {
+    }
+    throw error
+  }
+}
+
+/** Switch the desktop view to `nextPath`; `null` restores the default database. */
+async function switchDatabase(nextPath: string | null): Promise<AppInfo> {
+  const target = nextPath === null ? resolveDbPath() : nextPath
+  const info = await attachDatabase(target)
+  persistDatabasePath(nextPath === null ? null : target)
+  logger.info(`[cortex] desktop database: ${target}`)
+  return info
+}
+
+async function bootstrap(): Promise<void> {
+  const defaultPath = resolveDbPath()
+  const storedPath = configuredDatabasePath()
+  const initialPath = storedPath ?? defaultPath
+  logger.info(`[cortex] v${CORTEX_VERSION} database: ${initialPath}`)
+  try {
+    await attachDatabase(initialPath, { seed: seedDemoRequested })
+  } catch (error) {
+    if (storedPath === null) throw error
+    logger.warn('[cortex] configured database is unusable, falling back to default', error)
+    persistDatabasePath(null)
+    await attachDatabase(defaultPath, { seed: seedDemoRequested })
+  }
 
   mainWindow = createWindow()
 

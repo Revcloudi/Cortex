@@ -1,43 +1,38 @@
 import { MCP_TOOL_DOCS } from '@shared/ipc'
-import { SectionHeading } from '@renderer/components/common/SectionHeading'
 import { useI18n } from '@renderer/i18n'
 import { cn } from '@renderer/lib/utils'
 
 const thBase =
-  'sticky top-0 z-10 border-b border-border bg-background px-3 py-2 text-left text-[10.5px] font-medium text-muted-foreground'
+  'border-b border-border bg-background px-3 py-2 text-left text-[10.5px] font-medium text-muted-foreground'
 
+/**
+ * Compact tool reference: one line per tool. Full input/return schemas are
+ * intentionally omitted so the MCP page fits on a single screen.
+ */
 export function McpToolsTable() {
   const { t, lang } = useI18n()
 
   return (
-    <section>
-      <SectionHeading
-        title={t('mcp.tools.title')}
-        description={t('mcp.tools.description')}
-        action={
-          <span className="shrink-0 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-            {t('mcp.tools.count', { count: MCP_TOOL_DOCS.length })}
-          </span>
-        }
-      />
+    <section className="flex h-full flex-col">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[14px] font-medium tracking-tight text-foreground">
+          {t('mcp.tools.title')}
+        </h2>
+        <span className="shrink-0 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+          {t('mcp.tools.count', { count: MCP_TOOL_DOCS.length })}
+        </span>
+      </div>
 
-      <div className="mt-3 rounded-[10px] border border-border bg-background">
-        <div className="overflow-x-auto">
-          <table className="w-full table-fixed border-separate border-spacing-0 text-left">
+      <div className="mt-2 overflow-hidden rounded-[10px] border border-border bg-background">
+        <table className="w-full table-fixed border-separate border-spacing-0 text-left">
           <caption className="sr-only">{t('mcp.tools.caption')}</caption>
-          <thead className="sticky top-0 z-10">
+          <thead>
             <tr>
-              <th scope="col" className={cn(thBase, 'w-[26%] pl-4')}>
+              <th scope="col" className={cn(thBase, 'w-[42%] pl-4')}>
                 {t('mcp.tools.columnTool')}
               </th>
-              <th scope="col" className={cn(thBase, 'w-[36%]')}>
+              <th scope="col" className={cn(thBase, 'pr-4')}>
                 {t('mcp.tools.columnPurpose')}
-              </th>
-              <th scope="col" className={cn(thBase, 'hidden w-[21%] lg:table-cell')}>
-                {t('mcp.tools.columnInput')}
-              </th>
-              <th scope="col" className={cn(thBase, 'hidden w-[17%] pr-4 lg:table-cell')}>
-                {t('mcp.tools.columnReturns')}
               </th>
             </tr>
           </thead>
@@ -48,45 +43,26 @@ export function McpToolsTable() {
               return (
                 <tr
                   key={tool.name}
-                  className="align-top transition-colors duration-150 hover:bg-sidebar focus-within:bg-sidebar focus-visible:bg-sidebar"
+                  className="transition-colors duration-150 hover:bg-sidebar"
                 >
-                  <td className={cn('px-3 py-3 pl-4 align-top', cellBorder)}>
-                    <p className="truncate font-mono text-[12px] font-medium text-foreground">
+                  <td className={cn('px-3 py-2.5 pl-4', cellBorder)}>
+                    <span className="block truncate font-mono text-[12px] font-medium text-foreground">
                       {tool.name}
-                    </p>
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      {tool.title[lang]}
-                    </p>
+                    </span>
                   </td>
                   <td
                     className={cn(
-                      'px-3 py-3 align-top text-[12px] leading-relaxed text-muted-foreground',
+                      'px-3 py-2.5 pr-4 text-[12px] leading-relaxed text-muted-foreground',
                       cellBorder
                     )}
                   >
-                    {tool.description[lang]}
-                  </td>
-                  <td
-                    className={cn(
-                      'hidden px-3 py-3 align-top lg:table-cell',
-                      cellBorder
-                    )}
-                  >
-                    <code className="block break-words font-mono text-[10.5px] leading-relaxed text-foreground">
-                      {tool.input[lang]}
-                    </code>
-                  </td>
-                  <td className={cn('hidden px-3 py-3 pr-4 align-top lg:table-cell', cellBorder)}>
-                    <code className="block break-words font-mono text-[10.5px] leading-relaxed text-muted-foreground">
-                      {tool.returns[lang]}
-                    </code>
+                    {tool.title[lang]}
                   </td>
                 </tr>
               )
             })}
           </tbody>
         </table>
-        </div>
       </div>
     </section>
   )

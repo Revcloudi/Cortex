@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { DatabaseInfo } from '@shared/types'
 import { useI18n } from '@renderer/i18n'
-import { apiUnavailableMessage, getApi, toErrorMessage } from '@renderer/lib/api'
+import {
+  apiUnavailableMessage,
+  DATABASE_CHANGED_EVENT,
+  getApi,
+  toErrorMessage
+} from '@renderer/lib/api'
 
 interface UseDbInfoResult {
   info: DatabaseInfo | null
@@ -9,10 +14,10 @@ interface UseDbInfoResult {
 }
 
 /**
- * One-shot on-disk database snapshot for the MCP page.
+ * On-disk database snapshot for the MCP page.
  *
- * Nothing polls: the main process watches the SQLite files and pushes
- * `data:changed`, so the renderer only needs the file metadata once per mount.
+ * Refetches when the sidebar switches the desktop database; otherwise nothing
+ * polls because the main process pushes `data:changed` on file writes.
  */
 export function useDbInfo(): UseDbInfoResult {
   const { t } = useI18n()
@@ -26,16 +31,24 @@ export function useDbInfo(): UseDbInfoResult {
       return
     }
     let alive = true
-    api.getDatabaseInfo().then(
-      (next) => {
-        if (alive) setInfo(next)
-      },
-      (cause: unknown) => {
-        if (alive) setError(toErrorMessage(cause, t))
-      }
-    )
+    const load = (): void => {
+      api.getDatabaseInfo().then(
+        (next) => {
+          if (!alive) return
+          setInfo(next)
+          setError(null)
+        },
+        (cause: unknown) => {
+          if (alive) setError(toErrorMessage(cause, t))
+        }
+      )
+    }
+    load()
+    const onDatabaseChanged = (): void => load()
+    window.addEventListener(DATABASE_CHANGED_EVENT, onDatabaseChanged)
     return () => {
       alive = false
+      window.removeEventListener(DATABASE_CHANGED_EVENT, onDatabaseChanged)
     }
   }, [t])
 

@@ -427,6 +427,13 @@ export async function runCaptureMode(
       await delay(700)
       await captureStep('28-mcp-page-en.png')
     }
+
+    // Database picker entry point (the native file dialog is not opened here).
+    const dbOpened = await clickSelector('[data-testid="db-button"]')
+    if (dbOpened) {
+      await delay(600)
+      await captureStep('29-db-picker.png')
+    }
   } catch (error) {
     logger.warn('[capture] failed to capture MCP page', error)
   }
