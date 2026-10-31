@@ -36,20 +36,16 @@ const thBase =
   'sticky top-0 z-10 border-b border-border bg-background px-3 py-1.5 text-left text-[10px] font-medium text-muted-foreground'
 
 function Panel({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full min-h-0 flex-col rounded-[10px] border border-border bg-background">
-      {children}
-    </div>
-  )
+  return <div className="rounded-[10px] border border-border bg-background">{children}</div>
 }
 
 function TableSkeleton({ selectMode }: { selectMode: boolean }) {
   const { t } = useI18n()
   const nameWidths = ['62%', '48%', '71%', '55%', '66%', '44%', '58%', '50%']
   return (
-    <div className="flex h-full min-h-0 flex-col" aria-hidden="true">
-      <div className="min-h-0 flex-1 overflow-x-auto">
-        <table className="h-full w-full table-fixed">
+    <div aria-hidden="true">
+      <div className="overflow-x-auto">
+        <table className="w-full table-fixed">
           <thead className="sticky top-0 z-10">
             <tr>
               {selectMode ? <th className={cn(thBase, 'w-9')} /> : null}
@@ -68,30 +64,30 @@ function TableSkeleton({ selectMode }: { selectMode: boolean }) {
             {nameWidths.map((width, index) => (
               <tr key={index}>
                 {selectMode ? (
-                  <td className="border-b border-border px-3 py-2">
+                  <td className="border-b border-border px-3 py-1.5">
                     <Skeleton className="h-3.5 w-3.5" />
                   </td>
                 ) : null}
-                <td className="border-b border-border px-3 py-2 text-center">
+                <td className="border-b border-border px-3 py-1.5 text-center">
                   <Skeleton className="mx-auto h-[22px] w-[52px] rounded-full" />
                 </td>
-                <td className="hidden border-b border-border px-3 py-2 lg:table-cell">
+                <td className="hidden border-b border-border px-3 py-1.5 lg:table-cell">
                   <Skeleton className="h-3 w-[110px]" />
                 </td>
-                <td className="border-b border-border px-3 py-2">
+                <td className="border-b border-border px-3 py-1.5">
                   <Skeleton className="h-3.5" style={{ width }} />
                   <Skeleton className="mt-2 h-2.5 w-[38%]" />
                 </td>
-                <td className="border-b border-border px-3 py-2">
+                <td className="border-b border-border px-3 py-1.5">
                   <Skeleton className="h-3 w-[105px]" />
                 </td>
-                <td className="border-b border-border px-3 py-2 text-center">
+                <td className="border-b border-border px-3 py-1.5 text-center">
                   <Skeleton className="mx-auto h-[22px] w-[62px] rounded-full" />
                 </td>
-                <td className="hidden border-b border-border px-3 py-2 md:table-cell">
+                <td className="hidden border-b border-border px-3 py-1.5 md:table-cell">
                   <Skeleton className="h-3 w-[62px]" />
                 </td>
-                <td className="border-b border-border py-2 pr-4" />
+                <td className="border-b border-border py-1.5 pr-4" />
               </tr>
             ))}
           </tbody>
@@ -205,7 +201,7 @@ export function VulnTable({
   return (
     <Panel>
       {error !== null ? (
-        <div className="flex items-center justify-between gap-3 border-b border-red-200/70 bg-red-50 px-4 py-2 text-[11.5px] text-red-700">
+        <div className="flex items-center justify-between gap-3 border-b border-red-200/70 bg-red-50 px-4 py-1.5 text-[11.5px] text-red-700">
           <span className="flex min-w-0 items-center gap-2">
             <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{error}</span>
@@ -220,8 +216,8 @@ export function VulnTable({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-x-auto">
-        <table className="h-full w-full table-fixed border-separate border-spacing-0 text-left">
+      <div className="overflow-x-auto">
+        <table className="w-full table-fixed border-separate border-spacing-0 text-left">
           <caption className="sr-only">{t('vuln.table.caption')}</caption>
           <thead className="sticky top-0 z-10">
             <tr>
@@ -285,7 +281,7 @@ export function VulnTable({
                   {selectMode ? (
                     <td
                       className={cn(
-                        'border-b border-border py-2 pl-3 pr-1 align-middle',
+                        'border-b border-border py-1.5 pl-3 pr-1 align-middle',
                         last && 'border-b-0'
                       )}
                       onClick={(event) => event.stopPropagation()}
@@ -300,7 +296,7 @@ export function VulnTable({
                   ) : null}
                   <td
                     className={cn(
-                      'relative border-b border-border px-3 py-2 text-center align-middle',
+                      'relative border-b border-border px-3 py-1.5 text-center align-middle',
                       last && 'border-b-0'
                     )}
                   >
@@ -315,7 +311,7 @@ export function VulnTable({
                   </td>
                   <td
                     className={cn(
-                      'hidden border-b border-border px-3 py-2 align-middle lg:table-cell',
+                      'hidden border-b border-border px-3 py-1.5 align-middle lg:table-cell',
                       last && 'border-b-0'
                     )}
                   >
@@ -328,7 +324,7 @@ export function VulnTable({
                   </td>
                   <td
                     className={cn(
-                      'min-w-0 border-b border-border px-3 py-2 align-middle',
+                      'min-w-0 border-b border-border px-3 py-1.5 align-middle',
                       last && 'border-b-0'
                     )}
                   >
@@ -346,7 +342,7 @@ export function VulnTable({
                   </td>
                   <td
                     className={cn(
-                      'border-b border-border px-3 py-2 align-middle',
+                      'border-b border-border px-3 py-1.5 align-middle',
                       last && 'border-b-0'
                     )}
                   >
@@ -359,7 +355,7 @@ export function VulnTable({
                   </td>
                   <td
                     className={cn(
-                      'border-b border-border px-3 py-2 text-center align-middle',
+                      'border-b border-border px-3 py-1.5 text-center align-middle',
                       last && 'border-b-0'
                     )}
                   >
@@ -367,7 +363,7 @@ export function VulnTable({
                   </td>
                   <td
                     className={cn(
-                      'hidden border-b border-border px-3 py-2 align-middle md:table-cell',
+                      'hidden border-b border-border px-3 py-1.5 align-middle md:table-cell',
                       last && 'border-b-0'
                     )}
                   >
@@ -377,7 +373,7 @@ export function VulnTable({
                   </td>
                   <td
                     className={cn(
-                      'border-b border-border py-2 pr-4 text-right align-middle',
+                      'border-b border-border py-1.5 pr-4 text-right align-middle',
                       last && 'border-b-0'
                     )}
                   >

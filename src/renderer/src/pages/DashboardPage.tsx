@@ -319,7 +319,7 @@ export function DashboardPage({ dataVersion, onOpenMcp }: DashboardPageProps) {
 
   return (
     <>
-      <section className="mx-auto flex h-full w-full max-w-[1440px] flex-col px-8 pt-4 pb-0">
+      <section className="mx-auto w-full max-w-[1440px] px-8 pt-4 pb-[112px]">
         <MetricStrip stats={stats} loading={statsLoading} error={statsError} />
 
         <div className="mt-4">
@@ -382,7 +382,7 @@ export function DashboardPage({ dataVersion, onOpenMcp }: DashboardPageProps) {
           </div>
         ) : null}
 
-        <div className="mt-2 flex min-h-0 flex-1 flex-col">
+        <div className="mt-2">
           <VulnTable
             items={items}
             loading={listLoading}
