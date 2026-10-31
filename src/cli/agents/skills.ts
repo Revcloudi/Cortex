@@ -64,6 +64,7 @@ export interface SkillPlanOptions {
   home: string
   codexHome: string
   claudeHome: string
+  zcodeHome: string
   agents: readonly AgentId[]
   skillLanguage: SkillLanguage
   exists: (filePath: string) => boolean
@@ -79,7 +80,7 @@ export function skillSourcePath(
 }
 
 export function skillTargets(
-  options: Pick<SkillPlanOptions, 'home' | 'codexHome' | 'claudeHome' | 'agents'>,
+  options: Pick<SkillPlanOptions, 'home' | 'codexHome' | 'claudeHome' | 'zcodeHome' | 'agents'>,
   name: SkillName
 ): Array<{ agent?: AgentId; path: string }> {
   const targets: Array<{ agent?: AgentId; path: string }> = [
@@ -91,12 +92,21 @@ export function skillTargets(
   if (options.agents.includes('claude')) {
     targets.push({ agent: 'claude', path: join(options.claudeHome, 'skills', name, 'SKILL.md') })
   }
+  if (options.agents.includes('zcode')) {
+    targets.push({ agent: 'zcode', path: join(options.zcodeHome, 'skills', name, 'SKILL.md') })
+  }
   return targets
 }
 
 export function planSkills(options: SkillPlanOptions): AgentPlan {
   const files: FilePlan[] = []
   const warnings: string[] = []
+
+  if (options.agents.includes('workbuddy')) {
+    warnings.push(
+      'WorkBuddy 的技能需在 WorkBuddy「设置 → 技能」中从 ~/.agents/skills 导入（Cortex 已写入共享技能目录）'
+    )
+  }
 
   for (const name of SKILL_NAMES) {
     const source = skillSourcePath(options.runtime, name, options.skillLanguage)

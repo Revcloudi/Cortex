@@ -201,7 +201,7 @@ Common errors (all return `isError: true`; fix the input and retry):
 
 ## Installing into agents
 
-A single `ctx init` command completes the MCP config + three skills + system rules (idempotent, automatic backup, `--dry-run` previews only); you can also use the **Connect agents** button on the MCP page. Location: `~/.agents/skills/snapshot/SKILL.md` (see the README for the DSH / Codex / Claude skill directories), and the hard rules are written to the corresponding global instruction file; clients such as Cursor can use the stdio config printed by `ctx mcp print-config cursor`.
+A single `ctx init` command completes the MCP config + three skills + system rules (idempotent, automatic backup, `--dry-run` previews only); you can also use the **Connect agents** button on the MCP page. Location: `~/.agents/skills/snapshot/SKILL.md` (see the README for the DSH / Codex / Claude / ZCode skill directories; WorkBuddy imports from `~/.agents/skills`), and the hard rules are written to the corresponding global instruction file; clients such as Cursor can use the stdio config printed by `ctx mcp print-config cursor`.
 
 The stdio MCP is launched by the agent, so no GUI needs to run; the GUI is only a viewer, and archiving / deletion are still done in the desktop app. Database: Windows `%USERPROFILE%\.cortex\data.db`, macOS/Linux `~/.cortex/data.db` (`CTX_DB_PATH` can override it; the legacy `PDH_DB_PATH` still works).
 

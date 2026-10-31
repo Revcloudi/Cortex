@@ -17,7 +17,9 @@ const AGENT_ALIASES: Record<string, AgentMcpSnippet['id']> = {
   'codex-cli': 'codex',
   claude: 'claude',
   'claude-code': 'claude',
-  cursor: 'cursor'
+  cursor: 'cursor',
+  workbuddy: 'workbuddy',
+  zcode: 'zcode'
 }
 
 export interface McpConfigOptions {
@@ -55,7 +57,10 @@ export function buildMcpConfigResult(
 
   const id = AGENT_ALIASES[requested.toLowerCase()]
   if (id === undefined) {
-    throw new CliError(`未知 Agent: ${requested}（可选: dsh | codex | claude | cursor）`, 1)
+    throw new CliError(
+      `未知 Agent: ${requested}（可选: dsh | codex | claude | cursor | workbuddy | zcode）`,
+      1
+    )
   }
   const snippet = snippets.find((item) => item.id === id)
   if (snippet === undefined) {

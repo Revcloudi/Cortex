@@ -274,13 +274,15 @@ sync_asset_info({
 ```powershell
 ctx init
 ctx init --dry-run
-ctx init --agents dsh,claude,codex,cursor
+ctx init --agents dsh,claude,codex,cursor,workbuddy,zcode
 ```
 
 - DSH：Skill 安装到 `~/.agents/skills/asset-context/SKILL.md`，硬性规则写入 `~/.dsh/AGENTS.md`；
 - Codex：Skill 安装到 `~/.codex/skills/asset-context/SKILL.md` 与共享 `.agents/skills`，规则写入 `~/.codex/AGENTS.md`；
 - Claude Code：Skill 安装到 `~/.claude/skills/asset-context/SKILL.md`，规则写入 `~/.claude/CLAUDE.md`；
 - Cursor：MCP 配置写入 `~/.cursor/mcp.json` 的 `mcpServers`（stdio），由 `ctx init` 按客户端能力处理。
+- WorkBuddy：MCP 配置写入 `~/.workbuddy/mcp.json` 的 `mcpServers`（stdio）；Skill 在 WorkBuddy「设置 → 技能」中从 `~/.agents/skills` 导入，无全局规则文件。
+- ZCode：MCP 配置写入 `~/.zcode/cli/config.json` 的 `mcp.servers`（stdio）；Skill 安装到 `~/.zcode/skills/asset-context/SKILL.md`，规则写入 `~/.zcode/AGENTS.md`。
 - MCP 由 Agent 自动拉起（stdio），无需启动桌面端；GUI 只是查看端，可随时开关。
 - 数据库：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`；可用 `CTX_DB_PATH` 覆盖（旧版 `PDH_DB_PATH` 仍可用）。
 - 需要手工配置时，用 `ctx mcp print-config <agent>` 打印与 GUI「MCP 接入」页一致的 stdio 配置片段。

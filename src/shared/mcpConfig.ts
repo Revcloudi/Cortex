@@ -22,7 +22,7 @@ export interface StdioLaunchTarget {
 export type AgentConfigFormat = 'yaml' | 'toml' | 'json' | 'shell'
 
 export interface AgentMcpSnippet {
-  id: 'dsh' | 'codex' | 'claude' | 'cursor'
+  id: 'dsh' | 'codex' | 'claude' | 'cursor' | 'workbuddy' | 'zcode'
   name: string
   /** Config file (or command) the snippet belongs to. */
   target: string
@@ -130,6 +130,52 @@ tool_timeout_sec = 120`
             cortex: {
               command: launch.command,
               args: launch.args
+            }
+          }
+        },
+        null,
+        2
+      )
+    },
+    {
+      id: 'workbuddy',
+      name: 'WorkBuddy',
+      target: '~/.workbuddy/mcp.json',
+      format: 'json',
+      description: {
+        zh: '写入用户级 mcpServers；WorkBuddy 重启后自动以 stdio 拉起（项目级可放 <project>/.workbuddy/mcp.json）。',
+        en: 'Write the user-level mcpServers entry; WorkBuddy launches it over stdio after a restart (per-project: <project>/.workbuddy/mcp.json).'
+      },
+      value: JSON.stringify(
+        {
+          mcpServers: {
+            cortex: {
+              command: launch.command,
+              args: launch.args
+            }
+          }
+        },
+        null,
+        2
+      )
+    },
+    {
+      id: 'zcode',
+      name: 'ZCode',
+      target: '~/.zcode/cli/config.json',
+      format: 'json',
+      description: {
+        zh: '写入用户级 mcp.servers；ZCode 重启后自动以 stdio 拉起（Skill 目录：~/.zcode/skills/<name>/SKILL.md）。',
+        en: 'Write the user-level mcp.servers entry; ZCode launches it over stdio after a restart (skills: ~/.zcode/skills/<name>/SKILL.md).'
+      },
+      value: JSON.stringify(
+        {
+          mcp: {
+            servers: {
+              cortex: {
+                command: launch.command,
+                args: launch.args
+              }
             }
           }
         },

@@ -26,11 +26,11 @@ Cortex：本地优先的渗透测试情报中枢。同一份 SQLite 记忆库同
 ```bash
 # 需要 Node.js >= 22.12
 npm install -g @lievclouds/cortex
-ctx init --yes            # 自动检测并写入 Claude Code / DSH / Codex / Cursor 的 MCP 配置 + Skill + 强制规则
+ctx init --yes            # 自动检测并写入 Claude Code / DSH / Codex / Cursor / WorkBuddy / ZCode 的 MCP 配置 + Skill + 强制规则
 ctx web
 ```
 
-`ctx init --yes` 会自动检测本机已安装的 Agent，并写入 MCP 配置、三个 Skill 与系统级强制规则；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor`；只配单个 Agent 例如 `ctx init --yes --agents claude`。英文 Skill 用 `--skill-lang en`。
+`ctx init --yes` 会自动检测本机已安装的 Agent，并写入 MCP 配置、三个 Skill 与系统级强制规则；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`；只配单个 Agent 例如 `ctx init --yes --agents claude`。英文 Skill 用 `--skill-lang en`。
 
 ### 命令行参数
 
@@ -110,20 +110,20 @@ Node 运行、不依赖 Electron，读取同一份 SQLite。所有命令支持 `
 
 ```bash
 npm install -g @lievclouds/cortex
-ctx init --yes            # 自动检测并写入 Claude Code / DSH / Codex / Cursor 的 MCP 配置 + Skill + 强制规则
+ctx init --yes            # 自动检测并写入 Claude Code / DSH / Codex / Cursor / WorkBuddy / ZCode 的 MCP 配置 + Skill + 强制规则
 ctx --version            # 验证命令可用
 ctx doctor               # 检查数据库、MCP 运行时与 Agent 配置
 ```
 
-`ctx init --yes` 会自动检测本机已安装的 Agent；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor`，只配单个 Agent 例如 `ctx init --yes --agents claude`；英文 Skill 用 `--skill-lang en`；手动配置可用 `ctx mcp print-config <agent>`。
+`ctx init --yes` 会自动检测本机已安装的 Agent；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`，只配单个 Agent 例如 `ctx init --yes --agents claude`；英文 Skill 用 `--skill-lang en`；手动配置可用 `ctx mcp print-config <agent>`。
 
 首次启动会在 `%USERPROFILE%\.cortex\data.db`（macOS/Linux：`~/.cortex/data.db`）创建数据库，可用 `CTX_DB_PATH` 覆盖。
 
 | 命令 | 说明 |
 | --- | --- |
-| `ctx init [--dry-run] [--yes] [--agents dsh,codex,claude,cursor] [--skill-lang zh\|en]` | 检测 Agent、展示计划 diff、备份后写入 MCP 配置 + Skill + 系统规则 |
+| `ctx init [--dry-run] [--yes] [--agents dsh,codex,claude,cursor,workbuddy,zcode] [--skill-lang zh\|en]` | 检测 Agent、展示计划 diff、备份后写入 MCP 配置 + Skill + 系统规则 |
 | `ctx doctor` | 检查数据库、schema、MCP/CLI 运行时、Agent 配置、GUI 安装与版本 |
-| `ctx mcp print-config [agent]` | 打印 DSH / Codex / Claude Code / Cursor 的 stdio 配置片段 |
+| `ctx mcp print-config [agent]` | 打印 DSH / Codex / Claude Code / Cursor / WorkBuddy / ZCode 的 stdio 配置片段 |
 | `ctx vulns list [--severity] [--host] [--limit]` | 漏洞列表 |
 | `ctx vulns get <id>` | 查看完整漏洞：描述/影响/接口/Markdown 复现步骤（含请求与响应）/修复建议/复测记录/状态 |
 | `ctx vulns export <id[,id...]> [--out <dir>] [--all] [--severity …] [--host …] [--limit …]` | 导出与桌面端相同模板的 Markdown 报告；默认目录 `./cortex-reports` |
@@ -207,7 +207,7 @@ Claude Code：
 claude mcp add --transport stdio cortex -- node <repo>/out/mcp/stdio.cjs
 ```
 
-Cursor（`~/.cursor/mcp.json`）：
+Cursor（`~/.cursor/mcp.json`）、WorkBuddy（`~/.workbuddy/mcp.json`）：
 
 ```json
 {
@@ -220,6 +220,21 @@ Cursor（`~/.cursor/mcp.json`）：
 }
 ```
 
+ZCode（`~/.zcode/cli/config.json`，用户级；项目级为 `<project>/.zcode/config.json`）：
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "cortex": {
+        "command": "node",
+        "args": ["<repo>/out/mcp/stdio.cjs"]
+      }
+    }
+  }
+}
+```
+
 ### 一键配置
 
 ```bash
@@ -227,6 +242,7 @@ npm run build
 node out/cli/ctx.cjs init --dry-run                    # 只预览
 node out/cli/ctx.cjs init --yes                        # 检测 Agent、备份后写入
 node out/cli/ctx.cjs init --yes --agents dsh --skill-lang en
+node out/cli/ctx.cjs init --yes --agents workbuddy,zcode
 node out/cli/ctx.cjs doctor                            # 诊断配置与运行时
 ```
 
@@ -240,7 +256,7 @@ skills/
   en/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md
 ```
 
-`ctx init` 把所选语言复制到 Agent 技能目录（`~/.agents/skills/<name>/SKILL.md`，以及 Codex / Claude Code 各自技能目录）。桌面端 MCP 页与安装器使用同一个生成器，配置不会漂移。
+`ctx init` 把所选语言复制到 Agent 技能目录（`~/.agents/skills/<name>/SKILL.md`，以及 Codex / Claude Code / ZCode 各自技能目录；WorkBuddy 在应用内从 `.agents/skills` 导入）。桌面端 MCP 页与安装器使用同一个生成器，配置不会漂移。
 
 ## 从源码构建
 

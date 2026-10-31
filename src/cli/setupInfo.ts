@@ -72,6 +72,22 @@ const AGENT_CATALOG: readonly AgentCatalogEntry[] = [
       zh: '在 ~/.cursor/mcp.json 中添加 cortex 的 stdio 服务。',
       en: 'Adds the cortex stdio service to ~/.cursor/mcp.json.'
     }
+  },
+  {
+    id: 'workbuddy',
+    name: 'WorkBuddy',
+    description: {
+      zh: '在 ~/.workbuddy/mcp.json 中添加 cortex 的 stdio 服务；Skill 可在应用内从 ~/.agents/skills 导入。',
+      en: 'Adds the cortex stdio service to ~/.workbuddy/mcp.json; skills can be imported from ~/.agents/skills in the app.'
+    }
+  },
+  {
+    id: 'zcode',
+    name: 'ZCode',
+    description: {
+      zh: '在 ~/.zcode/cli/config.json 的 mcp.servers 中添加 cortex；Skill 写入 ~/.zcode/skills。',
+      en: 'Adds cortex to mcp.servers in ~/.zcode/cli/config.json; skills go to ~/.zcode/skills.'
+    }
   }
 ]
 
@@ -118,6 +134,8 @@ export function buildSetupInfo(
       dshConfigured(homes.dsh) ||
       codexConfigured(homes.codex) ||
       cursorConfigured(homes.cursor) ||
+      workbuddyConfigured(homes.workbuddy) ||
+      zcodeConfigured(homes.zcode) ||
       skillsConfigured(home),
     agents,
     defaultSkillLanguage: resolveDefaultSkillLanguage(env),
@@ -309,6 +327,35 @@ function cursorConfigured(cursorHome: string): boolean {
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** WorkBuddy: `mcpServers.cortex` exists in `~/.workbuddy/mcp.json`. */
+function workbuddyConfigured(workbuddyHome: string): boolean {
+  const content = readTextFile(join(workbuddyHome, 'mcp.json'))
+  if (content === null) return false
+  try {
+    const parsed: unknown = JSON.parse(content)
+    const servers = isJsonObject(parsed) ? parsed['mcpServers'] : undefined
+    if (isJsonObject(servers) && servers['cortex'] !== undefined) return true
+  } catch {
+    // Fall through to the textual marker below.
+  }
+  return /"cortex"\s*:/.test(content)
+}
+
+/** ZCode: `mcp.servers.cortex` exists in `~/.zcode/cli/config.json`. */
+function zcodeConfigured(zcodeHome: string): boolean {
+  const content = readTextFile(join(zcodeHome, 'cli', 'config.json'))
+  if (content === null) return false
+  try {
+    const parsed: unknown = JSON.parse(content)
+    const mcp = isJsonObject(parsed) ? parsed['mcp'] : undefined
+    const servers = isJsonObject(mcp) ? mcp['servers'] : undefined
+    if (isJsonObject(servers) && servers['cortex'] !== undefined) return true
+  } catch {
+    // Fall through to the textual marker below.
+  }
+  return /"cortex"\s*:/.test(content)
 }
 
 /** Shared skills installed by a previous run (`ctx init` copies all three). */

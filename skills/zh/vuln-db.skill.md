@@ -186,7 +186,7 @@ stdio MCP 由 Agent 拉起，不存在「服务是否在线」的前置条件；
 3. 修改配置后**重启 Agent**（MCP client 在 Agent 启动时初始化）；**重启 GUI 不会修复 MCP 连接**，GUI 可以随时开关。
 4. 数据库忙 / schema 过旧：打开一次 GUI 让主进程完成迁移，或运行 `ctx doctor` 查看详情；只读 CLI 命令不会替你迁移。
 5. 仍失败时设置 `CTX_MCP_LOG=<日志路径>` 后重启 Agent，查看 stderr / 日志文件里的启动错误；也可运行 `node scripts/mcp-stdio-smoke.mjs` 单独验证入口。
-6. 工具名带命名空间（DSH `mcp__cortex__*`，其他客户端可能显示为 `cortex.*`），按实际暴露的名字调用；`ctx mcp print-config dsh|codex|claude|cursor` 可打印官方 stdio 配置片段。
+6. 工具名带命名空间（DSH `mcp__cortex__*`，其他客户端可能显示为 `cortex.*`），按实际暴露的名字调用；`ctx mcp print-config dsh|codex|claude|cursor|workbuddy|zcode` 可打印官方 stdio 配置片段。
 
 ## 安装到 Agent（含强制化）
 
@@ -194,14 +194,14 @@ stdio MCP 由 Agent 拉起，不存在「服务是否在线」的前置条件；
 
 1. **MCP server**：以 stdio 启动，让 6 个工具可见（3 个漏洞工具 + 2 个资产工具 + 1 个认知快照工具）；
 2. **Skill**：把本文件与 `asset-context`、`snapshot` 安装到 Agent 的技能目录，提供漏洞字段、Markdown、复测与资产上下文规范；
-3. **系统级硬性规则**：把「确认漏洞必须入库 + 侦察后同步资产 + 认知快照」写进 Agent 的全局指令文件（DSH `AGENTS.md`、Codex `AGENTS.md`、Claude `CLAUDE.md`）。
+3. **系统级硬性规则**：把「确认漏洞必须入库 + 侦察后同步资产 + 认知快照」写进 Agent 的全局指令文件（DSH `AGENTS.md`、Codex `AGENTS.md`、Claude `CLAUDE.md`、ZCode `AGENTS.md`；WorkBuddy 无全局规则文件）。
 
 ### 推荐：`ctx init` 一条命令
 
 ```powershell
 ctx init                          # 检测本机 Agent，展示文件与 diff，备份后幂等写入
 ctx init --dry-run                # 只展示将修改的文件，不写任何文件
-ctx init --agents dsh,claude      # 只处理指定 Agent（dsh / claude / codex / cursor）
+ctx init --agents dsh,claude      # 只处理指定 Agent（dsh / claude / codex / cursor / workbuddy / zcode）
 ```
 
 `ctx init` 会安装 MCP 配置、三个 Skill 与系统级规则，备份为 `.bak-YYYYMMDD-HHmmss`，校验写入后的 JSON/TOML/YAML 可解析，最后提示重启 Agent。安装完成后运行 `ctx doctor` 自检。
@@ -216,6 +216,8 @@ ctx init --agents dsh,claude      # 只处理指定 Agent（dsh / claude / codex
 | Codex CLI | `~/.codex/config.toml` 的 `[mcp_servers.cortex]`（stdio） | `~/.codex/skills/vuln-db/SKILL.md` 与 `~/.agents/skills/vuln-db/SKILL.md` | `~/.codex/AGENTS.md` |
 | Claude Code | `claude mcp add --transport stdio cortex -- <node> <entry>` | `~/.claude/skills/vuln-db/SKILL.md` 与 `~/.agents/skills/vuln-db/SKILL.md` | `~/.claude/CLAUDE.md` |
 | Cursor | `~/.cursor/mcp.json` 的 `mcpServers`（stdio） | 由 `ctx init` 按客户端能力安装 | — |
+| WorkBuddy | `~/.workbuddy/mcp.json` 的 `mcpServers`（stdio） | 在 WorkBuddy「设置 → 技能」中从 `~/.agents/skills` 导入 | — |
+| ZCode | `~/.zcode/cli/config.json` 的 `mcp.servers`（stdio） | `~/.zcode/skills/vuln-db/SKILL.md` | `~/.zcode/AGENTS.md` |
 
 > stdio MCP 由 Agent 拉起，桌面端不需要常驻；关闭 GUI 不影响 MCP 读写。修改配置或安装 Skill / 规则后重启对应 Agent 生效。
 
@@ -240,5 +242,5 @@ ctx init --agents dsh,claude      # 只处理指定 Agent（dsh / claude / codex
   }
   ```
 - 手动安装 Skill：把本文件复制到上表对应 Skill 目录。
-- 手动强制规则：把本文件开头的「硬性规则（MUST）」整段追加到对应 Agent 的全局指令文件（DSH `~/.dsh/AGENTS.md`、Codex `~/.codex/AGENTS.md`、Claude `~/.claude/CLAUDE.md`）。
+- 手动强制规则：把本文件开头的「硬性规则（MUST）」整段追加到对应 Agent 的全局指令文件（DSH `~/.dsh/AGENTS.md`、Codex `~/.codex/AGENTS.md`、Claude `~/.claude/CLAUDE.md`、ZCode `~/.zcode/AGENTS.md`；WorkBuddy 无全局规则文件）。
 - 数据位置：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`；需要隔离多库时设置 `CTX_DB_PATH`（旧版 `PDH_DB_PATH` 仍可用）。

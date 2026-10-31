@@ -93,7 +93,7 @@ export const SnapshotArchiveIpcSchema = z
   .strict()
 
 /** Mirrors `AgentId` in `src/shared/types.ts` (type-only there, runtime list here). */
-export const SETUP_AGENT_IDS = ['dsh', 'codex', 'claude', 'cursor'] as const
+export const SETUP_AGENT_IDS = ['dsh', 'codex', 'claude', 'cursor', 'workbuddy', 'zcode'] as const
 
 /**
  * First-run setup request from the wizard: an explicit agent selection plus the

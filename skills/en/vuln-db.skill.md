@@ -186,7 +186,7 @@ The stdio MCP is launched by the agent, so there is no "is the service online" p
 3. **Restart the agent** after changing the configuration (the MCP client initializes when the agent starts); **restarting the GUI will not fix the MCP connection**, and the GUI can be opened or closed at any time.
 4. Database busy / schema too old: open the GUI once so the main process runs the migration, or run `ctx doctor` for details; read-only CLI commands will not migrate for you.
 5. If it still fails, set `CTX_MCP_LOG=<log path>` and restart the agent, then check stderr / the log file for startup errors; you can also run `node scripts/mcp-stdio-smoke.mjs` to verify the entry point on its own.
-6. Tool names may be namespaced (DSH `mcp__cortex__*`, other clients may show `cortex.*`); call the tool by the name actually exposed; `ctx mcp print-config dsh|codex|claude|cursor` prints the official stdio config snippet.
+6. Tool names may be namespaced (DSH `mcp__cortex__*`, other clients may show `cortex.*`); call the tool by the name actually exposed; `ctx mcp print-config dsh|codex|claude|cursor|workbuddy|zcode` prints the official stdio config snippet.
 
 ## Installing into agents (including enforcement)
 
@@ -194,14 +194,14 @@ The stdio MCP is launched by the agent, so there is no "is the service online" p
 
 1. **MCP server**: start it over stdio so the 6 tools are visible (3 vulnerability tools + 2 asset tools + 1 cognitive snapshot tool);
 2. **Skill**: install this file together with `asset-context` and `snapshot` into the agent's skills directory, providing the vulnerability field, Markdown, retest and asset-context specifications;
-3. **System-level hard rules**: write "confirmed vulnerabilities must be persisted + assets must be synced after recon + cognitive snapshot" into the agent's global instruction file (DSH `AGENTS.md`, Codex `AGENTS.md`, Claude `CLAUDE.md`).
+3. **System-level hard rules**: write "confirmed vulnerabilities must be persisted + assets must be synced after recon + cognitive snapshot" into the agent's global instruction file (DSH `AGENTS.md`, Codex `AGENTS.md`, Claude `CLAUDE.md`, ZCode `AGENTS.md`; WorkBuddy has no global rule file).
 
 ### Recommended: a single `ctx init` command
 
 ```powershell
 ctx init                          # detect local agents, show files and diff, back up, then write idempotently
 ctx init --dry-run                # only show which files would change; write nothing
-ctx init --agents dsh,claude      # only handle the specified agents (dsh / claude / codex / cursor)
+ctx init --agents dsh,claude      # only handle the specified agents (dsh / claude / codex / cursor / workbuddy / zcode)
 ```
 
 `ctx init` installs the MCP config, the three skills and the system-level rules, backs files up as `.bak-YYYYMMDD-HHmmss`, validates that the written JSON/TOML/YAML parses, and finally prompts you to restart the agent. Run `ctx doctor` for a self-check after installation.
@@ -216,6 +216,8 @@ You can also print a snippet with `ctx mcp print-config <agent>`, or use the **C
 | Codex CLI | `[mcp_servers.cortex]` in `~/.codex/config.toml` (stdio) | `~/.codex/skills/vuln-db/SKILL.md` and `~/.agents/skills/vuln-db/SKILL.md` | `~/.codex/AGENTS.md` |
 | Claude Code | `claude mcp add --transport stdio cortex -- <node> <entry>` | `~/.claude/skills/vuln-db/SKILL.md` and `~/.agents/skills/vuln-db/SKILL.md` | `~/.claude/CLAUDE.md` |
 | Cursor | `mcpServers` in `~/.cursor/mcp.json` (stdio) | Installed by `ctx init` according to client capabilities | — |
+| WorkBuddy | `mcpServers` in `~/.workbuddy/mcp.json` (stdio) | Import from `~/.agents/skills` in WorkBuddy Settings → Skills | — |
+| ZCode | `mcp.servers` in `~/.zcode/cli/config.json` (stdio) | `~/.zcode/skills/vuln-db/SKILL.md` | `~/.zcode/AGENTS.md` |
 
 > The stdio MCP is launched by the agent, so no desktop app needs to stay running; closing the GUI does not affect MCP reads/writes. Restart the corresponding agent after changing the config or installing the skill / rules.
 
@@ -240,5 +242,5 @@ You can also print a snippet with `ctx mcp print-config <agent>`, or use the **C
   }
   ```
 - Manual skill installation: copy this file to the matching skill directory in the table above.
-- Manual enforcement rules: append the entire "Hard rules (MUST)" section from the top of this file to the agent's global instruction file (DSH `~/.dsh/AGENTS.md`, Codex `~/.codex/AGENTS.md`, Claude `~/.claude/CLAUDE.md`).
+- Manual enforcement rules: append the entire "Hard rules (MUST)" section from the top of this file to the agent's global instruction file (DSH `~/.dsh/AGENTS.md`, Codex `~/.codex/AGENTS.md`, Claude `~/.claude/CLAUDE.md`, ZCode `~/.zcode/AGENTS.md`; WorkBuddy has no global rule file).
 - Data location: Windows `%USERPROFILE%\.cortex\data.db`, macOS/Linux `~/.cortex/data.db`; set `CTX_DB_PATH` to isolate multiple databases (the legacy `PDH_DB_PATH` still works).

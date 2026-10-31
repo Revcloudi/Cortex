@@ -201,7 +201,7 @@ manage_snapshot({
 
 ## 安装到 Agent
 
-推荐用 `ctx init` 一条命令完成 MCP 配置 + 三个 Skill + 系统规则（幂等、自动备份、`--dry-run` 只预览）；也可以在 MCP 接入页点击「接入 Agent」按钮。落点：`~/.agents/skills/snapshot/SKILL.md`（DSH / Codex / Claude 各自技能目录见 README），硬性规则写入对应全局指令文件；Cursor 等客户端可用 `ctx mcp print-config cursor` 打印的 stdio 配置。
+推荐用 `ctx init` 一条命令完成 MCP 配置 + 三个 Skill + 系统规则（幂等、自动备份、`--dry-run` 只预览）；也可以在 MCP 接入页点击「接入 Agent」按钮。落点：`~/.agents/skills/snapshot/SKILL.md`（DSH / Codex / Claude / ZCode 各自技能目录见 README；WorkBuddy 从 `~/.agents/skills` 导入），硬性规则写入对应全局指令文件；Cursor 等客户端可用 `ctx mcp print-config cursor` 打印的 stdio 配置。
 
 stdio MCP 由 Agent 自动拉起，无需启动 GUI；GUI 只是查看端，归档 / 删除仍在桌面端操作。数据库：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`（`CTX_DB_PATH` 可覆盖，旧版 `PDH_DB_PATH` 仍可用）。
 

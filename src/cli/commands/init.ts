@@ -29,6 +29,8 @@ import { planCodex } from '../agents/codex'
 import { planCursor } from '../agents/cursor'
 import { planDsh } from '../agents/dsh'
 import { planSkills, resolveSkillLanguage } from '../agents/skills'
+import { planWorkBuddy } from '../agents/workbuddy'
+import { planZcode } from '../agents/zcode'
 
 export type { InitAction, InitReport } from '../agents'
 /** Re-exported for the Electron first-run setup wizard (stable contract). */
@@ -55,7 +57,7 @@ export const DOCTOR_HINT = '建议运行 ctx doctor 验证。'
 export interface InitOptions {
   dryRun?: boolean
   yes?: boolean
-  /** Comma list: `dsh,codex,claude,cursor`. Omitted = auto-detect. */
+  /** Comma list: `dsh,codex,claude,cursor,workbuddy,zcode`. Omitted = auto-detect. */
   agents?: string
   /** Skill language copied into the agent skill directories. */
   skillLang?: SkillLanguage
@@ -127,12 +129,26 @@ export async function runInit(
   if (selected.includes('claude')) {
     plans.push(planClaude({ claudeHome: homes.claude, env: context.env, exists, readFile }))
   }
+  if (selected.includes('workbuddy')) {
+    plans.push(
+      planWorkBuddy({
+        workbuddyHome: homes.workbuddy,
+        runtime,
+        exists,
+        readFile
+      })
+    )
+  }
+  if (selected.includes('zcode')) {
+    plans.push(planZcode({ zcodeHome: homes.zcode, runtime, exists, readFile }))
+  }
   plans.push(
     planSkills({
       runtime,
       home,
       codexHome: homes.codex,
       claudeHome: homes.claude,
+      zcodeHome: homes.zcode,
       agents: selected,
       skillLanguage,
       exists,
@@ -303,7 +319,7 @@ export function registerInitCommand(cli: CAC, context?: CliContext): void {
     .command('init', '一键接入 Agent：stdio MCP 配置 + 三个 Skill + 系统级强制规则')
     .option('--dry-run', '只展示将修改的文件与 diff，不写任何文件')
     .option('--yes', '跳过交互确认，直接写入')
-    .option('--agents <agents>', '限定 Agent，逗号分隔：dsh,codex,claude,cursor（默认自动检测）')
+    .option('--agents <agents>', '限定 Agent，逗号分隔：dsh,codex,claude,cursor,workbuddy,zcode（默认自动检测）')
     .option('--skill-lang <lang>', 'Skill 语言：zh | en（默认 zh，可用 CTX_SKILL_LANG 覆盖）')
     .action(async (options: InitOptions) => {
       await runInit(options, context ?? createCliContext())

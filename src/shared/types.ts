@@ -1015,7 +1015,7 @@ export interface DatabaseSwitchResult {
 /*  First-run setup wizard / installer-driven agent configuration             */
 /* -------------------------------------------------------------------------- */
 
-export type AgentId = 'dsh' | 'codex' | 'claude' | 'cursor'
+export type AgentId = 'dsh' | 'codex' | 'claude' | 'cursor' | 'workbuddy' | 'zcode'
 export type SkillLanguage = 'zh' | 'en'
 export type UiLanguage = 'zh' | 'en'
 

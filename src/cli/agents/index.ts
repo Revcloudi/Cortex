@@ -11,9 +11,16 @@ import { CliError } from '../errors'
  * contents, so `runInit` can show a diff first and only then write.
  */
 
-export type AgentId = 'dsh' | 'codex' | 'claude' | 'cursor'
+export type AgentId = 'dsh' | 'codex' | 'claude' | 'cursor' | 'workbuddy' | 'zcode'
 
-export const AGENT_IDS: readonly AgentId[] = ['dsh', 'codex', 'claude', 'cursor']
+export const AGENT_IDS: readonly AgentId[] = [
+  'dsh',
+  'codex',
+  'claude',
+  'cursor',
+  'workbuddy',
+  'zcode'
+]
 
 /** Language of the skill set copied by `ctx init --skill-lang`. */
 export type SkillLanguage = 'zh' | 'en'
@@ -78,6 +85,8 @@ export interface AgentHomes {
   codex: string
   claude: string
   cursor: string
+  workbuddy: string
+  zcode: string
 }
 
 /**
@@ -98,7 +107,9 @@ export function resolveAgentHomes(home: string, env: NodeJS.ProcessEnv): AgentHo
     dsh: override('DSH_HOME') ?? join(home, '.dsh'),
     codex: override('CODEX_HOME') ?? join(home, '.codex'),
     claude: override('CLAUDE_HOME') ?? join(home, '.claude'),
-    cursor: join(home, '.cursor')
+    cursor: join(home, '.cursor'),
+    workbuddy: override('WORKBUDDY_HOME') ?? join(home, '.workbuddy'),
+    zcode: override('ZCODE_HOME') ?? join(home, '.zcode')
   }
 }
 
@@ -128,7 +139,10 @@ export function parseAgentSelection(raw: string | undefined): AgentId[] | undefi
     const token = part.trim().toLowerCase()
     if (token.length === 0) continue
     if (!isAgentId(token)) {
-      throw new CliError(`未知 Agent: ${token}（可选: dsh | codex | claude | cursor）`, 1)
+      throw new CliError(
+        `未知 Agent: ${token}（可选: dsh | codex | claude | cursor | workbuddy | zcode）`,
+        1
+      )
     }
     requested.add(token)
   }
@@ -145,6 +159,8 @@ export interface AgentDetection {
   codex: boolean
   claude: boolean
   cursor: boolean
+  workbuddy: boolean
+  zcode: boolean
 }
 
 /**
@@ -163,6 +179,8 @@ export function detectAgents(
     dsh: exists(join(homes.dsh, 'profiles')),
     codex: exists(homes.codex),
     cursor: exists(homes.cursor),
+    workbuddy: exists(homes.workbuddy),
+    zcode: exists(join(homes.zcode, 'cli')) || exists(homes.zcode),
     claude: probeClaudeCli(runClaudeCli)
   }
 }

@@ -26,11 +26,11 @@ Install directly from npm and start it:
 ```bash
 # Node.js >= 22.12 required
 npm install -g @lievclouds/cortex
-ctx init --yes            # auto-detect and write MCP config + skills + hard rules for Claude Code / DSH / Codex / Cursor
+ctx init --yes            # auto-detect and write MCP config + skills + hard rules for Claude Code / DSH / Codex / Cursor / WorkBuddy / ZCode
 ctx web
 ```
 
-`ctx init --yes` auto-detects installed agents and writes their MCP config, the three skills and the system-level hard rules. To target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en`.
+`ctx init --yes` auto-detects installed agents and writes their MCP config, the three skills and the system-level hard rules. To target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en`.
 
 ### Command-line options
 
@@ -110,20 +110,20 @@ Recommended: install from npm (Node.js >= 22.12 required):
 
 ```bash
 npm install -g @lievclouds/cortex
-ctx init --yes            # auto-detect and write MCP config + skills + hard rules for Claude Code / DSH / Codex / Cursor
+ctx init --yes            # auto-detect and write MCP config + skills + hard rules for Claude Code / DSH / Codex / Cursor / WorkBuddy / ZCode
 ctx --version            # verify the command works
 ctx doctor               # verify DB, MCP runtime and agent configs
 ```
 
-`ctx init --yes` auto-detects installed agents; to target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en`, and for manual setups use `ctx mcp print-config <agent>`.
+`ctx init --yes` auto-detects installed agents; to target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en`, and for manual setups use `ctx mcp print-config <agent>`.
 
 The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macOS/Linux: `~/.cortex/data.db`); override with `CTX_DB_PATH`.
 
 | Command | Description |
 | --- | --- |
-| `ctx init [--dry-run] [--yes] [--agents dsh,codex,claude,cursor] [--skill-lang zh\|en]` | Detect agents, show the planned diff, back up, then write MCP configs + skills + system rules |
+| `ctx init [--dry-run] [--yes] [--agents dsh,codex,claude,cursor,workbuddy,zcode] [--skill-lang zh\|en]` | Detect agents, show the planned diff, back up, then write MCP configs + skills + system rules |
 | `ctx doctor` | Check database, schema, MCP/CLI runtime, agent configs, GUI install and versions |
-| `ctx mcp print-config [agent]` | Print the stdio config snippet for DSH / Codex / Claude Code / Cursor |
+| `ctx mcp print-config [agent]` | Print the stdio config snippet for DSH / Codex / Claude Code / Cursor / WorkBuddy / ZCode |
 | `ctx vulns list [--severity] [--host] [--limit]` | List vulnerabilities |
 | `ctx vulns get <id>` | Show one full vulnerability: description, impact, interfaces, Markdown reproduction steps (HTTP requests/responses), remediation, retests and status |
 | `ctx vulns export <id[,id...]> [--out <dir>] [--all] [--severity …] [--host …] [--limit …]` | Export Markdown reports using the same template as the desktop app; default output directory `./cortex-reports` |
@@ -207,7 +207,7 @@ Claude Code:
 claude mcp add --transport stdio cortex -- node <repo>/out/mcp/stdio.cjs
 ```
 
-Cursor (`~/.cursor/mcp.json`):
+Cursor (`~/.cursor/mcp.json`) and WorkBuddy (`~/.workbuddy/mcp.json`):
 
 ```json
 {
@@ -220,6 +220,21 @@ Cursor (`~/.cursor/mcp.json`):
 }
 ```
 
+ZCode (`~/.zcode/cli/config.json`, user scope; project scope: `<project>/.zcode/config.json`):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "cortex": {
+        "command": "node",
+        "args": ["<repo>/out/mcp/stdio.cjs"]
+      }
+    }
+  }
+}
+```
+
 ### One-command setup
 
 ```bash
@@ -227,6 +242,7 @@ npm run build
 node out/cli/ctx.cjs init --dry-run                    # preview only
 node out/cli/ctx.cjs init --yes                        # detect agents, back up and write
 node out/cli/ctx.cjs init --yes --agents dsh --skill-lang en
+node out/cli/ctx.cjs init --yes --agents workbuddy,zcode
 node out/cli/ctx.cjs doctor                            # diagnose config + runtime
 ```
 
@@ -240,7 +256,7 @@ skills/
   en/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md
 ```
 
-`ctx init` copies the selected language to the agent skill directories (`~/.agents/skills/<name>/SKILL.md`, plus client-specific skill directories for Codex / Claude Code). The desktop MCP page and the installer both use the same generator, so configs and skills never drift apart.
+`ctx init` copies the selected language to the agent skill directories (`~/.agents/skills/<name>/SKILL.md`, plus client-specific skill directories for Codex / Claude Code / ZCode; import the shared `.agents/skills` copies through the WorkBuddy Skill UI). The desktop MCP page and the installer both use the same generator, so configs and skills never drift apart.
 
 ## Build from source
 
