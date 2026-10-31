@@ -26,11 +26,11 @@ Install directly from npm and start it:
 ```bash
 # Node.js >= 22.12 required
 npm install -g @lievclouds/cortex
-ctx init --yes            # write MCP config + skills + hard rules for Claude Code / DSH / Codex / Cursor
+ctx init --yes            # auto-detect and write MCP config + skills + hard rules for Claude Code / DSH / Codex / Cursor
 ctx web
 ```
 
-`ctx init --yes` auto-detects installed agents and writes their MCP config, the three skills and the system-level hard rules. To target specific agents use `ctx init --yes --agents dsh,codex,claude`; for English skills add `--skill-lang en`.
+`ctx init --yes` auto-detects installed agents and writes their MCP config, the three skills and the system-level hard rules. To target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en`.
 
 ### Command-line options
 
@@ -110,12 +110,12 @@ Recommended: install from npm (Node.js >= 22.12 required):
 
 ```bash
 npm install -g @lievclouds/cortex
-ctx init --yes            # write MCP config + skills + hard rules for Claude Code / DSH / Codex / Cursor
+ctx init --yes            # auto-detect and write MCP config + skills + hard rules for Claude Code / DSH / Codex / Cursor
 ctx --version            # verify the command works
 ctx doctor               # verify DB, MCP runtime and agent configs
 ```
 
-`ctx init --yes` auto-detects installed agents; to target specific agents use `ctx init --yes --agents dsh,codex,claude`, for English skills add `--skill-lang en`, and for manual setups use `ctx mcp print-config <agent>`.
+`ctx init --yes` auto-detects installed agents; to target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en`, and for manual setups use `ctx mcp print-config <agent>`.
 
 The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macOS/Linux: `~/.cortex/data.db`); override with `CTX_DB_PATH`.
 
