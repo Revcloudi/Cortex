@@ -1,6 +1,6 @@
 {
   "name": "@lievclouds/cortex",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shared memory for authorized pentest work: vulnerabilities, assets and task progress stay in one place, so testers and AI can resume testing, review findings and deliver reports.",
   "main": "./out/main/index.js",
   "bin": {

@@ -10,7 +10,7 @@ Cortex 是本地 **stdio MCP Server**：由 Agent 自动拉起（`node <entry>`�
 ## 连接方式（stdio）
 
 - **传输**：stdio，Agent 在自己的进程里拉起 MCP server，通过 stdin/stdout 交换 JSON-RPC；不监听端口、没有 HTTP 端点，桌面端不启动 MCP。
-- **入口**：开发模式 `node <项目>/out/mcp/stdio.cjs`；Windows 安装版 `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs`（Server 名称 `cortex`，版本 `0.1.1`）。
+- **入口**：开发模式 `node <项目>/out/mcp/stdio.cjs`；Windows 安装版 `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs`（Server 名称 `cortex`，版本 `0.1.2`）。
 - **数据库**：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`，可用 `CTX_DB_PATH` 覆盖（旧版 `PDH_DB_PATH` 仍可用）；GUI / MCP / CLI 共用同一份文件。
 - **验证链路**：调用一次只读工具即可，例如 `manage_snapshot({ "action": "list" })` 或 `query_vulnerabilities({ "host": "example.com:443" })`；工具存在且返回正常即说明 stdio 连接可用。
 

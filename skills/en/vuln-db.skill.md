@@ -10,7 +10,7 @@ Cortex is a local **stdio MCP Server**: the agent launches it automatically (`no
 ## Connection (stdio)
 
 - **Transport**: stdio. The agent starts the MCP server inside its own process and exchanges JSON-RPC over stdin/stdout; there is no listening port and no HTTP endpoint, and the desktop app does not start the MCP.
-- **Entry point**: development mode `node <project>/out/mcp/stdio.cjs`; Windows installed build `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs` (server name `cortex`, version `0.1.1`).
+- **Entry point**: development mode `node <project>/out/mcp/stdio.cjs`; Windows installed build `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs` (server name `cortex`, version `0.1.2`).
 - **Database**: Windows `%USERPROFILE%\.cortex\data.db`, macOS/Linux `~/.cortex/data.db`, overridable with `CTX_DB_PATH` (the legacy `PDH_DB_PATH` still works); the GUI / MCP / CLI share the same file.
 - **Verify the link**: call one read-only tool, e.g. `manage_snapshot({ "action": "list" })` or `query_vulnerabilities({ "host": "example.com:443" })`; if the tool exists and returns normally, the stdio connection works.
 
