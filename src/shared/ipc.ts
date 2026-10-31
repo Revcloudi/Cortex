@@ -202,8 +202,8 @@ export const MCP_TOOL_DOCS: readonly McpToolDoc[] = [
       en: 'Persist reconnaissance fingerprints, interfaces, leaked information, test parameters and related vulnerabilities into the asset library. Prefer full URLs for host_port (http/https, port, path); bare IP / IP:port scan data is not accepted. host is a plain host and may be omitted. Prefer structured interfaces[] (path required; method / params / raw request optional); legacy interface_dir arrays are normalized to { path }. Static JS/CSS/images are not interfaces. test_parameters[] records non-secret seeds collected after login (id / orderId / tenantId, a few sample values plus a pattern; never passwords/tokens/PII). Read the existing asset first, then choose replace (full snapshot) or merge (incremental).'
     },
     input: {
-      zh: 'AssetContextPayload（含 interfaces[]、test_parameters[] 与兼容的 interface_dir[]）+ { mode?: "replace" | "merge" }',
-      en: 'AssetContextPayload (interfaces[], test_parameters[], compatible interface_dir[]) + { mode?: "replace" | "merge" }'
+      zh: 'AssetContextPayload（含 interfaces[]、test_parameters[]、leaked_infos[]、related_vuln_ids[] 与兼容的 interface_dir[]）+ { mode?: "replace" | "merge" }',
+      en: 'AssetContextPayload (interfaces[], test_parameters[], leaked_infos[], related_vuln_ids[], compatible interface_dir[]) + { mode?: "replace" | "merge" }'
     },
     returns: {
       zh: '{ success: true, host_port, created, mode, message }',
@@ -234,8 +234,8 @@ export const MCP_TOOL_DOCS: readonly McpToolDoc[] = [
       en: 'One cognitive snapshot per task: tactical progress, unfinished leads, failed paths and next steps can be restored in a new session. action=save (create/partial update; ask the user to continue or create a new session when one exists), load (one full session by session_id), list (summaries for selection), attach_assets (merge hosts into the session targets), restore_previous (roll back the latest overwrite).'
     },
     input: {
-      zh: '{ action: "save" | "load" | "list" | "attach_assets" | "restore_previous", session_id?, payload?: { project_name, target_hosts, current_phase, unfinished_tasks, failed_paths, next_steps }, force_new?, base_updated_at?, keyword?, hosts?, limit? }',
-      en: '{ action: "save" | "load" | "list" | "attach_assets" | "restore_previous", session_id?, payload?: { project_name, target_hosts, current_phase, unfinished_tasks, failed_paths, next_steps }, force_new?, base_updated_at?, keyword?, hosts?, limit? }'
+      zh: '{ action: "save" | "load" | "list" | "attach_assets" | "restore_previous", session_id?, payload?: { project_name, target_hosts, current_phase, unfinished_tasks, failed_paths, tested_interfaces, notes, related_vuln_ids, next_steps }, force_new?, base_updated_at?, parent_session_id?, roots_only?, include_archived?, keyword?, hosts?, limit? }',
+      en: '{ action: "save" | "load" | "list" | "attach_assets" | "restore_previous", session_id?, payload?: { project_name, target_hosts, current_phase, unfinished_tasks, failed_paths, tested_interfaces, notes, related_vuln_ids, next_steps }, force_new?, base_updated_at?, parent_session_id?, roots_only?, include_archived?, keyword?, hosts?, limit? }'
     },
     returns: {
       zh: 'save: { success, action, created, session } | { success:false, requires_choice:true, candidates[] }；load/attach_assets/restore_previous: { success, action, session }；list: { success, action, total, items[] }',

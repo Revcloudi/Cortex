@@ -47,7 +47,7 @@ Cortex 的认知快照保存任务的战术进度：项目 / 目标 Host / 阶�
 3. **创建时 9 个字段全填**（`project_name` / `target_hosts` / `current_phase` / `unfinished_tasks` / `failed_paths` / `tested_interfaces` / `notes` / `related_vuln_ids` / `next_steps`）；数组 / 备注可空，但 key 不能省。
 4. **更新用 `session_id` + 只传变化字段**；未传保持不变；数组整体替换（`[]` 清空）。
 5. **`SESSION_EXISTS` 必须让用户选择**：返回 `{ success: false, requires_choice: true, code: "SESSION_EXISTS", candidates }`；把候选展示给用户，选「继续已有会话（save + session_id）」或「新建（save + force_new: true）」，禁止自行猜测。
-6. **恢复流程**：`list`（`keyword` / `roots_only`）→ `load(project)` 看 `children` → 用户选子会话 → `load(child)`。**一次只 load 一条完整会话**，不要批量 load。
+6. **恢复流程**：`list`（`keyword` / `roots_only`）→ `load(project)` 看 `children` → 用户选子会话 → `load(child)`。**一次只 load 一条完整会话**，不要批量 load；**未先 list → load 就凭记忆继续 = 违规。**
 7. **归档 / 删除只由用户在桌面端操作**（MCP 无此 action，Agent 不能删除）。归档会话默认不出现在 `list`（`include_archived: true` 才显示，`load` 仍可查看）；归档会话不可 `save` / `attach_assets` / `restore_previous`，需提示用户在 UI 取消归档。
 8. **职责分工**：漏洞详情 / HTTP 报文 / 复现步骤 / 修复建议 → `save_vulnerability`；接口目录 / 完整原始请求 / 技术栈 / 敏感泄露 → `sync_asset_info`；快照只放测试结论（`tested_interfaces`）、备注（`notes`）、关联 ID（`related_vuln_ids`）。大段报文、截图不进快照。
 9. **payload 上限**：整体序列化 ≤32,000 字符；`tested_interfaces` ≤50 条（`target` ≤300 / `method` ≤300 / `result` ≤500）、`notes` ≤8,000 字符、`related_vuln_ids` ≤100 个。超限先压缩 `notes`、精简矩阵。
@@ -55,6 +55,7 @@ Cortex 的认知快照保存任务的战术进度：项目 / 目标 Host / 阶�
 11. **回滚只用 `restore_previous`**（单步，执行前向用户确认；回滚后 `previous_state` 清空，不能连续回滚）。
 12. **乐观锁**：更新传 `base_updated_at`（本次修改基于的 `updated_at`）；返回 `STALE` 说明会话已变，必须先重新 `load` 再改。
 13. **MCP 不可用**（工具缺失 / `server is disconnected`）→ 先运行 `ctx doctor`，确认 Agent 以 stdio 拉起 MCP（开发版 `node <项目>/out/mcp/stdio.cjs`，安装版 `<install>\bin\node.exe` + `mcp-stdio.cjs`）、数据库路径正确，然后**重启 Agent**（不是重启 GUI）；数据库忙 / schema 过旧时打开一次 GUI 或运行 `ctx doctor`。禁止假装已保存 / 静默跳过；用户明确说不用保存时从其指令。
+14. **保存时机**：阶段完成、上下文将满、会话结束或用户要求保存进度时，必须 `save`；未按要求保存就把任务当作结束 = 任务未完成。
 
 ## 字段规范（payload）
 
@@ -157,6 +158,23 @@ manage_snapshot({
 ```
 
 把 `candidates` 展示给用户，选「继续已有会话（save + session_id）」或「新建（save + force_new: true）」；不得自行猜测。
+
+## 返回与错误处理
+
+| 调用 | 成功返回 |
+| --- | --- |
+| `save`（创建 / 更新） | `{ success: true, action: "save", created, session }` |
+| `load` | `{ success: true, action: "load", session, children? }`（项目会话带 children 摘要） |
+| `list` | `{ success: true, action: "list", total, items }` |
+| `attach_assets` / `restore_previous` | `{ success: true, action, session }` |
+
+常见错误（均返回 `isError: true`，按提示修正后重试）：
+
+- `SESSION_EXISTS`：同项目已有会话且未带 `session_id` / `force_new`；把 `candidates` 给用户选择。
+- `STALE`：`base_updated_at` 已过期；先重新 `load` 再带最新 `updated_at` 重试。
+- 归档会话：`save` / `attach_assets` / `restore_previous` 被拒绝，提示用户在桌面端取消归档。
+- 校验失败：字段路径会给出（如 9 个字段缺失、payload 超过 32,000 字符、`parent_session_id` 越层）。
+- `load` 不存在的 ID：先 `list` 确认 `session_id`。
 
 ## 保存前 checklist
 

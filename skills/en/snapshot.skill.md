@@ -47,7 +47,7 @@ Anything that does not qualify is never written to the asset library and gets no
 3. **Fill all 9 fields at creation** (`project_name` / `target_hosts` / `current_phase` / `unfinished_tasks` / `failed_paths` / `tested_interfaces` / `notes` / `related_vuln_ids` / `next_steps`); arrays / notes may be empty, but the keys cannot be omitted.
 4. **Update with `session_id` + only the changed fields**; fields not passed stay unchanged; arrays are replaced wholesale (`[]` clears them).
 5. **`SESSION_EXISTS` must be presented to the user**: it returns `{ success: false, requires_choice: true, code: "SESSION_EXISTS", candidates }`; show the candidates to the user and let them choose "continue the existing session (save + session_id)" or "create a new one (save + force_new: true)"; never guess.
-6. **Restore flow**: `list` (`keyword` / `roots_only`) → `load(project)` to view `children` → the user picks a child session → `load(child)`. **Load only one complete session at a time**; do not batch-load.
+6. **Restore flow**: `list` (`keyword` / `roots_only`) → `load(project)` to view `children` → the user picks a child session → `load(child)`. **Load only one complete session at a time**; do not batch-load. **Skipping list → load and continuing from memory is a violation.**
 7. **Archiving / deletion is done by the user in the desktop app only** (the MCP has no such action, and the agent cannot delete). Archived sessions do not appear in `list` by default (`include_archived: true` shows them, and `load` can still view them); an archived session cannot be modified with `save` / `attach_assets` / `restore_previous`, so prompt the user to unarchive it in the UI.
 8. **Division of responsibilities**: vulnerability details / HTTP messages / reproduction steps / remediation → `save_vulnerability`; endpoint directory / complete raw requests / tech stack / sensitive leaks → `sync_asset_info`; a snapshot holds only test conclusions (`tested_interfaces`), notes (`notes`) and related IDs (`related_vuln_ids`). Large message dumps and screenshots do not go into a snapshot.
 9. **Payload limits**: the whole serialized payload ≤32,000 characters; `tested_interfaces` ≤50 entries (`target` ≤300 / `method` ≤300 / `result` ≤500), `notes` ≤8,000 characters, `related_vuln_ids` ≤100. If over the limit, compress `notes` and trim the matrix first.
@@ -55,6 +55,7 @@ Anything that does not qualify is never written to the asset library and gets no
 11. **Rollback only via `restore_previous`** (single step; confirm with the user before executing; after a rollback `previous_state` is cleared, so consecutive rollbacks are not possible).
 12. **Optimistic locking**: pass `base_updated_at` on update (the `updated_at` this change is based on); a `STALE` response means the session has changed, so you must `load` it again before editing.
 13. **If the MCP is unavailable** (tools missing / `server is disconnected`) → run `ctx doctor` first, confirm the agent launches the MCP over stdio (development `node <project>/out/mcp/stdio.cjs`, installed `<install>\bin\node.exe` + `mcp-stdio.cjs`) and that the database path is correct, then **restart the agent** (not the GUI); if the database is busy / the schema is too old, open the GUI once or run `ctx doctor`. Do not pretend the save succeeded / silently skip; if the user explicitly says not to save, follow their instruction.
+14. **Save timing**: when a phase completes, context is nearly full, the session is ending, or the user asks to save progress, you must `save`; ending the task without the required save = the task is not complete.
 
 ## Field specification (payload)
 
@@ -157,6 +158,23 @@ Common calls:
 ```
 
 Show `candidates` to the user and let them choose "continue the existing session (save + session_id)" or "create a new one (save + force_new: true)"; do not guess.
+
+## Returns and error handling
+
+| Call | Success result |
+| --- | --- |
+| `save` (create / update) | `{ success: true, action: "save", created, session }` |
+| `load` | `{ success: true, action: "load", session, children? }` (project sessions include child summaries) |
+| `list` | `{ success: true, action: "list", total, items }` |
+| `attach_assets` / `restore_previous` | `{ success: true, action, session }` |
+
+Common errors (all return `isError: true`; fix the input and retry):
+
+- `SESSION_EXISTS`: the project already has a session and no `session_id` / `force_new` was given; show the `candidates` to the user.
+- `STALE`: `base_updated_at` is outdated; `load` again and retry with the latest `updated_at`.
+- Archived session: `save` / `attach_assets` / `restore_previous` are rejected; ask the user to unarchive it in the desktop UI.
+- Validation: the field path is reported (missing creation fields, payload over 32,000 characters, `parent_session_id` across levels).
+- `load` on an unknown ID: run `list` first to confirm the `session_id`.
 
 ## Pre-save checklist
 

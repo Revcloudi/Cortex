@@ -97,7 +97,7 @@ function registerSyncAssetInfoTool(server: McpServer, deps: AssetToolDeps): void
     {
       title: '同步资产上下文',
       description:
-        '将侦察所得资产上下文（指纹、接口、敏感泄露、测试参数、关联漏洞）写入本地 SQLite。host_port 优先传完整 URL（如 https://example.com/login）；单独的 IP / IP:端口不支持入库，IP 资产请传完整 http(s) URL。接口优先用 interfaces[]：path 必填，method/params/request 可选，request 为完整原始 HTTP 请求；旧版 interface_dir 仍兼容并规范化为 { path }。JS/CSS/图片等静态文件不是接口。test_parameters 记录从响应/URL/JS 收集的非密测试参数种子（id/orderId/tenantId）：values 只放少量样例、pattern 写枚举规则，禁止放密码/Token/PII；tested/notes/related_vuln_ids 记录测试状态。mode=replace（默认，完整快照）或 merge（增量合并）。',
+        '将侦察所得资产上下文（指纹、接口、敏感泄露、测试参数、关联漏洞）写入本地 SQLite。调用前先用 query_asset_context 读取已有上下文，避免覆盖旧信息。host_port 优先传完整 URL（如 https://example.com/login）；单独的 IP / IP:端口不支持入库，IP 资产请传完整 http(s) URL。接口优先用 interfaces[]：path 必填，method/params/request 可选，request 为完整原始 HTTP 请求；旧版 interface_dir 仍兼容并规范化为 { path }。JS/CSS/图片等静态文件不是接口。test_parameters 记录从响应/URL/JS 收集的非密测试参数种子（id/orderId/tenantId）：values 只放少量样例、pattern 写枚举规则，禁止放密码/Token/PII；tested/notes/related_vuln_ids 记录测试状态。mode=replace（默认，完整快照）或 merge（增量合并）。',
       inputSchema: SyncAssetInfoToolInput,
       annotations: {
         readOnlyHint: false,
@@ -156,7 +156,7 @@ function registerQueryAssetContextTool(server: McpServer, deps: AssetToolDeps): 
     {
       title: '查询资产上下文',
       description:
-        '只读查询资产上下文，host_port 与 project_name 二选一：host_port 返回该资产的完整 AssetContext（项目名、技术栈、interfaces[]、interface_dir[]、敏感泄露、关联漏洞、last_seen）；project_name 模糊查询返回 AssetContext[]（可为空数组）。',
+        '只读查询资产上下文，host_port 与 project_name 二选一：host_port 返回该资产的完整 AssetContext（项目名、技术栈、interfaces[]、interface_dir[]、test_parameters[]、敏感泄露、关联漏洞、last_seen）；project_name 模糊查询返回 AssetContext[]（可为空数组）。未找到资产时返回 isError 提示先侦察并 sync_asset_info。',
       inputSchema: QueryAssetContextToolInput,
       annotations: {
         readOnlyHint: true,

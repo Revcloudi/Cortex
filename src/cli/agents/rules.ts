@@ -49,7 +49,7 @@ Cortex 通过 MCP 常驻 6 个工具（DSH 前缀为 \`mcp__cortex__\`）：
 - 资产：\`sync_asset_info\` / \`query_asset_context\`
 - 认知快照：\`manage_snapshot\`
 
-完成 JS 审计、指纹识别、接口抓包、目录扫描等信息收集后，必须把 Web 资产上下文沉淀到 Cortex：
+完成 JS 审计、指纹识别、接口抓包、目录扫描等信息收集后，必须把 Web 资产上下文沉淀到 Cortex；未同步（或未在回复中说明为何不适用）= 任务未完成：
 
 1. 先调用 \`query_asset_context({ host_port })\`（或 \`{ project_name }\`）读取已有资产，避免重复侦察和覆盖旧信息。
 2. 再调用 \`sync_asset_info\` 写入本次的指纹、接口、敏感泄露、测试参数与关联漏洞；完整快照用 \`mode: "replace"\`，增量发现用 \`mode: "merge"\`。
@@ -65,8 +65,8 @@ Cortex 通过 MCP 常驻 6 个工具（DSH 前缀为 \`mcp__cortex__\`）：
 
 ### 认知快照（硬性）
 
-1. 新会话继续已有任务前，先用 \`manage_snapshot\` 的 \`list\` → \`load\` 恢复战术进度（先 list 项目会话，再 load 选中的子会话；一次只 load 一条完整会话），不要凭记忆假设上下文。
-2. 阶段完成、上下文将满、会话结束或用户要求保存进度时，用 \`manage_snapshot\` 的 \`save\` 保存认知快照；大型 SRC 按「项目会话（root）→ 系统子会话（一层）」组织，子会话创建时传 \`parent_session_id\`，新建前先 \`list\` 确认项目。
+1. 新会话继续已有任务前，先用 \`manage_snapshot\` 的 \`list\` → \`load\` 恢复战术进度（先 list 项目会话，再 load 选中的子会话；一次只 load 一条完整会话），不要凭记忆假设上下文；**未先 list → load 就凭记忆继续 = 违规**。
+2. 阶段完成、上下文将满、会话结束或用户要求保存进度时，用 \`manage_snapshot\` 的 \`save\` 保存认知快照；未按要求保存快照 = 任务未完成。大型 SRC 按「项目会话（root）→ 系统子会话（一层）」组织，子会话创建时传 \`parent_session_id\`，新建前先 \`list\` 确认项目。
 3. 同一任务不要并行维护多个同级会话；同项目已有会话时，不带 \`session_id\` 的 \`save\` 会返回 \`SESSION_EXISTS\` 候选，必须让用户选择「继续已有会话」或「新建会话（force_new: true）」，禁止自行猜测；大型 SRC 按第 2 条用项目会话 + 系统子会话组织。
 4. 价值门槛：只给 scope 内、HTTP 可达、有真实攻击面（登录 / API / 上传 / 后台 / SSO / 敏感数据）且有复用价值的目标入资产库 / 建子会话；不可达、停放页、默认页、纯静态 / CDN、重复域、越界目标不入库、不建会话，排除项汇总进项目会话 \`notes\` 的范围台账，禁止一个 host 建一个子会话。
 5. 目标 Host 归属用 \`attach_assets\` 并入会话；已完成事项不要留在 \`unfinished_tasks\`（数组整体替换）。

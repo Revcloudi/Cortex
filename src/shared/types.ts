@@ -724,11 +724,11 @@ export const ManageSnapshotInputSchema = z
     force_new: z.boolean().optional(),
     /** Optimistic concurrency token: the `updated_at` the agent based its edit on. */
     base_updated_at: z.string().trim().min(1).max(64).optional(),
-    /** Create a child (system) session under a root project session. */
+    /** Create a child (system) session under a root project session; also a list filter for children. */
     parent_session_id: z.string().trim().min(1).max(100).optional(),
     /** list: only root/project sessions. */
     roots_only: z.boolean().optional(),
-    /** list: only children of this project session. */
+    /** list: include archived sessions (hidden by default). */
     include_archived: z.boolean().optional(),
     keyword: z.string().trim().max(200).optional(),
     hosts: z

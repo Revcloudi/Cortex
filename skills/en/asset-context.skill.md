@@ -10,7 +10,7 @@ Cortex stores not only vulnerabilities but also "asset context". Asset context i
 ## Hard rules (MUST)
 
 1. **Before testing a host / URL, first call `query_asset_context({ host_port })`** (or `query_asset_context({ project_name })`) to read the existing asset context, avoiding duplicate recon and avoiding overwriting old information.
-2. **After finishing a round of information gathering, you must call `sync_asset_info`** to persist the fingerprints, endpoints, leaks and related vulnerabilities that were added or changed this time.
+2. **After finishing a round of information gathering, you must call `sync_asset_info` before replying to the user**, to persist the fingerprints, endpoints, leaks and related vulnerabilities that were added or changed this time. Not syncing (or not explaining why it does not apply) = the task is not complete.
 3. **Prefer recording endpoints as structured `interfaces[]`**: write `path` first; after JS auditing / traffic capture confirms an endpoint, fill in `method`, `params` and `request` one by one. `request` must be the **complete raw HTTP request** (request line, Host/headers, optional body), not a path and not a URL. The legacy `interface_dir: string[]` is still supported: the server normalizes it to `{ path }` on read/write, without errors or data loss; but new data should not be a bare path array anymore.
 4. **Prefer passing a full URL for `host_port`** (supports `http://` / `https://`, ports, login pages / business paths); the `host` field is a pure host (no port, no scheme, no path) and may be omitted, in which case the server derives it from the URL. Do not write only a generic path that cannot locate the system.
 5. **A bare IP / IP:port is not accepted**: this asset library targets Web/HTTP assets and does not record port scans, service discovery or protocol probes for bare IPs. IP assets must be recorded as a full `http(s)://IP:port/path` URL (e.g. `http://10.0.0.5:8080/login`).
@@ -47,11 +47,11 @@ Cortex stores not only vulnerabilities but also "asset context". Asset context i
 | `tech_stack` | string | No | Fingerprint information; separate each technology with `, ` / `，` / `; ` / `；` / `、` / newlines, e.g. `Nginx, Spring Boot 3, Vue 3`; the UI splits on these separators into individual tags |
 | `auth_required` | boolean | No | Whether the core functionality requires a logged-in session; default `false`, set `true` only when there is evidence |
 | `status` | enum | No | `Alive` / `Dead` / `WAF_Blocked`, default `Alive` |
-| `interfaces` | object[] | Recommended | **Structured endpoint list**, fields below; preferred for new data, up to 2000 entries |
+| `interfaces` | object[] | No (recommended) | **Structured endpoint list**, fields below; preferred for new data, up to 2000 entries |
 | `interface_dir` | string[] | No (compatibility field) | Legacy bare-path list, kept only for backward compatibility; the server normalizes it to `{ path }` and merges/deduplicates it with `interfaces`. Write `interfaces` for new data |
-| `leaked_infos` | object[] | Yes | Sensitive leak list, fields below |
-| `test_parameters` | object[] | No | **Non-secret test parameter seeds** (ids / order numbers / tenant ids from post-login traffic, IDOR/enumeration material), fields below; do not mix with `leaked_infos` |
-| `related_vuln_ids` | string[] | No | Related vulnerability IDs; they must already exist |
+| `leaked_infos` | object[] | No (default `[]`, up to 200 entries) | Sensitive leak list, fields below |
+| `test_parameters` | object[] | No | **Non-secret test parameter seeds** (ids / order numbers / tenant ids from post-login traffic, IDOR/enumeration material), fields below; do not mix with `leaked_infos`; up to 100 entries |
+| `related_vuln_ids` | string[] | No | Related vulnerability IDs; prefer IDs already stored in the vulnerability library (existence is not enforced) |
 | `last_seen` | string | No | Written automatically by the server; the agent does not need to pass it |
 
 > The server normalizes `interfaces` and `interface_dir` together: a bare path → `{ path }`; when the same `path` already has a structured method, the old bare-path entry is upgraded/deduplicated; `interface_count` and the UI both count normalized structured endpoints. Static paths such as JS/CSS/images are rejected in both.
@@ -244,6 +244,14 @@ After confirming a vulnerability:
 1. First `query_vulnerabilities({ host })` to deduplicate, then `save_vulnerability` to persist;
 2. Then `sync_asset_info` to write the new vulnerability ID into `related_vuln_ids`;
 3. The asset library's "Related vulnerabilities" tab shows vulnerabilities matched automatically by the same host plus explicitly linked ones.
+
+## Returns and error handling
+
+- `sync_asset_info(...)` → `{ success: true, host_port, host, created, mode, message }`; `created: false` means an existing asset was replaced/merged.
+- `query_asset_context({ host_port })` → the full `AssetContext` (including `interfaces[]`, `leaked_infos[]`, `test_parameters[]`, `related_vuln_ids[]`, `last_seen`); a missing asset returns `isError: true` and tells you to finish recon and call `sync_asset_info` first.
+- `query_asset_context({ project_name })` → `AssetContext[]` (fuzzy match, possibly empty).
+- Validation failures return `isError: true` plus the field path: a bare IP / IP:port, a static-asset `path`, or a `host` with port/scheme are rejected — fix the field and retry.
+- `mode: "replace"` treats this payload as authoritative; `mode: "merge"` keeps fields you did not pass. Either way, read the full context with `query_asset_context` before writing to avoid deleting data.
 
 ## Common mistakes
 

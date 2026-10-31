@@ -10,7 +10,7 @@ Cortex 不仅存漏洞，也存“资产上下文”。资产上下文是后续�
 ## 硬性规则（MUST）
 
 1. **开始测试一个 Host / URL 前，先调用 `query_asset_context({ host_port })`**（或 `query_asset_context({ project_name })`）读取已有资产上下文，避免重复侦察、避免覆盖旧信息。
-2. **完成一次信息收集后，必须调用 `sync_asset_info`** 把本次新增或变化的指纹、接口、泄露、关联漏洞同步入库。
+2. **完成一次信息收集后，必须在回复用户之前调用 `sync_asset_info`** 把本次新增或变化的指纹、接口、泄露、关联漏洞同步入库；未同步（或未说明为何不适用）= 任务未完成。
 3. **接口优先记录为结构化 `interfaces[]`**：先写 `path`；JS 审计 / 抓包确认后逐条补全 `method`、`params`、`request`。`request` 必须是**完整原始 HTTP 请求**（请求行、Host/headers、可选 body），不是路径，也不是 URL。旧版 `interface_dir: string[]` 仍被兼容：服务端读入/写入时规范化为 `{ path }`，不会报错，也不会丢数据；但新数据不要再只写纯路径数组。
 4. **`host_port` 优先传完整 URL**（支持 `http://` / `https://`、端口、登录页/业务路径）；`host` 字段是纯 host（无端口、无协议头、无路径），可省略，由服务端从 URL 推导。不要只写一个无法定位系统的泛路径。
 5. **单独的 IP / IP:端口 不支持入库**：本资产库面向 Web/HTTP 资产，不记录纯 IP 的端口扫描、服务发现、协议探测结果。IP 资产必须以完整 `http(s)://IP:端口/路径` 的 URL 形式记录（例如 `http://10.0.0.5:8080/login`）。
@@ -47,11 +47,11 @@ Cortex 不仅存漏洞，也存“资产上下文”。资产上下文是后续�
 | `tech_stack` | string | 否 | 指纹信息，用 `, ` / `，` / `; ` / `；` / `、` / 换行分隔每个技术，如 `Nginx, Spring Boot 3, Vue 3`；界面按分隔符拆成独立标签 |
 | `auth_required` | boolean | 否 | 核心功能是否需要登录态；默认 `false`，仅在有证据时填 `true` |
 | `status` | enum | 否 | `Alive` / `Dead` / `WAF_Blocked`，默认 `Alive` |
-| `interfaces` | object[] | 推荐 | **结构化接口列表**，字段见下表；新数据优先使用，最多 2000 条 |
+| `interfaces` | object[] | 否（推荐） | **结构化接口列表**，字段见下表；新数据优先使用，最多 2000 条 |
 | `interface_dir` | string[] | 否（兼容字段） | 旧版纯路径列表，仅为向后兼容保留；服务端会规范化为 `{ path }` 并与 `interfaces` 合并去重。新数据请写 `interfaces` |
-| `leaked_infos` | object[] | 是 | 敏感泄露列表，字段见下 |
-| `test_parameters` | object[] | 否 | **非密测试参数种子**（登录后流量里的 id / 订单号 / 租户号等，IDOR/枚举素材），字段见下；不要与 `leaked_infos` 混用 |
-| `related_vuln_ids` | string[] | 否 | 关联漏洞 ID，必须已存在 |
+| `leaked_infos` | object[] | 否（默认 `[]`，最多 200 条） | 敏感泄露列表，字段见下 |
+| `test_parameters` | object[] | 否 | **非密测试参数种子**（登录后流量里的 id / 订单号 / 租户号等，IDOR/枚举素材），字段见下；不要与 `leaked_infos` 混用；最多 100 条 |
+| `related_vuln_ids` | string[] | 否 | 关联漏洞 ID；建议引用已入库的漏洞 ID（服务端不校验存在性） |
 | `last_seen` | string | 否 | 由服务端自动写入，Agent 不需要传 |
 
 > 服务端会把 `interfaces` 与 `interface_dir` 一起规范化：纯路径 → `{ path }`；同一 `path` 已有结构化 method 时，旧的纯路径条目会被升级/去重；`interface_count` 与界面均按规范化后的结构化接口数量统计。JS/CSS/图片等静态路径在两者中都会被拒绝。
@@ -244,6 +244,14 @@ sync_asset_info({
 1. 先 `query_vulnerabilities({ host })` 查重，再 `save_vulnerability` 入库；
 2. 再 `sync_asset_info` 把新漏洞 ID 写入 `related_vuln_ids`；
 3. 资产库的「关联漏洞」Tab 会展示同 Host 自动匹配 + 显式关联的漏洞。
+
+## 返回与错误处理
+
+- `sync_asset_info(...)` → `{ success: true, host_port, host, created, mode, message }`；`created: false` 表示覆盖/合并了已有资产。
+- `query_asset_context({ host_port })` → 完整 `AssetContext`（含 `interfaces[]`、`leaked_infos[]`、`test_parameters[]`、`related_vuln_ids[]`、`last_seen`）；未找到时返回 `isError: true`，提示先完成侦察并 `sync_asset_info`。
+- `query_asset_context({ project_name })` → `AssetContext[]`（模糊匹配，可为空数组）。
+- 参数校验失败返回 `isError: true` + 字段路径：单独 IP / IP:端口、静态资源 path、host 带端口/协议头都会被拒绝，按提示修正后重试。
+- `mode: "replace"` 以本次 payload 为准，`mode: "merge"` 不会清空未传字段；两种模式都建议先 `query_asset_context` 读全量再写，避免误删。
 
 ## 常见错误
 
