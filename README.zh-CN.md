@@ -2,7 +2,7 @@
 
 # Cortex
 
-本地优先、MCP 原生的授权渗透测试数据中枢：同一份 SQLite 记忆库同时服务于 **纯 stdio MCP Server**（Agent）、**`ctx` CLI**（终端）、**Windows 桌面端**（人类），以及面向本机/受信任内网的**可选浏览器 Web 端**。
+Cortex：本地优先的渗透测试情报中枢。同一份 SQLite 记忆库同时服务于面向 Agent 的纯 stdio MCP server、面向终端的 ctx CLI 与面向人类的桌面看板。此外，本机或受信任内网还可通过浏览器 Web 端使用同一套看板。
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
@@ -20,13 +20,23 @@
 
 `ctx web` 用本机 HTTP 服务把同一套 React 界面提供到浏览器，读写与桌面端、CLI、MCP 完全相同的 SQLite 文件。定位是**本机或受信任内网的单用户**：没有账号体系、不支持多用户，也绝不做公网部署——不要把该端口暴露到互联网。
 
+从源码构建并启动：
+
 ```bash
+# 需要 Node.js >= 22.12
+git clone git@github.com:Revcloudi/Cortex.git
+cd Cortex
+npm install
+npm run build            # typecheck + Electron + MCP + CLI
+npm run build:web        # Web 端 SPA（ctx web 必需）
+npm run build:server     # Web 端 HTTP 服务端 bundle（ctx web 必需）
+npm link                 # 可选：让 ctx 进入 PATH
 ctx web
 ```
 
 ### 命令行参数
 
-构建步骤见下方 [CLI (ctx)](#cli-ctx)；下面是常用启动参数：
+常用启动参数：
 
 ```bash
 ctx web                                      # 默认 127.0.0.1:8787

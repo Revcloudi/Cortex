@@ -2,7 +2,7 @@
 
 # Cortex
 
-Local-first, MCP-native pentest intelligence hub for authorized engagements. One SQLite memory shared by a **pure stdio MCP server** (agents), a **`ctx` CLI** (terminals), a **Windows desktop app** (humans) and an optional **browser Web UI** for the same machine or a trusted intranet.
+Cortex: local-first pentest intelligence hub. One SQLite memory shared by a pure stdio MCP server for agents, a ctx CLI and a desktop dashboard for humans. An optional browser Web UI serves the same dashboard on the local machine or a trusted intranet.
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
@@ -20,13 +20,23 @@ Local-first, MCP-native pentest intelligence hub for authorized engagements. One
 
 `ctx web` serves the same React UI from a local HTTP server that reads and writes the same SQLite file as the desktop app, the CLI and the MCP server. It is for **one user on the local machine or a trusted intranet**: there are no accounts, no multi-user access and no public deployment — never expose this port to the internet.
 
+Build and start from a source checkout:
+
 ```bash
+# Node.js >= 22.12 required
+git clone git@github.com:Revcloudi/Cortex.git
+cd Cortex
+npm install
+npm run build            # typecheck + Electron + MCP + CLI
+npm run build:web        # Web SPA (required for ctx web)
+npm run build:server     # Web HTTP server bundle (required for ctx web)
+npm link                 # optional: expose `ctx` on PATH
 ctx web
 ```
 
 ### Command-line options
 
-Build steps are covered below in [CLI (ctx)](#cli-ctx); common options:
+Common options:
 
 ```bash
 ctx web                                      # default 127.0.0.1:8787
