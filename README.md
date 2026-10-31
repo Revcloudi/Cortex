@@ -14,7 +14,7 @@ Local-first, MCP-native pentest intelligence hub for authorized engagements. One
 
 > **Authorized testing only.** Cortex is built for systems you own or have explicit written permission to test. You are responsible for complying with applicable laws, contracts and scope boundaries.
 
-**English** · [简体中文](README.zh-CN.md) · [CLI-only install](#cli-only-macos--linux--windows) · [Windows desktop app](#windows-desktop-app) · [MCP tools](#mcp-access)
+**English** · [简体中文](README.zh-CN.md) · [CLI-only install](#cli-only-macos--linux--windows) · [Windows desktop app](#windows-desktop-app) · [Usage examples](#usage-examples) · [MCP tools](#mcp-access)
 
 ## CLI only (macOS / Linux / Windows)
 
@@ -174,6 +174,114 @@ node out/cli/ctx.cjs doctor                            # diagnose config + runti
 ```
 
 `ctx init` backs up existing files as `.bak-YYYYMMDD-HHmmss`, merges marker-managed blocks idempotently (old `PENTEST` markers are migrated), validates JSON / TOML / YAML before writing, and installs the selected skill language. Restart the agent afterwards (not the GUI); then verify a read-only tool call such as `manage_snapshot({ "action": "list" })`.
+
+## Usage examples
+
+MCP is JSON-RPC over **stdio**: there is no HTTP endpoint to curl. After `ctx init`, the agent launches the server and calls the six tools; the desktop app and `ctx` read the same SQLite file, so agent writes appear in the GUI/CLI immediately.
+
+| Tool | Use it when |
+| --- | --- |
+| `query_asset_context` | Before testing an asset: reuse project name, tech stack, interfaces, leaks and test parameters. |
+| `sync_asset_info` | After recon/JS audit/interception: persist fingerprints, structured interfaces, leaks and non-secret test parameters. |
+| `query_vulnerabilities` | Before saving a finding: deduplicate by host, or review existing records. |
+| `save_vulnerability` | Persist a confirmed finding with Markdown reproduction steps. |
+| `update_vulnerability` | Change status, or append a retest conclusion without rewriting the original evidence. |
+| `manage_snapshot` | Save/resume the tactical state of the current task ("session memory"). |
+
+### 1. Reuse recon and persist asset context
+
+Ask the agent to start from existing memory (DSH exposes tools as `mcp__cortex__*`; other clients use the plain names):
+
+```text
+query_asset_context({ "host_port": "https://app.example.com/login" })
+query_asset_context({ "project_name": "Example Program" })
+```
+
+After recon, persist what was learned. Tool arguments for `sync_asset_info`:
+
+```json
+{
+  "mode": "merge",
+  "host_port": "https://app.example.com/login",
+  "project_name": "Example Program",
+  "tech_stack": "Nginx, Spring Boot, Vue",
+  "interfaces": [
+    {
+      "path": "/api/v1/files/download",
+      "method": "GET",
+      "params": "file_id=1",
+      "request": "GET /api/v1/files/download?file_id=1 HTTP/1.1\r\nHost: app.example.com\r\n"
+    }
+  ],
+  "test_parameters": [
+    {
+      "name": "file_id",
+      "endpoint": "GET /api/v1/files/download?id={id}",
+      "location": "query",
+      "values": ["1", "2", "3"],
+      "pattern": "incrementing integer"
+    }
+  ]
+}
+```
+
+Rules: `host_port` prefers a full URL; `mode: "replace"` writes a full snapshot, `mode: "merge"` merges increments; JS/CSS/images are evidence, not interfaces.
+
+### 2. Deduplicate, save and retest a finding
+
+```text
+query_vulnerabilities({ "host": "app.example.com:443" })
+```
+
+If it is new, call `save_vulnerability` with the finding payload (`vuln_name`, `host`, `severity`, `target_url`, `description`, `impact`, `reproduction_steps` as Markdown, `remediation`, `status`, …). When retesting an existing record, append:
+
+````text
+update_vulnerability({
+  "vuln_id": "VULN-20260101-001",
+  "retest": {
+    "time_range": "2026-01-02 10:00–10:04",
+    "conclusion": "### Retest Conclusion\n\n- **Result**: still reproducible\n\n```http\nGET /api/v1/files/download?file_id=1 HTTP/1.1\nHost: app.example.com\n```"
+  }
+})
+````
+
+Never overwrite the original evidence with `save_vulnerability`; use `update_vulnerability` for retests and status changes.
+
+### 3. Session memory (cognitive snapshots)
+
+Snapshots are stored in the same SQLite database and survive agent restarts. At the start of a new session, resume:
+
+```text
+manage_snapshot({ "action": "list" })
+manage_snapshot({ "action": "load", "session_id": "SESS-20260101-001" })
+```
+
+At a phase boundary / before the context window fills / before ending:
+
+```json
+{
+  "action": "save",
+  "payload": {
+    "project_name": "Example Program",
+    "target_hosts": ["app.example.com"],
+    "current_phase": "IDOR verification",
+    "unfinished_tasks": ["check /api/v1/orders/{id} for tenant B"],
+    "failed_paths": ["/admin requires SSO"],
+    "next_steps": "enumerate file_id on the download endpoint"
+  }
+}
+```
+
+- Project sessions can have **one level of child sessions** (`parent_session_id`); keep one active session per task.
+- If the project already has a session, `save` returns `SESSION_EXISTS` with candidates — ask the user to continue an existing session or create `force_new: true`; do not guess.
+- `attach_assets({ "hosts": ["app.example.com"] })` joins targets into a session; `restore_previous` rolls back one overwrite.
+- A snapshot holds conclusions/tactical state (`notes`, `tested_interfaces`, `related_vuln_ids`), not large HTTP dumps/screenshots; payload ≤32,000 characters and `notes` should reference evidence paths.
+- Archived sessions are read-only in the database; unarchive them in the desktop UI before reusing.
+
+### 4. Review and hand over
+
+- Desktop: Vulnerability dashboard, Asset library, Snapshot sessions (project → child hierarchy), Markdown export, and the sidebar database button for opening another SQLite file.
+- CLI: `ctx vulns list --severity High`, `ctx assets get app.example.com`, `ctx snapshots list`, `ctx search payment`, `ctx doctor`.
 
 ## CLI (`ctx`)
 
