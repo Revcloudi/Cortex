@@ -14,7 +14,91 @@
 
 > **仅限授权测试。** Cortex 仅用于你拥有或已获得明确书面授权的系统；使用者需自行遵守相关法律、合同与测试范围约束。
 
-**简体中文** · [English](README.md) · [CLI (ctx)](#cli-ctx) · [启动 Web 端](#启动-web-端) · [Windows 桌面端](#windows-桌面端) · [MCP 工具](#mcp-接入)
+**简体中文** · [English](README.md) · [Web 端（仅内网）](#web-端仅内网) · [Windows 桌面端](#windows-桌面端) · [CLI (ctx)](#cli-ctx) · [MCP 工具](#mcp-接入)
+
+## Web 端（仅内网）
+
+`ctx web` 用本机 HTTP 服务把同一套 React 界面提供到浏览器，读写与桌面端、CLI、MCP 完全相同的 SQLite 文件。定位是**本机或受信任内网的单用户**：没有账号体系、不支持多用户，也绝不做公网部署——不要把该端口暴露到互联网。
+
+```bash
+ctx web
+```
+
+### 命令行参数
+
+构建步骤见下方 [CLI (ctx)](#cli-ctx)；下面是常用启动参数：
+
+```bash
+ctx web                                      # 默认 127.0.0.1:8787
+ctx web --port 9000 --db /data/cortex.db     # 指定端口与数据库
+ctx web --host 192.168.1.20 --allow-intranet # 仅限受信任内网（必须显式确认）
+ctx web --no-open --json                     # 不打开浏览器；输出含 tokenUrls、dbPath、readOnly 等的 JSON
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `--port <port>` | 监听端口，默认 `8787` |
+| `--host <host>` | 监听地址，默认 `127.0.0.1`；任何非回环地址还必须同时传 `--allow-intranet` |
+| `--db <path>` | SQLite 文件，默认 `~/.cortex/data.db`（Windows：`%USERPROFILE%\.cortex\data.db`）或 `CTX_DB_PATH` |
+| `--allow-intranet` | 显式允许非回环地址（仅限受信任内网） |
+| `--no-open` | 不自动打开浏览器 |
+| `--json` | 全局参数；输出机器可读 JSON（`tokenUrls`、`dbPath`、`readOnly`、`loopbackOnly`、`intranetAllowed`） |
+
+### 登录方式
+
+启动时会打印一到多个包含一次性 token 的登录链接（`http://…/?token=…`）。打开后服务端写入 `HttpOnly` + `SameSite=Strict` 会话 cookie（12 小时）并重定向，token 从地址栏消失；刷新页面仍保持登录，重启服务后旧链接立即失效。token 只存在于该链接中——不写日志、不落盘，也不接受其他查询参数传入。脚本可改用 `Authorization: Bearer <token>`。
+
+### 安全红线
+
+- 默认只监听回环地址（`127.0.0.1`）；绑定非回环地址必须显式传 `--allow-intranet`，且仅限**受信任内网**。
+- 部署在服务器上时，防火墙 / 安全组只放行私网网段（`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`），绝不做端口映射、公网反向代理或隧道。
+- 不把 SQLite 文件、token、日志放到任何公开目录。
+- 把打印出来的登录链接当作密码：不要截图、分享或粘贴到聊天工具。token 不写日志；重启服务后旧链接失效并打印新链接。
+- 所有 API 都要求会话 cookie 或 Bearer token；HTML 与静态资源同样需要鉴权。服务不开放 CORS，只接受同源请求；校验 `Host` 头防 DNS rebinding；写请求另外校验 `Origin` / `Referer` / `Sec-Fetch-Site`。
+- 严格 CSP、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`，API 响应带 `Cache-Control: no-store`；JSON 请求体上限 2 MB；按 IP 限流（约 300 请求 / 10 秒）；错误信息脱敏，请求日志不记录 token、cookie 或请求体。`/api/app`、`/api/db`、`/api/config` 只暴露数据库文件名，不暴露绝对路径。
+
+### Web 端与桌面端的差异
+
+- 浏览器里没有无边框窗口：最小化/最大化/关闭按钮隐藏。
+- 数据库由服务端 `ctx web --db` 固定；侧边栏数据库行是只读展示，无法打开切换器。
+- 报告导出由服务端返回 Markdown 内容、浏览器下载保存，服务端不落盘。
+- 剪贴板使用 `navigator.clipboard`（含旧浏览器降级）；没有原生保存对话框。
+- 「接入 Agent」与首次配置写入的是运行 `ctx web` 那台机器的 Agent 配置，而不是浏览器所在设备；Web 模式会先二次确认。
+- Agent、CLI 或桌面端写入数据库后，前端通过 `GET /api/events`（SSE）自动刷新。
+- SQLite 文件无写权限时服务以**只读模式**启动（`/api/config` 返回 `readOnly: true`），写接口返回 403 并给出明确提示。
+
+### 可选：内网反向代理
+
+如果内网 TLS 反向代理会保留自定义 `Host`，把该主机名加入显式允许列表；上游仍用 HTTP，并在代理层提供 TLS 与额外认证：
+
+```bash
+CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
+```
+
+### 安装版
+
+`npm run build:runtime` 会把 `out/web` 复制到 `<install>/bin/web/`、`out/server/web.cjs` 复制到 `<install>/bin/web-server.cjs`；`npm run dist:win` 会在打包前执行 `build:web` + `build:server`，因此重新构建的 Windows 安装包包含 Web 组件。缺少 Web 产物的 runtime 构建仍可用于 CLI/MCP（会打印警告）；半成品状态（有 SPA 但没有 server bundle）会明确失败。
+
+> 设计取舍与完整安全清单见 [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md)。
+
+## Windows 桌面端
+
+Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。macOS / Linux 请使用下面的 CLI 方式。
+
+| 平台 | 下载 |
+| --- | --- |
+| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
+
+> 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。安装包未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"）。
+
+### 安装后接入 Agent
+
+安装器只负责安装 Cortex 和快捷方式。启动 Cortex，打开 **MCP 接入** 页面，然后任选其一：
+
+- 点击 **接入 Agent**：自动检测本机 Agent，写入 MCP 配置与对应语言的 Skill（Skill 语言跟随界面语言），之后重启 Agent；或
+- 在终端执行 `ctx init --yes`（显式指定可用 `ctx init --yes --agents dsh --skill-lang en`）。
+
+卸载只删除程序，保留 `%USERPROFILE%\.cortex\data.db`。桌面端界面支持**中英文随时切换**；Skill 语言之后也可用 `ctx init --skill-lang` 修改。
 
 ## CLI (ctx)
 
@@ -62,31 +146,6 @@ npm run dist:win     # Windows 安装包（含内置 Node 运行时，产物在 
 | `ctx open [--dev] [--path <exe>]` | 启动/聚焦桌面端（Windows 安装版或源码构建） |
 | `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | 在浏览器中使用同一套看板（仅回环或受信任内网） |
 
-## 启动 Web 端
-
-```bash
-ctx web
-```
-
-## Windows 桌面端
-
-Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。macOS / Linux 请使用上面的 CLI 方式。
-
-| 平台 | 下载 |
-| --- | --- |
-| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
-
-> 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。安装包未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"）。
-
-### 安装后接入 Agent
-
-安装器只负责安装 Cortex 和快捷方式。启动 Cortex，打开 **MCP 接入** 页面，然后任选其一：
-
-- 点击 **接入 Agent**：自动检测本机 Agent，写入 MCP 配置与对应语言的 Skill（Skill 语言跟随界面语言），之后重启 Agent；或
-- 在终端执行 `ctx init --yes`（显式指定可用 `ctx init --yes --agents dsh --skill-lang en`）。
-
-卸载只删除程序，保留 `%USERPROFILE%\.cortex\data.db`。桌面端界面支持**中英文随时切换**；Skill 语言之后也可用 `ctx init --skill-lang` 修改。
-
 ## 日常使用
 
 安装完成后，Cortex 就是每个测试任务的“记忆层”：
@@ -101,67 +160,6 @@ Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex
 Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
        query_asset_context / query_vulnerabilities → 继续测试
 ```
-
-## Web 端（仅内网）
-
-`ctx web` 用本机 HTTP 服务把同一套 React 界面提供到浏览器，读写与桌面端、CLI、MCP 完全相同的 SQLite 文件。定位是**本机或受信任内网的单用户**：没有账号体系、不支持多用户，也绝不做公网部署——不要把该端口暴露到互联网。
-
-### 命令行参数
-
-构建步骤见上方 [CLI (ctx)](#cli-ctx)；下面是常用启动参数：
-
-```bash
-ctx web                                      # 默认 127.0.0.1:8787
-ctx web --port 9000 --db /data/cortex.db     # 指定端口与数据库
-ctx web --host 192.168.1.20 --allow-intranet # 仅限受信任内网（必须显式确认）
-ctx web --no-open --json                     # 不打开浏览器；输出含 tokenUrls、dbPath、readOnly 等的 JSON
-```
-
-| 参数 | 说明 |
-| --- | --- |
-| `--port <port>` | 监听端口，默认 `8787` |
-| `--host <host>` | 监听地址，默认 `127.0.0.1`；任何非回环地址还必须同时传 `--allow-intranet` |
-| `--db <path>` | SQLite 文件，默认 `~/.cortex/data.db`（Windows：`%USERPROFILE%\.cortex\data.db`）或 `CTX_DB_PATH` |
-| `--allow-intranet` | 显式允许非回环地址（仅限受信任内网） |
-| `--no-open` | 不自动用浏览器打开登录链接 |
-| `--json` | 全局参数；输出机器可读 JSON（`tokenUrls`、`dbPath`、`readOnly`、`loopbackOnly`、`intranetAllowed`） |
-
-### 登录方式
-
-启动时会打印一到多个包含一次性 token 的登录链接（`http://…/?token=…`）。打开后服务端写入 `HttpOnly` + `SameSite=Strict` 会话 cookie（12 小时）并重定向，token 从地址栏消失；刷新页面仍保持登录，重启服务后旧链接立即失效。token 只存在于该链接中——不写日志、不落盘，也不接受其他查询参数传入。脚本可改用 `Authorization: Bearer <token>`。
-
-### 安全红线
-
-- 默认只监听回环地址（`127.0.0.1`）；绑定非回环地址必须显式传 `--allow-intranet`，且仅限**受信任内网**。
-- 部署在服务器上时，防火墙 / 安全组只放行私网网段（`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`），绝不做端口映射、公网反向代理或隧道。
-- 不把 SQLite 文件、token、日志放到任何公开目录。
-- 把打印出来的登录链接当作密码：不要截图、分享或粘贴到聊天工具。token 不写日志；重启服务后旧链接失效并打印新链接。
-- 所有 API 都要求会话 cookie 或 Bearer token；HTML 与静态资源同样需要鉴权。服务不开放 CORS，只接受同源请求；校验 `Host` 头防 DNS rebinding；写请求另外校验 `Origin` / `Referer` / `Sec-Fetch-Site`。
-- 严格 CSP、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`，API 响应带 `Cache-Control: no-store`；JSON 请求体上限 2 MB；按 IP 限流（约 300 请求 / 10 秒）；错误信息脱敏，请求日志不记录 token、cookie 或请求体。`/api/app`、`/api/db`、`/api/config` 只暴露数据库文件名，不暴露绝对路径。
-
-### Web 端与桌面端的差异
-
-- 浏览器里没有无边框窗口：最小化/最大化/关闭按钮隐藏。
-- 数据库由服务端 `ctx web --db` 固定；侧边栏数据库行是只读展示，无法打开切换器。
-- 报告导出由服务端返回 Markdown 内容、浏览器下载保存，服务端不落盘。
-- 剪贴板使用 `navigator.clipboard`（含旧浏览器降级）；没有原生保存对话框。
-- 「接入 Agent」与首次配置写入的是运行 `ctx web` 那台机器的 Agent 配置，而不是浏览器所在设备；Web 模式会先二次确认。
-- Agent、CLI 或桌面端写入数据库后，前端通过 `GET /api/events`（SSE）自动刷新。
-- SQLite 文件无写权限时服务以**只读模式**启动（`/api/config` 返回 `readOnly: true`），写接口返回 403 并给出明确提示。
-
-### 可选：内网反向代理
-
-如果内网 TLS 反向代理会保留自定义 `Host`，把该主机名加入显式允许列表；上游仍用 HTTP，并在代理层提供 TLS 与额外认证：
-
-```bash
-CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
-```
-
-### 安装版
-
-`npm run build:runtime` 会把 `out/web` 复制到 `<install>/bin/web/`、`out/server/web.cjs` 复制到 `<install>/bin/web-server.cjs`；`npm run dist:win` 会在打包前执行 `build:web` + `build:server`，因此重新构建的 Windows 安装包包含 Web 组件。缺少 Web 产物的 runtime 构建仍可用于 CLI/MCP（会打印警告）；半成品状态（有 SPA 但没有 server bundle）会明确失败。
-
-> 设计取舍与完整安全清单见 [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md)。
 
 ## 功能
 

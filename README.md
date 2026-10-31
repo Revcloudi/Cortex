@@ -14,7 +14,91 @@ Local-first, MCP-native pentest intelligence hub for authorized engagements. One
 
 > **Authorized testing only.** Cortex is built for systems you own or have explicit written permission to test. You are responsible for complying with applicable laws, contracts and scope boundaries.
 
-**English** · [简体中文](README.zh-CN.md) · [CLI (ctx)](#cli-ctx) · [Start the Web UI](#start-the-web-ui) · [Windows desktop app](#windows-desktop-app) · [MCP tools](#mcp-access)
+**English** · [简体中文](README.zh-CN.md) · [Web UI (intranet only)](#web-ui-intranet-only) · [Windows desktop app](#windows-desktop-app) · [CLI (ctx)](#cli-ctx) · [MCP tools](#mcp-access)
+
+## Web UI (intranet only)
+
+`ctx web` serves the same React UI from a local HTTP server that reads and writes the same SQLite file as the desktop app, the CLI and the MCP server. It is for **one user on the local machine or a trusted intranet**: there are no accounts, no multi-user access and no public deployment — never expose this port to the internet.
+
+```bash
+ctx web
+```
+
+### Command-line options
+
+Build steps are covered below in [CLI (ctx)](#cli-ctx); common options:
+
+```bash
+ctx web                                      # default 127.0.0.1:8787
+ctx web --port 9000 --db /data/cortex.db     # explicit port and database
+ctx web --host 192.168.1.20 --allow-intranet # trusted intranet only (explicit opt-in)
+ctx web --no-open --json                     # no browser; JSON with tokenUrls, dbPath, readOnly…
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--port <port>` | Listen port, default `8787` |
+| `--host <host>` | Bind address, default `127.0.0.1`; any non-loopback address also requires `--allow-intranet` |
+| `--db <path>` | SQLite file, default `~/.cortex/data.db` (`%USERPROFILE%\.cortex\data.db`) or `CTX_DB_PATH` |
+| `--allow-intranet` | Explicit opt-in for a non-loopback bind on a trusted intranet |
+| `--no-open` | Do not open a browser automatically |
+| `--json` | Global flag; print machine-readable JSON (`tokenUrls`, `dbPath`, `readOnly`, `loopbackOnly`, `intranetAllowed`) |
+
+### Logging in
+
+Startup prints one or more login URLs containing a one-time token (`http://…/?token=…`). Opening one sets an `HttpOnly` + `SameSite=Strict` session cookie (12 h) and redirects so the token disappears from the address bar; reloads keep the session, restarting the server invalidates it. The token exists only in that URL — it is never logged, persisted or accepted from any other query string. Scripts may send `Authorization: Bearer <token>` instead of the cookie.
+
+### Security red lines
+
+- Default is loopback (`127.0.0.1`); a non-loopback bind is refused unless `--allow-intranet` is passed, and then it is only for a **trusted intranet**.
+- On a server, allow only the private ranges in the firewall / security group (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`). Never create a port mapping, public reverse proxy or tunnel for this port.
+- Keep the SQLite file, the token and the logs out of any public directory.
+- Treat the printed login URL as a secret: do not screenshot, share or paste it into chat tools. The token is never logged, and restarting the server invalidates the old link and prints a fresh one.
+- Every API call requires the session cookie or Bearer token; HTML and static assets require it too. There is no CORS: only same-origin requests are accepted, `Host` is validated against DNS rebinding, and writes are additionally gated by `Origin` / `Referer` / `Sec-Fetch-Site`.
+- Strict CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Cache-Control: no-store` on API responses; 2 MB JSON body limit; per-IP rate limit (~300 requests / 10 s); errors are sanitized, and request logs never contain tokens, cookies or bodies. `/api/app`, `/api/db` and `/api/config` expose only the database file name, never its absolute path.
+
+### Web vs desktop differences
+
+- No frameless-window controls: the minimize/maximize/close buttons are hidden in a browser.
+- The database is fixed by the server (`ctx web --db`); the sidebar row is a read-only display and the database picker is unavailable.
+- Report export returns the Markdown to the browser and saves it as a download; the server writes nothing to disk.
+- Clipboard uses `navigator.clipboard` with a legacy fallback; there is no native save dialog.
+- **Connect agents** and first-run setup write agent configs on the machine running `ctx web`, not on the browser's machine; Web mode asks for confirmation first.
+- `GET /api/events` (SSE) refreshes the UI when an agent, the CLI or the desktop app writes the database.
+- If the SQLite file is not writable, the server starts in **read-only mode** (`/api/config` reports `readOnly: true`) and write APIs return 403 with a clear message.
+
+### Optional intranet reverse proxy
+
+If an internal TLS reverse proxy preserves a custom `Host`, add that hostname to the opt-in allow-list; keep the upstream on HTTP and add TLS plus extra authentication at the proxy:
+
+```bash
+CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
+```
+
+### Installed build
+
+`npm run build:runtime` copies `out/web` to `<install>/bin/web/` and `out/server/web.cjs` to `<install>/bin/web-server.cjs`; `npm run dist:win` runs `build:web` + `build:server` before packaging, so a freshly built installer includes the Web UI. A runtime built without the Web artifacts still works for CLI/MCP (it prints a warning); a half-built state (SPA present but server bundle missing) fails the build on purpose.
+
+> Design rationale and the full security checklist: [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md).
+
+## Windows desktop app
+
+The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**. macOS and Linux are supported through the CLI build below.
+
+| Platform | Download |
+| --- | --- |
+| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
+
+> The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
+
+### Connect agents after installation
+
+The installer only installs Cortex and its shortcuts. Start Cortex, open **MCP Access**, then either:
+
+- click **Connect agents** — detects local agents, writes their MCP config and the bilingual skills (skill language follows the UI language), then restart the agent; or
+- run `ctx init --yes` in a terminal (`ctx init --yes --agents dsh --skill-lang en` to choose explicitly).
+
+Uninstalling removes the program only — `%USERPROFILE%\.cortex\data.db` is preserved. The UI supports **中文 / English switching** at any time; skill language can also be changed later with `ctx init --skill-lang`.
 
 ## CLI (ctx)
 
@@ -62,31 +146,6 @@ The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macO
 | `ctx open [--dev] [--path <exe>]` | Launch or focus the desktop app (Windows install or source build) |
 | `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | Serve the same dashboard in a browser (loopback or trusted intranet only) |
 
-## Start the Web UI
-
-```bash
-ctx web
-```
-
-## Windows desktop app
-
-The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**. macOS and Linux are supported through the CLI build above.
-
-| Platform | Download |
-| --- | --- |
-| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
-
-> The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
-
-### Connect agents after installation
-
-The installer only installs Cortex and its shortcuts. Start Cortex, open **MCP Access**, then either:
-
-- click **Connect agents** — detects local agents, writes their MCP config and the bilingual skills (skill language follows the UI language), then restart the agent; or
-- run `ctx init --yes` in a terminal (`ctx init --yes --agents dsh --skill-lang en` to choose explicitly).
-
-Uninstalling removes the program only — `%USERPROFILE%\.cortex\data.db` is preserved. The UI supports **中文 / English switching** at any time; skill language can also be changed later with `ctx init --skill-lang`.
-
 ## Daily workflow
 
 Once installed, Cortex is the memory layer for every engagement:
@@ -101,67 +160,6 @@ You:  continue the "Example Program" IDOR task and resume the unfinished checks
 Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
        query_asset_context / query_vulnerabilities -> continue testing
 ```
-
-## Web UI (intranet only)
-
-`ctx web` serves the same React UI from a local HTTP server that reads and writes the same SQLite file as the desktop app, the CLI and the MCP server. It is for **one user on the local machine or a trusted intranet**: there are no accounts, no multi-user access and no public deployment — never expose this port to the internet.
-
-### Command-line options
-
-Build steps are covered above in [CLI (ctx)](#cli-ctx); common options:
-
-```bash
-ctx web                                      # default 127.0.0.1:8787
-ctx web --port 9000 --db /data/cortex.db     # explicit port and database
-ctx web --host 192.168.1.20 --allow-intranet # trusted intranet only (explicit opt-in)
-ctx web --no-open --json                     # no browser; JSON with tokenUrls, dbPath, readOnly…
-```
-
-| Option | Meaning |
-| --- | --- |
-| `--port <port>` | Listen port, default `8787` |
-| `--host <host>` | Bind address, default `127.0.0.1`; any non-loopback address also requires `--allow-intranet` |
-| `--db <path>` | SQLite file, default `~/.cortex/data.db` (`%USERPROFILE%\.cortex\data.db`) or `CTX_DB_PATH` |
-| `--allow-intranet` | Explicit opt-in for a non-loopback bind on a trusted intranet |
-| `--no-open` | Do not open the login URL in a browser |
-| `--json` | Global flag; print machine-readable JSON (`tokenUrls`, `dbPath`, `readOnly`, `loopbackOnly`, `intranetAllowed`) |
-
-### Logging in
-
-Startup prints one or more login URLs containing a one-time token (`http://…/?token=…`). Opening one sets an `HttpOnly` + `SameSite=Strict` session cookie (12 h) and redirects so the token disappears from the address bar; reloads keep the session, restarting the server invalidates it. The token exists only in that URL — it is never logged, persisted or accepted from any other query string. Scripts may send `Authorization: Bearer <token>` instead of the cookie.
-
-### Security red lines
-
-- Default is loopback (`127.0.0.1`); a non-loopback bind is refused unless `--allow-intranet` is passed, and then it is only for a **trusted intranet**.
-- On a server, allow only the private ranges in the firewall / security group (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`). Never create a port mapping, public reverse proxy or tunnel for this port.
-- Keep the SQLite file, the token and the logs out of any public directory.
-- Treat the printed login URL as a secret: do not screenshot, share or paste it into chat tools. The token is never logged, and restarting the server invalidates the old link and prints a fresh one.
-- Every API call requires the session cookie or Bearer token; HTML and static assets require it too. There is no CORS: only same-origin requests are accepted, `Host` is validated against DNS rebinding, and writes are additionally gated by `Origin` / `Referer` / `Sec-Fetch-Site`.
-- Strict CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Cache-Control: no-store` on API responses; 2 MB JSON body limit; per-IP rate limit (~300 requests / 10 s); errors are sanitized, and request logs never contain tokens, cookies or bodies. `/api/app`, `/api/db` and `/api/config` expose only the database file name, never its absolute path.
-
-### Web vs desktop differences
-
-- No frameless-window controls: the minimize/maximize/close buttons are hidden in a browser.
-- The database is fixed by the server (`ctx web --db`); the sidebar row is a read-only display and the database picker is unavailable.
-- Report export returns the Markdown to the browser and saves it as a download; the server writes nothing to disk.
-- Clipboard uses `navigator.clipboard` with a legacy fallback; there is no native save dialog.
-- **Connect agents** and first-run setup write agent configs on the machine running `ctx web`, not on the browser's machine; Web mode asks for confirmation first.
-- `GET /api/events` (SSE) refreshes the UI when an agent, the CLI or the desktop app writes the database.
-- If the SQLite file is not writable, the server starts in **read-only mode** (`/api/config` reports `readOnly: true`) and write APIs return 403 with a clear message.
-
-### Optional intranet reverse proxy
-
-If an internal TLS reverse proxy preserves a custom `Host`, add that hostname to the opt-in allow-list; keep the upstream on HTTP and add TLS plus extra authentication at the proxy:
-
-```bash
-CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
-```
-
-### Installed build
-
-`npm run build:runtime` copies `out/web` to `<install>/bin/web/` and `out/server/web.cjs` to `<install>/bin/web-server.cjs`; `npm run dist:win` runs `build:web` + `build:server` before packaging, so a freshly built installer includes the Web UI. A runtime built without the Web artifacts still works for CLI/MCP (it prints a warning); a half-built state (SPA present but server bundle missing) fails the build on purpose.
-
-> Design rationale and the full security checklist: [docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md](docs/WEB_SUPPORT_DEVELOPMENT_GUIDE.md).
 
 ## Features
 
