@@ -1,7 +1,7 @@
 {
   "name": "cortex",
   "version": "0.1.1",
-  "description": "Cortex: local-first pentest intelligence hub. One SQLite memory shared by a pure stdio MCP server for agents, a ctx CLI and a desktop dashboard for humans.",
+  "description": "Shared memory for authorized pentest work: vulnerabilities, assets and task progress stay in one place, so testers and AI can resume testing, review findings and deliver reports.",
   "main": "./out/main/index.js",
   "bin": {
     "ctx": "./out/cli/ctx.cjs"
