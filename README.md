@@ -85,11 +85,11 @@ CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 
 ## Windows desktop app
 
-The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.1**. macOS and Linux: install from npm (see [CLI (ctx)](#cli-ctx)).
+The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.2**. macOS and Linux: install from npm (see [CLI (ctx)](#cli-ctx)).
 
 | Platform | Download |
 | --- | --- |
-| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
+| Windows 10/11 x64 | [Cortex-0.1.2-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.2-setup.exe) |
 
 > The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
 

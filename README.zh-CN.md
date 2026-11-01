@@ -85,11 +85,11 @@ CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 
 ## Windows 桌面端
 
-Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.1**。macOS / Linux 请使用 npm 安装（见 [CLI (ctx)](#cli-ctx)）。
+Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.2**。macOS / Linux 请使用 npm 安装（见 [CLI (ctx)](#cli-ctx)）。
 
 | 平台 | 下载 |
 | --- | --- |
-| Windows 10/11 x64 | [Cortex-0.1.1-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.1-setup.exe) |
+| Windows 10/11 x64 | [Cortex-0.1.2-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.2-setup.exe) |
 
 > 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。安装包未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"）。
 
