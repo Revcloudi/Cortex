@@ -162,6 +162,11 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 - 主进程用 chokidar 监听 SQLite 文件（`data.db`、`-wal`、`-shm`）并推送 `data:changed`，Agent 写入通常 1 秒内可见，且不丢失筛选与打开的详情。
 - Skill 双语：`skills/zh/**` 与 `skills/en/**`，安装时选择。
 
+### 记忆星云
+
+**记忆星云**把本地 SQLite 记忆变成一张可探索的 3D 星图：项目/目标、Host 资产、漏洞、泄露与快照会话通过派生关系连成可旋转、可缩放的网络（纯只读，不新增数据表）。支持全库 / 当前资产 / 当前任务三种 Scope、搜索与类型过滤、聚焦邻域、`+N` 性能聚合、全屏与 PNG 导出，无 WebGL 时自动降级为 2D SVG。
+
+![记忆星云：由本地 Cortex 数据库生成的项目/目标/资产/漏洞关系图](assets/readme-nebula.png)
 ## 环境要求
 
 - CLI 与源码构建需要 Node.js **≥ 22.12**；Windows 桌面安装包内置 Node 运行时，最终用户无需安装 Node。
