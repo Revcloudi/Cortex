@@ -67,6 +67,16 @@ function isBusyError(error: unknown): boolean {
   return code === 'SQLITE_BUSY' || code === 'SQLITE_BUSY_SNAPSHOT' || code === 'SQLITE_LOCKED'
 }
 
+function isUniqueConstraintError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const code = (error as { code?: string }).code
+  return (
+    code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+    code === 'SQLITE_CONSTRAINT_PRIMARYKEY' ||
+    code === 'SQLITE_CONSTRAINT'
+  )
+}
+
 function statIfExists(filePath: string): { size: number; mtimeMs: number } | null {
   try {
     const stat = statSync(filePath)
@@ -794,22 +804,47 @@ export class DatabaseService {
     return this.writeTransaction(() => this.insertOrReplaceVulnerability(vuln))
   }
 
+  /**
+   * Create a new vulnerability with an atomically allocated id.
+   *
+   * The id is allocated inside the same `BEGIN IMMEDIATE` transaction as the
+   * INSERT, so two MCP processes can never read the same "max id" and silently
+   * overwrite each other through the old upsert path.
+   */
+  createVulnerability(
+    payload: Omit<Vulnerability, 'id'>
+  ): { vulnerability: Vulnerability; created: true } {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return this.writeTransaction(() => {
+          const id = this.generateId()
+          const vulnerability: Vulnerability = { ...payload, id }
+          this.insertVulnerabilityOnly(vulnerability)
+          return { vulnerability, created: true as const }
+        })
+      } catch (error) {
+        // A fixed-id writer may theoretically race us; retry with a fresh id.
+        if (!isUniqueConstraintError(error) || attempt === 2) throw error
+      }
+    }
+    throw new Error('无法分配漏洞 ID，请重试')
+  }
+
+  private insertVulnerabilityOnly(vuln: Vulnerability): void {
+    this.insertVulnerability(vuln, false)
+  }
+
   private insertOrReplaceVulnerability(vuln: Vulnerability): { created: boolean } {
     const existing = this.db.prepare('SELECT 1 AS hit FROM vulnerabilities WHERE id = ?').get(vuln.id)
     const created = existing === undefined
+    this.insertVulnerability(vuln, true)
+    return { created }
+  }
 
-    this.db
-      .prepare(
-        `
-        INSERT INTO vulnerabilities (
-          id, host, entry_point, vuln_name, vuln_type, severity, target_url,
-          description, impact, affected_interfaces, reproduction_steps, remediation,
-          crypto_details, test_boundaries, retest_results, related_vuln_ids, status, created_at
-        ) VALUES (
-          @id, @host, @entry_point, @vuln_name, @vuln_type, @severity, @target_url,
-          @description, @impact, @affected_interfaces, @reproduction_steps, @remediation,
-          @crypto_details, @test_boundaries, @retest_results, @related_vuln_ids, @status, @created_at
-        )
+  /** Shared row mapping: `replace` adds ON CONFLICT DO UPDATE, `false` is INSERT-only. */
+  private insertVulnerability(vuln: Vulnerability, replaceOnConflict: boolean): void {
+    const conflictClause = replaceOnConflict
+      ? `
         ON CONFLICT(id) DO UPDATE SET
           host = excluded.host,
           entry_point = excluded.entry_point,
@@ -827,7 +862,22 @@ export class DatabaseService {
           retest_results = excluded.retest_results,
           related_vuln_ids = excluded.related_vuln_ids,
           status = excluded.status,
-          created_at = excluded.created_at
+          created_at = excluded.created_at`
+      : ''
+
+    this.db
+      .prepare(
+        `
+        INSERT INTO vulnerabilities (
+          id, host, entry_point, vuln_name, vuln_type, severity, target_url,
+          description, impact, affected_interfaces, reproduction_steps, remediation,
+          crypto_details, test_boundaries, retest_results, related_vuln_ids, status, created_at
+        ) VALUES (
+          @id, @host, @entry_point, @vuln_name, @vuln_type, @severity, @target_url,
+          @description, @impact, @affected_interfaces, @reproduction_steps, @remediation,
+          @crypto_details, @test_boundaries, @retest_results, @related_vuln_ids, @status, @created_at
+        )
+        ${conflictClause}
         `
       )
       .run({
@@ -850,8 +900,6 @@ export class DatabaseService {
         status: vuln.status,
         created_at: vuln.created_at
       })
-
-    return { created }
   }
 
   getById(id: string): Vulnerability | null {
@@ -877,7 +925,21 @@ export class DatabaseService {
     const search = filters.search?.trim()
     if (search) {
       clauses.push(
-        `(lower(host) LIKE @search OR lower(vuln_name) LIKE @search OR lower(id) LIKE @search OR lower(vuln_type) LIKE @search OR lower(target_url) LIKE @search)`
+        `(lower(host) LIKE @search
+          OR lower(vuln_name) LIKE @search
+          OR lower(id) LIKE @search
+          OR lower(vuln_type) LIKE @search
+          OR lower(target_url) LIKE @search
+          OR lower(entry_point) LIKE @search
+          OR lower(description) LIKE @search
+          OR lower(impact) LIKE @search
+          OR lower(reproduction_steps) LIKE @search
+          OR lower(crypto_details) LIKE @search
+          OR lower(test_boundaries) LIKE @search
+          OR lower(remediation) LIKE @search
+          OR lower(affected_interfaces) LIKE @search
+          OR lower(retest_results) LIKE @search
+          OR lower(status) LIKE @search)`
       )
       params.search = `%${search.toLowerCase()}%`
     }
@@ -949,14 +1011,20 @@ export class DatabaseService {
     }
   }
 
-  /** Compact list for the `query_vulnerabilities` MCP tool (host mode). */
+  /**
+   * Compact list for the `query_vulnerabilities` MCP tool (host mode).
+   *
+   * Storage keeps the caller's host verbatim, so a bare host query also
+   * matches every `host:port` row for that host; a host:port query stays exact.
+   */
   queryByHost(host: string): VulnSummary[] {
-    const rows = this.db
-      .prepare(
-        `
+    const value = host.trim()
+    const hasPort = /^(?:\[[^\]]+\]:\d{1,5}|[^:]+:\d{1,5})$/.test(value)
+    const sql = hasPort
+      ? `
         SELECT id, vuln_name, severity, target_url
         FROM vulnerabilities
-        WHERE lower(host) = lower(?)
+        WHERE lower(host) = lower(@host)
         ORDER BY
           CASE severity
             WHEN 'Critical' THEN 0
@@ -967,8 +1035,22 @@ export class DatabaseService {
           END,
           created_at DESC
         `
-      )
-      .all(host.trim()) as SummaryRow[]
+      : `
+        SELECT id, vuln_name, severity, target_url
+        FROM vulnerabilities
+        WHERE lower(host) = lower(@host)
+           OR (length(host) > length(@host) AND substr(lower(host), 1, length(@host) + 1) = lower(@host) || ':')
+        ORDER BY
+          CASE severity
+            WHEN 'Critical' THEN 0
+            WHEN 'High' THEN 1
+            WHEN 'Medium' THEN 2
+            WHEN 'Low' THEN 3
+            ELSE 4
+          END,
+          created_at DESC
+        `
+    const rows = this.db.prepare(sql).all({ host: value }) as SummaryRow[]
 
     return rows.map((row) => ({
       vuln_id: row.id,
@@ -1228,7 +1310,7 @@ export class DatabaseService {
 
     if (search) {
       clauses.push(
-        "(lower(host_port) LIKE @search OR lower(host) LIKE @search OR lower(project_name) LIKE @search OR lower(COALESCE(tech_stack, '')) LIKE @search)"
+        "(lower(host_port) LIKE @search OR lower(host) LIKE @search OR lower(project_name) LIKE @search OR lower(COALESCE(tech_stack, '')) LIKE @search OR lower(COALESCE(interfaces, '')) LIKE @search OR lower(COALESCE(interface_dir, '')) LIKE @search OR lower(COALESCE(leaked_infos, '')) LIKE @search OR lower(COALESCE(test_parameters, '')) LIKE @search)"
       )
       params.search = `%${search.toLowerCase()}%`
     }
@@ -1454,9 +1536,12 @@ export class DatabaseService {
     parentSessionId?: string
   ): SnapshotSession {
     this.assertSnapshotPayloadSize(payload)
-    const sessionId = this.generateSnapshotSessionId(now)
+    let sessionId = ''
     const timestamp = now.toISOString()
     this.writeTransaction((): void => {
+      // Allocate inside the IMMEDIATE transaction so concurrent processes
+      // cannot both read the same latest session id.
+      sessionId = this.generateSnapshotSessionId(now)
       if (parentSessionId !== undefined) {
         const parent = this.getSnapshotRow(parentSessionId)
         if (!parent) {

@@ -11,7 +11,7 @@
  * gracefully.
  */
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { DatabaseService } from '../core/db/DatabaseService'
 import { ensureDbDirectory, hardenDatabasePermissions, resolveDbPath } from '../core/paths'
 import { CORTEX_VERSION } from '../core/version'
@@ -21,7 +21,7 @@ import { createCortexServer } from './server'
 const logger = createMcpLogger()
 
 let database: DatabaseService | null = null
-let server: McpServer | null = null
+let server: Server | null = null
 let shuttingDown = false
 
 async function shutdown(code: number): Promise<void> {

@@ -1,4 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import {
@@ -8,9 +7,11 @@ import {
   type AssetContext,
   type SyncAssetResult
 } from '../../shared/types'
-import { formatUnknownError, formatZodError } from '../../shared/validation'
+import { formatUnknownError } from '../../shared/validation'
 import type { DatabaseService } from '../../core/db/DatabaseService'
 import { truncateForLog, type HubLogger } from '../../core/logging'
+import { formatMcpInputError } from './inputError'
+import type { ToolRegistrar } from './registrar'
 
 /** Asset-context tools exposed over MCP, in registration order. */
 export const ASSET_TOOL_NAMES = ['sync_asset_info', 'query_asset_context'] as const
@@ -38,11 +39,12 @@ function errorResult(message: string): CallToolResult {
 function validationError(
   toolName: AssetToolName,
   error: z.ZodError,
+  args: unknown,
   deps: AssetToolDeps
 ): CallToolResult {
-  const detail = formatZodError(error)
+  const detail = formatMcpInputError(toolName, error, args)
   deps.logger.warn(`[MCP] ${toolName} 参数校验失败: ${truncateForLog(detail)}`)
-  return errorResult(`参数校验失败: ${detail}`)
+  return errorResult(detail)
 }
 
 function notifyDataChanged(toolName: AssetToolName, deps: AssetToolDeps): void {
@@ -54,28 +56,9 @@ function notifyDataChanged(toolName: AssetToolName, deps: AssetToolDeps): void {
   }
 }
 
-/**
- * Same discovery-schema pattern as the vulnerability tools: advertise useful
- * field types while letting the callback own validation and Chinese errors.
- */
-function permissiveFields<S extends Record<string, z.ZodType>>(shape: S): Record<string, z.ZodType> {
-  const fields: Record<string, z.ZodType> = {}
-  for (const [key, field] of Object.entries(shape)) {
-    const permissive = z.union([field, z.unknown()])
-    fields[key] = field.safeParse(undefined).success ? permissive.optional() : permissive
-  }
-  return fields
-}
-
-const syncAssetInfoDiscoveryFields = permissiveFields(SyncAssetInfoInputSchema.shape)
-syncAssetInfoDiscoveryFields.test_parameters = z
-  .array(z.looseObject({ name: z.string(), endpoint: z.string(), location: z.string() }))
-  .max(100)
-  .optional()
-const SyncAssetInfoToolInput = z.looseObject(syncAssetInfoDiscoveryFields)
-const QueryAssetContextToolInput = z.looseObject(
-  permissiveFields(QueryAssetContextInputSchema.shape)
-)
+/** Strict discovery schemas; the callbacks validate and explain failures. */
+const SyncAssetInfoToolInput = SyncAssetInfoInputSchema
+const QueryAssetContextToolInput = QueryAssetContextInputSchema
 
 type ToolHandler = (args: unknown) => Promise<CallToolResult>
 
@@ -91,7 +74,7 @@ function safeTool(toolName: AssetToolName, deps: AssetToolDeps, handler: ToolHan
   }
 }
 
-function registerSyncAssetInfoTool(server: McpServer, deps: AssetToolDeps): void {
+function registerSyncAssetInfoTool(server: ToolRegistrar, deps: AssetToolDeps): void {
   server.registerTool(
     'sync_asset_info',
     {
@@ -109,7 +92,7 @@ function registerSyncAssetInfoTool(server: McpServer, deps: AssetToolDeps): void
     safeTool('sync_asset_info', deps, async (args) => {
       deps.logger.info(`[MCP] sync_asset_info 请求: ${truncateForLog(args)}`)
       const parsed = SyncAssetInfoInputSchema.safeParse(args)
-      if (!parsed.success) return validationError('sync_asset_info', parsed.error, deps)
+      if (!parsed.success) return validationError('sync_asset_info', parsed.error, args, deps)
 
       const { mode, ...payload } = parsed.data
       const rawArgs =
@@ -150,7 +133,7 @@ function registerSyncAssetInfoTool(server: McpServer, deps: AssetToolDeps): void
  * mode: `host_port` returns one full `AssetContext`, `project_name` returns a
  * fuzzy-matched `AssetContext[]` (possibly empty).
  */
-function registerQueryAssetContextTool(server: McpServer, deps: AssetToolDeps): void {
+function registerQueryAssetContextTool(server: ToolRegistrar, deps: AssetToolDeps): void {
   server.registerTool(
     'query_asset_context',
     {
@@ -169,7 +152,7 @@ function registerQueryAssetContextTool(server: McpServer, deps: AssetToolDeps): 
       deps.logger.info(`[MCP] query_asset_context 请求: ${truncateForLog(args)}`)
 
       const parsed = QueryAssetContextInputSchema.safeParse(args)
-      if (!parsed.success) return validationError('query_asset_context', parsed.error, deps)
+      if (!parsed.success) return validationError('query_asset_context', parsed.error, args, deps)
 
       const { host_port: hostPort, project_name: projectName } = parsed.data
 
@@ -201,7 +184,7 @@ function registerQueryAssetContextTool(server: McpServer, deps: AssetToolDeps): 
 }
 
 /** Register exactly the two asset-context tools on a fresh McpServer. */
-export function registerAssetTools(server: McpServer, deps: AssetToolDeps): void {
+export function registerAssetTools(server: ToolRegistrar, deps: AssetToolDeps): void {
   registerSyncAssetInfoTool(server, deps)
   registerQueryAssetContextTool(server, deps)
   deps.logger.debug(

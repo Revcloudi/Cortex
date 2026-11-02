@@ -1,4 +1,3 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import {
@@ -8,9 +7,11 @@ import {
   type SnapshotChoiceResult,
   type SnapshotSavePayload
 } from '../../shared/types'
-import { formatUnknownError, formatZodError } from '../../shared/validation'
+import { formatUnknownError } from '../../shared/validation'
 import { DatabaseError, type DatabaseService } from '../../core/db/DatabaseService'
 import { truncateForLog, type HubLogger } from '../../core/logging'
+import { formatMcpInputError } from './inputError'
+import type { ToolRegistrar } from './registrar'
 
 /** Cognitive-snapshot tools exposed over MCP, in registration order. */
 export const SNAPSHOT_TOOL_NAMES = ['manage_snapshot'] as const
@@ -38,11 +39,12 @@ function errorResult(message: string): CallToolResult {
 function validationError(
   toolName: SnapshotToolName,
   error: z.ZodError,
+  args: unknown,
   deps: SnapshotToolDeps
 ): CallToolResult {
-  const detail = formatZodError(error)
+  const detail = formatMcpInputError(toolName, error, args)
   deps.logger.warn(`[MCP] ${toolName} 参数校验失败: ${truncateForLog(detail)}`)
-  return errorResult(`参数校验失败: ${detail}`)
+  return errorResult(detail)
 }
 
 /** Never let a broken UI listener turn a successful database write into an MCP error. */
@@ -55,22 +57,8 @@ function notifyDataChanged(toolName: SnapshotToolName, deps: SnapshotToolDeps): 
   }
 }
 
-/**
- * Same discovery-schema pattern as the other tools: advertise real field types
- * in `tools/list` while the callback owns strict validation and Chinese errors.
- */
-function permissiveFields<S extends Record<string, z.ZodType>>(shape: S): Record<string, z.ZodType> {
-  const fields: Record<string, z.ZodType> = {}
-  for (const [key, field] of Object.entries(shape)) {
-    const permissive = z.union([field, z.unknown()])
-    fields[key] = field.safeParse(undefined).success ? permissive.optional() : permissive
-  }
-  return fields
-}
-
-const ManageSnapshotToolInput = z.looseObject(
-  permissiveFields(ManageSnapshotInputSchema.shape)
-)
+/** Strict discovery schema; the callback validates and explains failures. */
+const ManageSnapshotToolInput = ManageSnapshotInputSchema
 
 type ToolHandler = (args: unknown) => Promise<CallToolResult>
 
@@ -101,7 +89,8 @@ function snapshotDatabaseError(error: unknown): CallToolResult {
 
 function saveSnapshot(
   input: z.output<typeof ManageSnapshotInputSchema>,
-  deps: SnapshotToolDeps
+  deps: SnapshotToolDeps,
+  rawArgs: unknown
 ): CallToolResult {
   const { payload, session_id: sessionId } = input
   if (payload === undefined) {
@@ -142,7 +131,7 @@ function saveSnapshot(
 
   const full = SnapshotPayloadSchema.safeParse(payload)
   if (!full.success) {
-    return validationError('manage_snapshot', full.error, deps)
+    return validationError('manage_snapshot', full.error, rawArgs, deps)
   }
 
   const parentSessionId = input.parent_session_id
@@ -264,7 +253,7 @@ function restorePreviousSnapshot(
   }
 }
 
-function registerManageSnapshotTool(server: McpServer, deps: SnapshotToolDeps): void {
+function registerManageSnapshotTool(server: ToolRegistrar, deps: SnapshotToolDeps): void {
   server.registerTool(
     'manage_snapshot',
     {
@@ -283,12 +272,12 @@ function registerManageSnapshotTool(server: McpServer, deps: SnapshotToolDeps): 
       deps.logger.info(`[MCP] manage_snapshot 请求: ${truncateForLog(args)}`)
 
       const parsed = ManageSnapshotInputSchema.safeParse(args)
-      if (!parsed.success) return validationError('manage_snapshot', parsed.error, deps)
+      if (!parsed.success) return validationError('manage_snapshot', parsed.error, args, deps)
 
       const input = parsed.data
       switch (input.action) {
         case 'save':
-          return saveSnapshot(input, deps)
+          return saveSnapshot(input, deps, args)
         case 'load':
           return loadSnapshot(input, deps)
         case 'list':
@@ -307,7 +296,7 @@ function registerManageSnapshotTool(server: McpServer, deps: SnapshotToolDeps): 
 }
 
 /** Register the cognitive-snapshot tool on a fresh McpServer. */
-export function registerSnapshotTools(server: McpServer, deps: SnapshotToolDeps): void {
+export function registerSnapshotTools(server: ToolRegistrar, deps: SnapshotToolDeps): void {
   registerManageSnapshotTool(server, deps)
   deps.logger.debug(
     `[MCP] 已注册 ${SNAPSHOT_TOOL_NAMES.length} 个认知快照工具: ${SNAPSHOT_TOOL_NAMES.join(', ')}`

@@ -455,19 +455,39 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
   server.keepAliveTimeout = 65_000
   server.headersTimeout = 70_000
 
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error): void => {
-      server.off('listening', onListening)
-      reject(listenErrorMessage(error, options.host, options.port))
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error): void => {
+        server.off('listening', onListening)
+        reject(listenErrorMessage(error, options.host, options.port))
+      }
+      const onListening = (): void => {
+        server.off('error', onError)
+        resolve()
+      }
+      server.once('error', onError)
+      server.once('listening', onListening)
+      server.listen(options.port, options.host)
+    })
+  } catch (error) {
+    // The watcher / DB / rate limiter were created before `listen`; without
+    // this cleanup an EADDRINUSE rejection leaves open handles and the CLI
+    // process hangs after printing the friendly port error.
+    clearInterval(heartbeat)
+    rateLimiter.dispose()
+    try {
+      await watcher.stop()
+    } catch {
+      // Startup is already failing; never mask the original listen error.
     }
-    const onListening = (): void => {
-      server.off('error', onError)
-      resolve()
+    await closeHttpServer(server)
+    try {
+      db.close()
+    } catch {
+      // Ignore close errors while propagating the listen failure.
     }
-    server.once('error', onError)
-    server.once('listening', onListening)
-    server.listen(options.port, options.host)
-  })
+    throw error
+  }
 
   server.on('error', (error: Error) => {
     log(`${LOG_PREFIX} server error: ${formatError(error)}`)

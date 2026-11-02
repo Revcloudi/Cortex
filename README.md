@@ -6,7 +6,7 @@ Cortex: local-first pentest intelligence hub. One SQLite memory shared by a pure
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
-[![Version 0.1.2](https://img.shields.io/badge/version-0.1.2-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
+[![Version 0.1.3](https://img.shields.io/badge/version-0.1.3-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
 [![npm](https://img.shields.io/npm/v/@lievclouds/cortex?style=flat-square&label=npm)](https://www.npmjs.com/package/@lievclouds/cortex)
 [![MCP 6 tools](https://img.shields.io/badge/MCP-6%20tools-0ea5e9?style=flat-square)](#mcp-access)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#cli-ctx)
@@ -85,11 +85,11 @@ CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 
 ## Windows desktop app
 
-The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.2**. macOS and Linux: install from npm (see [CLI (ctx)](#cli-ctx)).
+The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.3**. macOS and Linux: install from npm (see [CLI (ctx)](#cli-ctx)).
 
 | Platform | Download |
 | --- | --- |
-| Windows 10/11 x64 | [Cortex-0.1.2-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.2-setup.exe) |
+| Windows 10/11 x64 | [Cortex-0.1.3-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.3-setup.exe) |
 
 > The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
 
@@ -169,7 +169,7 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 
 ## MCP access
 
-The MCP server is **stdio only**: the agent starts it in its own process; there is no listening port and the GUI never starts MCP. Server name: `cortex`, version `0.1.2`.
+The MCP server is **stdio only**: the agent starts it in its own process; there is no listening port and the GUI never starts MCP. Server name: `cortex`, version `0.1.3`.
 
 | Scenario | Launch command |
 | --- | --- |
@@ -290,7 +290,7 @@ npm run dist:win     # Windows installer (bundled Node runtime, artifact in rele
 ## Packaging and releases
 
 ```bash
-npm run dist:win           # build + bundled runtime → Windows x64 NSIS installer (release/Cortex-0.1.2-setup.exe)
+npm run dist:win           # build + bundled runtime → Windows x64 NSIS installer (release/Cortex-0.1.3-setup.exe)
 npm run build:runtime      # only materialize runtime/ (manual/advanced packaging)
 ```
 

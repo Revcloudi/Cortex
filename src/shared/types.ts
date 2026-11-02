@@ -85,20 +85,40 @@ const isoDateString = z
   .min(1)
   .refine((value) => !Number.isNaN(Date.parse(value)), 'created_at 必须是合法的 ISO 时间字符串')
 
+/** Validate a host or host:port identifier. Storage keeps the input verbatim. */
+function isValidVulnerabilityHost(value: string): boolean {
+  if (value.length === 0 || value.length > 255) return false
+  if (/[\s/?#]/.test(value)) return false
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return false
+
+  if (value.startsWith('[')) {
+    const match = /^\[([0-9a-fA-F:.]+)\](?::(\d{1,5}))?$/.exec(value)
+    if (!match) return false
+    const address = match[1] ?? ''
+    if (!address.includes(':')) return false
+    const port = match[2]
+    return port === undefined || (Number(port) >= 1 && Number(port) <= 65_535)
+  }
+
+  // Unbracketed IPv6 is ambiguous with host:port — require the bracket form.
+  if ((value.match(/:/g) ?? []).length > 1) return false
+
+  const match = /^([^:]+)(?::(\d{1,5}))?$/.exec(value)
+  if (!match) return false
+  const hostname = match[1] ?? ''
+  if (hostname.length === 0 || /[^A-Za-z0-9._-]/.test(hostname)) return false
+  const port = match[2]
+  return port === undefined || (Number(port) >= 1 && Number(port) <= 65_535)
+}
+
 const hostString = z
   .string()
-  .trim()
   .min(1, 'host 不能为空')
   .max(255)
-  .refine((value) => !/^[a-z][a-z0-9+.-]*:\/\//i.test(value), 'host 不能包含协议头（如 http://）')
-  .refine((value) => !/\s/.test(value), 'host 不能包含空白字符')
-  .refine((value) => !/[/?#]/.test(value), 'host 仅包含主机与端口，不能带路径或查询参数')
-  .refine((value) => {
-    const match = /^(?:\[[0-9a-fA-F:.]+\]|[A-Za-z0-9._-]+):(\d{1,5})$/.exec(value)
-    if (!match) return false
-    const port = Number.parseInt(match[1] ?? '', 10)
-    return port >= 1 && port <= 65535
-  }, 'host 必须包含 1-65535 的端口，例如 10.0.0.5:8080')
+  .refine(
+    isValidVulnerabilityHost,
+    'host 接受 host 或 host:port（例如 probe.example.com 或 probe.example.com:443）；不能包含协议头、路径或空白'
+  )
 
 /**
  * Schema for the payload an agent sends to `save_vulnerability`.
@@ -849,6 +869,8 @@ export type QueryAssetContextInput = z.infer<typeof QueryAssetContextInputSchema
 export interface SaveVulnerabilityResult {
   success: true
   id: string
+  /** The host value exactly as persisted (host or host:port). */
+  host: string
   /** True when a new row was created, false when an existing row was replaced. */
   created: boolean
 }

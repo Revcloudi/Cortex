@@ -10,7 +10,7 @@ Cortex is a local **stdio MCP Server**: the agent launches it automatically (`no
 ## Connection (stdio)
 
 - **Transport**: stdio. The agent starts the MCP server inside its own process and exchanges JSON-RPC over stdin/stdout; there is no listening port and no HTTP endpoint, and the desktop app does not start the MCP.
-- **Entry point**: development mode `node <project>/out/mcp/stdio.cjs`; Windows installed build `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs` (server name `cortex`, version `0.1.2`).
+- **Entry point**: development mode `node <project>/out/mcp/stdio.cjs`; Windows installed build `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs` (server name `cortex`, version `0.1.3`).
 - **Database**: Windows `%USERPROFILE%\.cortex\data.db`, macOS/Linux `~/.cortex/data.db`, overridable with `CTX_DB_PATH` (the legacy `PDH_DB_PATH` still works); the GUI / MCP / CLI share the same file.
 - **Verify the link**: call one read-only tool, e.g. `manage_snapshot({ "action": "list" })` or `query_vulnerabilities({ "host": "example.com:443" })`; if the tool exists and returns normally, the stdio connection works.
 
@@ -40,7 +40,7 @@ This is an **execution gate**, not a "recommended call":
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id` | string | No | Omit it to auto-assign `VULN-YYYYMMDD-NNN`; the same ID overwrites the old record |
-| `host` | string | Yes | Must include a port, e.g. `opcenter.example.com:443`; no scheme and no path |
+| `host` | string | Yes | Accepts `host` or `host:port` (e.g. `opcenter.example.com` / `opcenter.example.com:443`); **stored verbatim**, no scheme and no path |
 | `vuln_name` | string | Yes | Vulnerability name |
 | `vuln_type` | string | No | e.g. `SQLi` / `SSRF` / `Arbitrary_File_Download`; omitted = `Unclassified` (the UI renders the localized “unclassified” label) |
 | `severity` | enum | Yes | `Critical` / `High` / `Medium` / `Low` / `Info` |
@@ -171,7 +171,7 @@ Rules:
 
 ## Error handling
 
-- Parameter validation failures return `isError: true` and a field path (e.g. `host: host must include a port between 1-65535`); fix it per the message and retry.
+- Parameter validation failures return `isError: true` with the field path, expected type and a correct example (e.g. `interfaces[].params` must be a string); fix it per the message and retry.
 - Passing an array for `reproduction_steps` raises a type error; pass a Markdown string instead.
 - When `query_vulnerabilities` / `update_vulnerability` cannot find an ID, first confirm the correct ID with `query_vulnerabilities({ host })` or `{ search }`.
 - Writes return `{ success: true, id, created }`; `created: false` means the same ID was overwritten, and the client may ask for confirmation.

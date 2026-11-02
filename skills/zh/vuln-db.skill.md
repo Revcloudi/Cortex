@@ -10,7 +10,7 @@ Cortex 是本地 **stdio MCP Server**：由 Agent 自动拉起（`node <entry>`�
 ## 连接方式（stdio）
 
 - **传输**：stdio，Agent 在自己的进程里拉起 MCP server，通过 stdin/stdout 交换 JSON-RPC；不监听端口、没有 HTTP 端点，桌面端不启动 MCP。
-- **入口**：开发模式 `node <项目>/out/mcp/stdio.cjs`；Windows 安装版 `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs`（Server 名称 `cortex`，版本 `0.1.2`）。
+- **入口**：开发模式 `node <项目>/out/mcp/stdio.cjs`；Windows 安装版 `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs`（Server 名称 `cortex`，版本 `0.1.3`）。
 - **数据库**：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`，可用 `CTX_DB_PATH` 覆盖（旧版 `PDH_DB_PATH` 仍可用）；GUI / MCP / CLI 共用同一份文件。
 - **验证链路**：调用一次只读工具即可，例如 `manage_snapshot({ "action": "list" })` 或 `query_vulnerabilities({ "host": "example.com:443" })`；工具存在且返回正常即说明 stdio 连接可用。
 
@@ -40,7 +40,7 @@ Cortex 是本地 **stdio MCP Server**：由 Agent 自动拉起（`node <entry>`�
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `id` | string | 否 | 省略时自动分配 `VULN-YYYYMMDD-NNN`；相同 ID 会覆盖旧记录 |
-| `host` | string | 是 | 必须带端口，如 `opcenter.example.com:443`；不带协议头/路径 |
+| `host` | string | 是 | 接受 `host` 或 `host:port`（如 `opcenter.example.com` / `opcenter.example.com:443`）；**按传入原样存储**，不带协议头/路径 |
 | `vuln_name` | string | 是 | 漏洞名称 |
 | `vuln_type` | string | 否 | 如 `SQLi` / `SSRF` / `Arbitrary_File_Download`；省略 = `Unclassified`（UI 显示「未分类」） |
 | `severity` | enum | 是 | `Critical` / `High` / `Medium` / `Low` / `Info` |
@@ -171,7 +171,7 @@ update_vulnerability({
 
 ## 错误处理
 
-- 参数校验失败返回 `isError: true` 与字段路径（例如 `host: host 必须包含 1-65535 的端口`），按提示修正后重试。
+- 参数校验失败返回 `isError: true`、字段路径、期望类型与正确示例（例如 `interfaces[].params` 应传字符串）；按提示修正后重试。
 - `reproduction_steps` 传数组会报类型错误；改传 Markdown 字符串。
 - `query_vulnerabilities` / `update_vulnerability` 未找到 ID 时，先用 `query_vulnerabilities({ host })` 或 `{ search }` 确认正确 ID。
 - 写入返回 `{ success: true, id, created }`；`created: false` 表示同 ID 覆盖，客户端可能提示确认。

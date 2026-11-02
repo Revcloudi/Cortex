@@ -1,10 +1,18 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { z } from 'zod'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  type CallToolResult,
+  type Tool
+} from '@modelcontextprotocol/sdk/types.js'
 import type { DatabaseService } from '../core/db/DatabaseService'
 import { consoleLogger, type HubLogger } from '../core/logging'
 import { CORTEX_VERSION } from '../core/version'
 import { registerAssetTools } from './tools/asset'
 import { registerSnapshotTools } from './tools/snapshot'
 import { registerVulnerabilityTools } from './tools/vulnerability'
+import type { ToolRegistrar } from './tools/registrar'
 
 export const MCP_SERVER_NAME = 'cortex'
 
@@ -27,6 +35,56 @@ export interface CortexServerOptions {
   onDataChanged?: () => void
 }
 
+interface RegisteredTool {
+  name: string
+  title?: string
+  description?: string
+  inputSchema: unknown
+  annotations?: Record<string, boolean>
+  handler: (args: unknown) => Promise<CallToolResult>
+}
+
+class Registrar implements ToolRegistrar {
+  readonly tools: RegisteredTool[] = []
+
+  registerTool(
+    name: string,
+    config: {
+      title?: string
+      description?: string
+      inputSchema: unknown
+      annotations?: Record<string, boolean>
+    },
+    handler: (args: unknown) => Promise<CallToolResult>
+  ): void {
+    this.tools.push({ name, ...config, handler })
+  }
+}
+
+/** zod v4 → strict JSON Schema for `tools/list` (input side). */
+function toolJsonSchema(schema: unknown): Record<string, unknown> {
+  let json: Record<string, unknown>
+  try {
+    json = z.toJSONSchema(schema as z.ZodType, { io: 'input' }) as Record<string, unknown>
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`无法生成 MCP 工具 JSON Schema: ${message}`)
+  }
+  // `$schema` is not part of the MCP tool schema contract.
+  delete json['$schema']
+  return json
+}
+
+function toToolDefinitions(registrar: Registrar): Tool[] {
+  return registrar.tools.map((tool) => ({
+    name: tool.name,
+    ...(tool.title !== undefined ? { title: tool.title } : {}),
+    ...(tool.description !== undefined ? { description: tool.description } : {}),
+    inputSchema: toolJsonSchema(tool.inputSchema) as Tool['inputSchema'],
+    ...(tool.annotations !== undefined ? { annotations: tool.annotations } : {})
+  }))
+}
+
 /**
  * Build a fresh MCP server with the six approved tools registered.
  *
@@ -34,11 +92,21 @@ export interface CortexServerOptions {
  * the injected `DatabaseService`. Adding, removing or merging tools here would
  * break the published MCP contract - keep exactly six.
  */
-export function createCortexServer(options: CortexServerOptions): McpServer {
+export function createCortexServer(options: CortexServerOptions): Server {
   const logger = options.logger ?? consoleLogger
   const version = options.version ?? CORTEX_VERSION
 
-  const server = new McpServer(
+  const registrar = new Registrar()
+  const deps = {
+    db: options.db,
+    logger,
+    ...(options.onDataChanged ? { onDataChanged: options.onDataChanged } : {})
+  }
+  registerVulnerabilityTools(registrar, deps)
+  registerAssetTools(registrar, deps)
+  registerSnapshotTools(registrar, deps)
+
+  const server = new Server(
     { name: MCP_SERVER_NAME, version },
     {
       capabilities: { tools: {} },
@@ -46,13 +114,27 @@ export function createCortexServer(options: CortexServerOptions): McpServer {
     }
   )
 
-  const deps = {
-    db: options.db,
-    logger,
-    ...(options.onDataChanged ? { onDataChanged: options.onDataChanged } : {})
-  }
-  registerVulnerabilityTools(server, deps)
-  registerAssetTools(server, deps)
-  registerSnapshotTools(server, deps)
+  server.setRequestHandler(ListToolsRequestSchema, () => ({
+    tools: toToolDefinitions(registrar)
+  }))
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const tool = registrar.tools.find((entry) => entry.name === request.params.name)
+    if (tool === undefined) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `未知工具: ${request.params.name}（可用: ${registrar.tools
+              .map((entry) => entry.name)
+              .join(' | ')}）`
+          }
+        ]
+      } satisfies CallToolResult
+    }
+    return tool.handler(request.params.arguments ?? {})
+  })
+
   return server
 }
