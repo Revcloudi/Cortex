@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type ForwardRefExoticComponent,
-  type ChangeEvent,
   type RefAttributes
 } from 'react'
 import ForceGraph3DImport from 'react-force-graph-3d'
@@ -837,8 +836,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   const [contextLost, setContextLost] = useState(false)
   const [hoverFocusId, setHoverFocusId] = useState<string | null>(null)
   const [lodLevel, setLodLevel] = useState(0)
-  const [timelineTime, setTimelineTime] = useState<number | null>(null)
-  const [timelinePlaying, setTimelinePlaying] = useState(false)
 
   const visualsRef = useRef<Map<string, NodeVisual>>(new Map())
   const glowCacheRef = useRef<Map<string, THREE.Texture>>(new Map())
@@ -886,83 +883,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     }),
     [nodes, links]
   )
-
-  /**
-   * Timeline data: vulnerabilities carry `created_at`, hosts `last_seen` and
-   * snapshots `updated_at`. Nodes without a timestamp (derived project/target
-   * hubs, leaks) stay visible at every step, so the constellation can grow
-   * without structural nodes flickering in and out.
-   */
-  const timeline = useMemo(() => {
-    const times = new Map<string, number>()
-    for (const node of nodes) {
-      const raw =
-        node.type === 'vuln'
-          ? node.data.created_at
-          : node.type === 'snapshot'
-            ? node.data.updated_at
-            : node.type === 'host'
-              ? node.data.last_seen
-              : ''
-      const time = Date.parse(raw)
-      if (Number.isFinite(time)) times.set(node.id, time)
-    }
-    if (times.size < 2) return null
-    let min = Number.POSITIVE_INFINITY
-    let max = Number.NEGATIVE_INFINITY
-    for (const time of times.values()) {
-      if (time < min) min = time
-      if (time > max) max = time
-    }
-    if (!(max > min)) return null
-    return { min, max, times }
-  }, [nodes])
-
-  useEffect(() => {
-    setTimelineTime(null)
-    setTimelinePlaying(false)
-  }, [timeline])
-
-  const visibleGraphData = useMemo(() => {
-    if (timeline === null || timelineTime === null) return graphData
-    const visibleIds = new Set<string>()
-    for (const node of graphData.nodes) {
-      const time = timeline.times.get(node.id)
-      if (time === undefined || time <= timelineTime) visibleIds.add(node.id)
-    }
-    return {
-      nodes: graphData.nodes.filter((node) => visibleIds.has(node.id)),
-      links: graphData.links.filter(
-        (link) =>
-          visibleIds.has(linkEndpointId(link.source)) &&
-          visibleIds.has(linkEndpointId(link.target))
-      )
-    }
-  }, [graphData, timeline, timelineTime])
-
-  useEffect(() => {
-    if (!timelinePlaying || timeline === null) return
-    const step = Math.max(1, Math.round((timeline.max - timeline.min) / 80))
-    const timer = window.setInterval(() => {
-      setTimelineTime((current) => {
-        const start = current === null ? timeline.min : current
-        const next = start + step
-        return next >= timeline.max ? timeline.max : next
-      })
-    }, 90)
-    return () => window.clearInterval(timer)
-  }, [timelinePlaying, timeline])
-
-  useEffect(() => {
-    if (
-      timelinePlaying &&
-      timeline !== null &&
-      timelineTime !== null &&
-      timelineTime >= timeline.max
-    ) {
-      setTimelinePlaying(false)
-    }
-  }, [timelinePlaying, timeline, timelineTime])
 
   useEffect(() => {
     nodeByIdRef.current = new Map(graphData.nodes.map((node) => [node.id, node] as const))
@@ -1615,40 +1535,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
 
   /* ----------------------------------------------------------------- render -- */
 
-  const timelineRatio =
-    timeline === null
-      ? 1000
-      : timelineTime === null
-        ? 1000
-        : Math.round(((timelineTime - timeline.min) / (timeline.max - timeline.min)) * 1000)
-  const timelineDateLabel =
-    timeline === null
-      ? ''
-      : new Intl.DateTimeFormat(undefined, {
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit'
-        }).format(new Date(timelineTime ?? timeline.max))
-  const handleTimelineChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>): void => {
-      if (timeline === null) return
-      const ratio = Number(event.target.value) / 1000
-      setTimelinePlaying(false)
-      setTimelineTime(timeline.min + (timeline.max - timeline.min) * ratio)
-    },
-    [timeline]
-  )
-  const toggleTimelinePlay = useCallback((): void => {
-    if (timeline === null) return
-    if (timelinePlaying) {
-      setTimelinePlaying(false)
-      return
-    }
-    if (timelineTime === null || timelineTime >= timeline.max) setTimelineTime(timeline.min)
-    setTimelinePlaying(true)
-  }, [timeline, timelinePlaying, timelineTime])
-
   const heavyGraph = nodes.length + links.length > PERFORMANCE_ELEMENT_LIMIT
 
   if (!webglSupported) {
@@ -1678,7 +1564,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       {size.width > 0 && size.height > 0 ? (
         <ForceGraph3D
           ref={graphRef}
-          graphData={visibleGraphData}
+          graphData={graphData}
           width={size.width}
           height={size.height}
           backgroundColor={NEBULA_BACKGROUND}
@@ -1731,53 +1617,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
               nodes: nodes.length,
               links: links.length,
               limit: PERFORMANCE_ELEMENT_LIMIT
-            })}
-          </p>
-        </div>
-      ) : null}
-
-      {timeline !== null ? (
-        <div className="pointer-events-auto absolute bottom-4 left-1/2 z-20 w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl border border-white/[0.08] bg-[#0b0c10]/[0.82] px-3 py-2 backdrop-blur-xl">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={toggleTimelinePlay}
-              className="inline-flex h-7 shrink-0 items-center rounded-md border border-sky-400/30 bg-sky-400/10 px-2.5 text-[11px] text-sky-200 transition-colors hover:bg-sky-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
-            >
-              {timelinePlaying ? t('nebula.timeline.pause') : t('nebula.timeline.play')}
-            </button>
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <div className="flex items-center justify-between text-[10px] text-white/40">
-                <span>{t('nebula.timeline.label')}</span>
-                <span className="font-mono tabular-nums text-white/60">{timelineDateLabel}</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={1000}
-                step={1}
-                value={timelineRatio}
-                aria-label={t('nebula.timeline.label')}
-                onChange={handleTimelineChange}
-                className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/15 accent-sky-400"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setTimelinePlaying(false)
-                setTimelineTime(null)
-              }}
-              disabled={timelineTime === null}
-              className="inline-flex h-7 shrink-0 items-center rounded-md border border-white/[0.1] bg-white/[0.04] px-2.5 text-[11px] text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-default disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
-            >
-              {t('nebula.timeline.all')}
-            </button>
-          </div>
-          <p className="mt-0.5 text-[9.5px] tabular-nums text-white/30">
-            {t('nebula.timeline.count', {
-              visible: visibleGraphData.nodes.length,
-              total: nodes.length
             })}
           </p>
         </div>

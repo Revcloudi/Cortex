@@ -212,13 +212,6 @@ export const nebulaMessages: MessageBundle = {
     'nebula.legend.aggregate': '+N = 聚合节点（点击查看）',
     'nebula.mode2d.label': '2D 降级视图（当前环境不支持 WebGL）',
 
-    // Timeline
-    'nebula.timeline.label': '时间轴',
-    'nebula.timeline.play': '播放生长',
-    'nebula.timeline.pause': '暂停',
-    'nebula.timeline.all': '全部',
-    'nebula.timeline.count': '{visible} / {total} 节点',
-
     // Summary drawer → full detail pages
     'nebula.detail.openVuln': '在漏洞看板中打开',
     'nebula.detail.openAsset': '在资产库中打开',
@@ -436,13 +429,6 @@ export const nebulaMessages: MessageBundle = {
       'On large graphs several records of one host collapse into one +N node. Focus that host or switch to the asset scope to inspect individual records.',
     'nebula.legend.aggregate': '+N = aggregated nodes (click to inspect)',
     'nebula.mode2d.label': '2D fallback view (WebGL is unavailable here)',
-
-    // Timeline
-    'nebula.timeline.label': 'Timeline',
-    'nebula.timeline.play': 'Play growth',
-    'nebula.timeline.pause': 'Pause',
-    'nebula.timeline.all': 'All',
-    'nebula.timeline.count': '{visible} / {total} nodes',
 
     // Summary drawer → full detail pages
     'nebula.detail.openVuln': 'Open in vulnerabilities',
