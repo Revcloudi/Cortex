@@ -20,7 +20,6 @@ import {
   CAMERA_FOCUS_MS,
   CAMERA_RESET_MS,
   DEFAULT_CAMERA_DISTANCE,
-  DERIVED_LINK_WIDTH,
   DIM_OPACITY,
   FOCUS_DIM_OPACITY,
   HALO_SCALE,
@@ -36,7 +35,6 @@ import {
   LABEL_TEXTURE_HEIGHT,
   LABEL_TEXTURE_WIDTH,
   LINK_COLORS,
-  LINK_WIDTH,
   NEBULA_BACKGROUND,
   NEBULA_SKYBOX_HEIGHT,
   NEBULA_SKYBOX_WIDTH,
@@ -55,7 +53,6 @@ import {
   STARFIELD_FAR_OPACITY,
   STARFIELD_FAR_SIZE,
   STARFIELD_ROTATE_SPEED,
-  blendOnCanvas,
   linkOpacity,
   nodeColor,
   nodeRadius,
@@ -151,6 +148,90 @@ function linkDistance(link: GraphLink): number {
   return 32 + hashUnit(linkKey(link)) * 68
 }
 
+/* ------------------------------------------------------------- link art -- */
+
+/**
+ * Edges are a short polyline whose vertex colours fade to black at both ends.
+ * With additive blending the line dissolves into the node glow instead of
+ * ending in a hard point at the node centre, while the trimmed middle keeps
+ * the web readable. Deterministic per-link colours keep the look stable.
+ */
+const LINK_SEGMENT_COUNT = 20
+const LINK_FADE_FRACTION = 0.2
+const LINK_TRIM_RATIO = 0.045
+const LINK_TRIM_MIN = 1.5
+const LINK_TRIM_MAX = 7
+const LINK_COLOR_GAIN = 2.4
+
+function linkBaseColor(link: GraphLink): THREE.Color {
+  const opacity = linkOpacity(link.relation, link.derived === true)
+  // Slight per-link brightness variation keeps the web organic instead of a
+  // uniform wireframe; deterministic so the look is stable across reloads.
+  const variation = 0.82 + hashUnit(`${linkKey(link)}|brightness`) * 0.36
+  return new THREE.Color(LINK_COLORS[link.relation]).multiplyScalar(
+    Math.min(1, opacity * LINK_COLOR_GAIN * variation)
+  )
+}
+
+function createLinkObject(link: GraphLink): THREE.Object3D {
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.BufferAttribute(new Float32Array(LINK_SEGMENT_COUNT * 3), 3)
+  )
+  const base = linkBaseColor(link)
+  const colors = new Float32Array(LINK_SEGMENT_COUNT * 3)
+  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
+    const t = index / (LINK_SEGMENT_COUNT - 1)
+    const fadeIn = Math.min(1, t / LINK_FADE_FRACTION)
+    const fadeOut = Math.min(1, (1 - t) / LINK_FADE_FRACTION)
+    const fade = Math.min(fadeIn, fadeOut) ** 1.2
+    colors[index * 3] = base.r * fade
+    colors[index * 3 + 1] = base.g * fade
+    colors[index * 3 + 2] = base.b * fade
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  const line = new THREE.Line(
+    geometry,
+    new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  )
+  line.frustumCulled = false
+  line.renderOrder = 2
+  return line
+}
+
+function updateLinkPosition(
+  object: THREE.Object3D,
+  coords: { start: Coords; end: Coords }
+): void {
+  if (!(object instanceof THREE.Line)) return
+  const position = object.geometry.getAttribute('position') as THREE.BufferAttribute
+  const dx = coords.end.x - coords.start.x
+  const dy = coords.end.y - coords.start.y
+  const dz = coords.end.z - coords.start.z
+  const length = Math.sqrt(dx * dx + dy * dy + dz * dz)
+  const trim =
+    length > 0
+      ? Math.min(LINK_TRIM_MAX, Math.max(LINK_TRIM_MIN, length * LINK_TRIM_RATIO))
+      : 0
+  const t0 = length > 0 ? Math.min(0.45, trim / length) : 0
+  const t1 = 1 - t0
+  const array = position.array as Float32Array
+  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
+    const t = t0 + (t1 - t0) * (index / (LINK_SEGMENT_COUNT - 1))
+    array[index * 3] = coords.start.x + dx * t
+    array[index * 3 + 1] = coords.start.y + dy * t
+    array[index * 3 + 2] = coords.start.z + dz * t
+  }
+  position.needsUpdate = true
+}
+
 /**
  * Minimal slice of the kapsule instance we drive. The library ships hand-written
  * types that do not cover every accessor consistently across versions, so this
@@ -182,9 +263,8 @@ interface ForceGraphProps {
   cooldownTicks: number
   d3AlphaDecay: number
   nodeThreeObject: (node: GraphNode) => THREE.Object3D
-  linkColor: (link: GraphLink) => string
-  linkWidth: (link: GraphLink) => number
-  linkOpacity: number
+  linkThreeObject: (link: GraphLink) => THREE.Object3D
+  linkPositionUpdate: (object: THREE.Object3D, coords: { start: Coords; end: Coords }, link: GraphLink) => void
   onNodeClick: (node: GraphNode, event: MouseEvent) => void
   onNodeHover: (node: GraphNode | null, previousNode: GraphNode | null) => void
   onBackgroundClick: () => void
@@ -997,17 +1077,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     centerView({ x: center.x, y: center.y, z: center.z })
   }, [centerView])
 
-  const linkColor = useCallback(
-    (link: GraphLink): string =>
-      blendOnCanvas(LINK_COLORS[link.relation], linkOpacity(link.relation, link.derived === true)),
-    []
-  )
-
-  const linkWidth = useCallback(
-    (link: GraphLink): number => (link.derived === true ? DERIVED_LINK_WIDTH : LINK_WIDTH),
-    []
-  )
-
   const nodeValue = useCallback((node: GraphNode): number => node.val, [])
   const emptyNodeLabel = useCallback((): string => '', [])
 
@@ -1344,9 +1413,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
           cooldownTicks={140}
           d3AlphaDecay={0.022}
           nodeThreeObject={buildNodeObject}
-          linkColor={linkColor}
-          linkWidth={linkWidth}
-          linkOpacity={1}
+          linkThreeObject={createLinkObject}
+          linkPositionUpdate={updateLinkPosition}
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onBackgroundClick={handleBackgroundClick}
