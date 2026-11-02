@@ -7,11 +7,12 @@ import {
   useRef,
   useState,
   type ForwardRefExoticComponent,
+  type ChangeEvent,
   type RefAttributes
 } from 'react'
 import ForceGraph3DImport from 'react-force-graph-3d'
 import * as THREE from 'three'
-import type { NebulaLink, NebulaNode } from '@shared/graph'
+import type { GraphRelation, NebulaLink, NebulaNode } from '@shared/graph'
 import { NebulaGraph2D } from '@renderer/components/nebula/NebulaGraph2D'
 import { useI18n } from '@renderer/i18n'
 import {
@@ -23,6 +24,7 @@ import {
   DIM_OPACITY,
   FOCUS_DIM_OPACITY,
   HALO_SCALE,
+  HOVER_CONTEXT_DIM_OPACITY,
   LABEL_BG_COLOR,
   LABEL_BORDER_COLOR,
   LABEL_DIM_FACTOR,
@@ -117,6 +119,7 @@ interface ForceLike {
   distance?(value: number | ((link: unknown) => number)): unknown
 }
 
+
 /** Deterministic FNV-1a hash → stable 0..1 unit value (survives re-renders). */
 function hashUnit(value: string): number {
   let hash = 2166136261
@@ -140,12 +143,25 @@ function linkKey(link: { source: unknown; target: unknown }): string {
 }
 
 /**
- * Per-link distance: a fixed distance made every child sit on one shell, which
- * looks like a rigid cone under a busy hub. A deterministic 32–100 spread puts
- * children on several shells while the edges stay straight.
+ * Relation-aware link lengths: vulnerabilities hang close to their host, while
+ * credentials/leaks and session links stretch farther out. A single distance
+ * for every edge made the graph read as one rigid shell.
  */
+const LINK_DISTANCE_BY_RELATION: Record<GraphRelation, readonly [number, number]> = {
+  HAS_VULN: [28, 44],
+  LEAKED: [66, 96],
+  RELATED_VULN: [52, 78],
+  SNAPSHOT_VULN: [50, 72],
+  SNAPSHOT_TARGETS: [58, 84],
+  TARGET_SESSION: [58, 82],
+  TARGET_ASSET: [52, 76],
+  BELONGS_TO: [48, 72],
+  TASK_TOUCHED_HOST: [46, 70]
+}
+
 function linkDistance(link: GraphLink): number {
-  return 32 + hashUnit(linkKey(link)) * 68
+  const [min, max] = LINK_DISTANCE_BY_RELATION[link.relation] ?? [46, 74]
+  return min + hashUnit(`${linkKey(link)}|${link.relation}`) * (max - min)
 }
 
 /* ------------------------------------------------------------- link art -- */
@@ -203,6 +219,21 @@ function createLinkObject(link: GraphLink): THREE.Object3D {
   )
   line.frustumCulled = false
   line.renderOrder = 2
+  // Remember the unfaded colour profile so hover focus can re-tint edges
+  // without rebuilding geometry.
+  const fadeProfile = new Float32Array(LINK_SEGMENT_COUNT)
+  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
+    const t = index / (LINK_SEGMENT_COUNT - 1)
+    const fadeIn = Math.min(1, t / LINK_FADE_FRACTION)
+    const fadeOut = Math.min(1, (1 - t) / LINK_FADE_FRACTION)
+    fadeProfile[index] = Math.min(fadeIn, fadeOut) ** 1.2
+  }
+  line.userData = {
+    key: `${linkKey(link)}|${link.relation}`,
+    baseColor: base.clone(),
+    fadeProfile,
+    relation: link.relation
+  }
   return line
 }
 
@@ -288,6 +319,8 @@ interface NodeVisual {
   labelTexture: THREE.Texture
   /** World-space radius of the core sprite, used to park the label above it. */
   radius: number
+  /** Drives LOD: leaves lose their labels when the camera pulls far away. */
+  nodeType: NebulaNode['type']
 }
 
 function detectWebGl(): boolean {
@@ -802,6 +835,10 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [webglSupported] = useState(detectWebGl)
   const [contextLost, setContextLost] = useState(false)
+  const [hoverFocusId, setHoverFocusId] = useState<string | null>(null)
+  const [lodLevel, setLodLevel] = useState(0)
+  const [timelineTime, setTimelineTime] = useState<number | null>(null)
+  const [timelinePlaying, setTimelinePlaying] = useState(false)
 
   const visualsRef = useRef<Map<string, NodeVisual>>(new Map())
   const glowCacheRef = useRef<Map<string, THREE.Texture>>(new Map())
@@ -815,6 +852,11 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   const focusSetRef = useRef<Set<string> | null>(null)
   const performanceModeRef = useRef(performanceMode)
   const autoRotateRef = useRef(autoRotate)
+  /** Hovered node + its direct neighbours ("focus + context"); null = none. */
+  const hoverFocusIdRef = useRef<string | null>(null)
+  const neighborMapRef = useRef<Map<string, Set<string>>>(new Map())
+  /** 0 = normal, 1 = far (leaf labels hidden), 2 = very far (leaves dimmed). */
+  const lodRef = useRef(0)
   const onSelectRef = useRef(onSelect)
   const autoFitTimerRef = useRef<number | undefined>(undefined)
   /** Decorative space background (stars + dust); not graph data. */
@@ -845,8 +887,100 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     [nodes, links]
   )
 
+  /**
+   * Timeline data: vulnerabilities carry `created_at`, hosts `last_seen` and
+   * snapshots `updated_at`. Nodes without a timestamp (derived project/target
+   * hubs, leaks) stay visible at every step, so the constellation can grow
+   * without structural nodes flickering in and out.
+   */
+  const timeline = useMemo(() => {
+    const times = new Map<string, number>()
+    for (const node of nodes) {
+      const raw =
+        node.type === 'vuln'
+          ? node.data.created_at
+          : node.type === 'snapshot'
+            ? node.data.updated_at
+            : node.type === 'host'
+              ? node.data.last_seen
+              : ''
+      const time = Date.parse(raw)
+      if (Number.isFinite(time)) times.set(node.id, time)
+    }
+    if (times.size < 2) return null
+    let min = Number.POSITIVE_INFINITY
+    let max = Number.NEGATIVE_INFINITY
+    for (const time of times.values()) {
+      if (time < min) min = time
+      if (time > max) max = time
+    }
+    if (!(max > min)) return null
+    return { min, max, times }
+  }, [nodes])
+
+  useEffect(() => {
+    setTimelineTime(null)
+    setTimelinePlaying(false)
+  }, [timeline])
+
+  const visibleGraphData = useMemo(() => {
+    if (timeline === null || timelineTime === null) return graphData
+    const visibleIds = new Set<string>()
+    for (const node of graphData.nodes) {
+      const time = timeline.times.get(node.id)
+      if (time === undefined || time <= timelineTime) visibleIds.add(node.id)
+    }
+    return {
+      nodes: graphData.nodes.filter((node) => visibleIds.has(node.id)),
+      links: graphData.links.filter(
+        (link) =>
+          visibleIds.has(linkEndpointId(link.source)) &&
+          visibleIds.has(linkEndpointId(link.target))
+      )
+    }
+  }, [graphData, timeline, timelineTime])
+
+  useEffect(() => {
+    if (!timelinePlaying || timeline === null) return
+    const step = Math.max(1, Math.round((timeline.max - timeline.min) / 80))
+    const timer = window.setInterval(() => {
+      setTimelineTime((current) => {
+        const start = current === null ? timeline.min : current
+        const next = start + step
+        return next >= timeline.max ? timeline.max : next
+      })
+    }, 90)
+    return () => window.clearInterval(timer)
+  }, [timelinePlaying, timeline])
+
+  useEffect(() => {
+    if (
+      timelinePlaying &&
+      timeline !== null &&
+      timelineTime !== null &&
+      timelineTime >= timeline.max
+    ) {
+      setTimelinePlaying(false)
+    }
+  }, [timelinePlaying, timeline, timelineTime])
+
   useEffect(() => {
     nodeByIdRef.current = new Map(graphData.nodes.map((node) => [node.id, node] as const))
+  }, [graphData])
+
+  /** Direct-neighbour adjacency used by the hover "focus + context" pass. */
+  useEffect(() => {
+    const map = new Map<string, Set<string>>()
+    for (const link of graphData.links) {
+      const source = linkEndpointId(link.source)
+      const target = linkEndpointId(link.target)
+      if (source === target) continue
+      if (!map.has(source)) map.set(source, new Set())
+      if (!map.has(target)) map.set(target, new Set())
+      map.get(source)?.add(target)
+      map.get(target)?.add(source)
+    }
+    neighborMapRef.current = map
   }, [graphData])
 
   // The canvas sits inside a flex shell, so it must track its own box instead of
@@ -882,7 +1016,10 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     const highlightSet = highlightSetRef.current
     const focusSet = focusSetRef.current
     const performance = performanceModeRef.current
+    const lod = lodRef.current
+    const hoverFocus = hoverFocusIdRef.current
     const labelRatio = LABEL_TEXTURE_HEIGHT / LABEL_TEXTURE_WIDTH
+    const leaf = visual.nodeType === 'vuln' || visual.nodeType === 'leak'
 
     const selected = nodeId === selectedIdRef.current
     const hovered = nodeId === hoveredIdRef.current
@@ -891,10 +1028,24 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     const emphasized = selected || hovered
     const visible = matched && inFocus
 
-    visual.coreMaterial.opacity = visible ? 1 : focusSet !== null ? FOCUS_DIM_OPACITY : DIM_OPACITY
+    // Hover: keep the hovered node and its direct neighbours bright, fade the
+    // rest hard so the local structure reads immediately.
+    const hoverLinked =
+      hoverFocus === null ||
+      nodeId === hoverFocus ||
+      neighborMapRef.current.get(hoverFocus)?.has(nodeId) === true
+    const hoverDimmed = hoverFocus !== null && !hoverLinked && !hovered
+
+    let coreOpacity = visible ? 1 : focusSet !== null ? FOCUS_DIM_OPACITY : DIM_OPACITY
+    if (hoverFocus !== null) {
+      coreOpacity = hoverDimmed ? HOVER_CONTEXT_DIM_OPACITY : Math.max(coreOpacity, 0.95)
+    }
+    // LOD level 2: far away, leaves are only faint dust around the large hubs.
+    if (lod >= 2 && leaf) coreOpacity = Math.min(coreOpacity, 0.22)
+    visual.coreMaterial.opacity = coreOpacity
 
     // Performance mode keeps a halo only for the selected node.
-    const haloOpacity = performance
+    let haloOpacity = performance
       ? selected
         ? PERFORMANCE_SELECTED_HALO_OPACITY
         : 0
@@ -903,21 +1054,28 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
         : hovered
           ? 0.45
           : 0
+    if (!performance && hoverFocus !== null && hoverLinked && !hovered && !selected) {
+      haloOpacity = Math.max(haloOpacity, 0.16)
+    }
     visual.haloMaterial.opacity = haloOpacity
     visual.halo.visible = haloOpacity > 0
 
+    // LOD level 1 hides leaf labels; hovering a node hides unrelated labels.
+    const hideLabel = (lod >= 1 && leaf) || hoverDimmed
+
     if (performance) {
       // Large graphs: labels only while hovered/selected, never at rest.
-      visual.label.visible = emphasized && visible
-      visual.labelMaterial.opacity = emphasized && visible ? LABEL_EMPHASIS_OPACITY : 0
+      visual.label.visible = emphasized && visible && !hideLabel
+      visual.labelMaterial.opacity = emphasized && visible && !hideLabel ? LABEL_EMPHASIS_OPACITY : 0
       visual.label.scale.set(LABEL_SPRITE_SCALE, LABEL_SPRITE_SCALE * labelRatio, 1)
       visual.label.position.y = visual.radius + LABEL_SPRITE_SCALE * 0.12
       return
     }
 
-    visual.label.visible = visible
+    visual.label.visible = visible && !hideLabel
     const labelOpacity = emphasized ? LABEL_EMPHASIS_OPACITY : LABEL_IDLE_OPACITY
-    visual.labelMaterial.opacity = visible ? labelOpacity : LABEL_IDLE_OPACITY * LABEL_DIM_FACTOR
+    visual.labelMaterial.opacity =
+      visible && !hideLabel ? labelOpacity : hideLabel ? 0 : LABEL_IDLE_OPACITY * LABEL_DIM_FACTOR
     const scale = emphasized ? LABEL_SPRITE_SCALE : LABEL_IDLE_SCALE
     visual.label.scale.set(scale, scale * labelRatio, 1)
     visual.label.position.y = visual.radius + scale * 0.12
@@ -931,7 +1089,91 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
 
   useEffect(() => {
     applyVisualState()
-  }, [applyVisualState, nodes, selectedId, highlightIds, focusIds, performanceMode])
+  }, [applyVisualState, nodes, selectedId, highlightIds, focusIds, performanceMode, hoverFocusId, lodLevel])
+
+  /**
+   * Hover "focus + context" for edges: links touching the hovered node are
+   * boosted (additive brightness reads as a thicker fibre), everything else
+   * drops to a near-invisible thread. Restores the base tint on leave.
+   */
+  const applyLinkHoverState = useCallback(() => {
+    const scene = graphRef.current?.scene()
+    if (!scene) return
+    const hoverId = hoverFocusIdRef.current
+    const connected = new Set<string>()
+    if (hoverId !== null) {
+      for (const link of links) {
+        if (linkEndpointId(link.source) === hoverId || linkEndpointId(link.target) === hoverId) {
+          connected.add(`${linkKey(link)}|${link.relation}`)
+        }
+      }
+    }
+    scene.traverse((object: THREE.Object3D) => {
+      if (!(object instanceof THREE.Line)) return
+      const data = object.userData as {
+        key?: string
+        baseColor?: THREE.Color
+        fadeProfile?: Float32Array
+      }
+      const base = data.baseColor
+      const profile = data.fadeProfile
+      if (!base || !profile || data.key === undefined) return
+      const factor = hoverId === null ? 1 : connected.has(data.key) ? 2.8 : 0.08
+      const geometry = object.geometry as THREE.BufferGeometry
+      const colorAttribute = geometry.getAttribute('color') as THREE.BufferAttribute
+      const array = colorAttribute.array as Float32Array
+      for (let index = 0; index < profile.length; index += 1) {
+        const value = profile[index] * factor
+        array[index * 3] = base.r * value
+        array[index * 3 + 1] = base.g * value
+        array[index * 3 + 2] = base.b * value
+      }
+      colorAttribute.needsUpdate = true
+    })
+  }, [links])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => applyLinkHoverState())
+    const timer = window.setTimeout(applyLinkHoverState, 360)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+    }
+  }, [applyLinkHoverState, hoverFocusId, nodes, links, graphData])
+
+  /** Camera-distance LOD: hide leaf labels first, then dim leaves entirely. */
+  useEffect(() => {
+    let frame = 0
+    let last = 0
+    const tick = (time: number): void => {
+      if (time - last >= 240) {
+        last = time
+        const controller = graphRef.current
+        if (controller) {
+          const camera = controller.cameraPosition()
+          const target = controller.controls().target ?? { x: 0, y: 0, z: 0 }
+          const distance = Math.hypot(
+            camera.x - target.x,
+            camera.y - target.y,
+            camera.z - target.z
+          )
+          const next =
+            distance > DEFAULT_CAMERA_DISTANCE * 2.8
+              ? 2
+              : distance > DEFAULT_CAMERA_DISTANCE * 1.8
+                ? 1
+                : 0
+          if (next !== lodRef.current) {
+            lodRef.current = next
+            setLodLevel(next)
+          }
+        }
+      }
+      frame = window.requestAnimationFrame(tick)
+    }
+    frame = window.requestAnimationFrame(tick)
+    return () => window.cancelAnimationFrame(frame)
+  }, [webglSupported])
 
   /* --------------------------------------------------------------- node art -- */
 
@@ -996,7 +1238,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       haloMaterial,
       labelMaterial,
       labelTexture,
-      radius
+      radius,
+      nodeType: node.type
     }
     visualsRef.current.set(node.id, visual)
     // The engine creates objects after the first paint; apply the current
@@ -1013,6 +1256,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       const nextId = node ? node.id : null
       if (hoveredIdRef.current === nextId) return
       hoveredIdRef.current = nextId
+      hoverFocusIdRef.current = nextId
+      setHoverFocusId(nextId)
       applyVisualState()
       const element = containerRef.current
       if (element) element.style.cursor = nextId ? 'pointer' : 'grab'
@@ -1091,7 +1336,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       const controller = graphRef.current
       if (controller) {
         const charge = controller.d3Force('charge')
-        charge?.strength(-85)
+        charge?.strength(-70)
         const linkForce = controller.d3Force('link')
         linkForce?.distance?.((link: unknown) => linkDistance(link as GraphLink))
         controller.d3ReheatSimulation()
@@ -1370,6 +1615,40 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
 
   /* ----------------------------------------------------------------- render -- */
 
+  const timelineRatio =
+    timeline === null
+      ? 1000
+      : timelineTime === null
+        ? 1000
+        : Math.round(((timelineTime - timeline.min) / (timeline.max - timeline.min)) * 1000)
+  const timelineDateLabel =
+    timeline === null
+      ? ''
+      : new Intl.DateTimeFormat(undefined, {
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        }).format(new Date(timelineTime ?? timeline.max))
+  const handleTimelineChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>): void => {
+      if (timeline === null) return
+      const ratio = Number(event.target.value) / 1000
+      setTimelinePlaying(false)
+      setTimelineTime(timeline.min + (timeline.max - timeline.min) * ratio)
+    },
+    [timeline]
+  )
+  const toggleTimelinePlay = useCallback((): void => {
+    if (timeline === null) return
+    if (timelinePlaying) {
+      setTimelinePlaying(false)
+      return
+    }
+    if (timelineTime === null || timelineTime >= timeline.max) setTimelineTime(timeline.min)
+    setTimelinePlaying(true)
+  }, [timeline, timelinePlaying, timelineTime])
+
   const heavyGraph = nodes.length + links.length > PERFORMANCE_ELEMENT_LIMIT
 
   if (!webglSupported) {
@@ -1399,7 +1678,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       {size.width > 0 && size.height > 0 ? (
         <ForceGraph3D
           ref={graphRef}
-          graphData={graphData}
+          graphData={visibleGraphData}
           width={size.width}
           height={size.height}
           backgroundColor={NEBULA_BACKGROUND}
@@ -1452,6 +1731,53 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
               nodes: nodes.length,
               links: links.length,
               limit: PERFORMANCE_ELEMENT_LIMIT
+            })}
+          </p>
+        </div>
+      ) : null}
+
+      {timeline !== null ? (
+        <div className="pointer-events-auto absolute bottom-4 left-1/2 z-20 w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl border border-white/[0.08] bg-[#0b0c10]/[0.82] px-3 py-2 backdrop-blur-xl">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleTimelinePlay}
+              className="inline-flex h-7 shrink-0 items-center rounded-md border border-sky-400/30 bg-sky-400/10 px-2.5 text-[11px] text-sky-200 transition-colors hover:bg-sky-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+            >
+              {timelinePlaying ? t('nebula.timeline.pause') : t('nebula.timeline.play')}
+            </button>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="flex items-center justify-between text-[10px] text-white/40">
+                <span>{t('nebula.timeline.label')}</span>
+                <span className="font-mono tabular-nums text-white/60">{timelineDateLabel}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1000}
+                step={1}
+                value={timelineRatio}
+                aria-label={t('nebula.timeline.label')}
+                onChange={handleTimelineChange}
+                className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/15 accent-sky-400"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setTimelinePlaying(false)
+                setTimelineTime(null)
+              }}
+              disabled={timelineTime === null}
+              className="inline-flex h-7 shrink-0 items-center rounded-md border border-white/[0.1] bg-white/[0.04] px-2.5 text-[11px] text-white/55 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-default disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+            >
+              {t('nebula.timeline.all')}
+            </button>
+          </div>
+          <p className="mt-0.5 text-[9.5px] tabular-nums text-white/30">
+            {t('nebula.timeline.count', {
+              visible: visibleGraphData.nodes.length,
+              total: nodes.length
             })}
           </p>
         </div>
