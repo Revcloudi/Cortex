@@ -48,6 +48,8 @@ export interface Vulnerability {
   id: string
   /** Target host and port, e.g. 10.0.0.5:8080 (no scheme). */
   host: string
+  /** Internal service the vulnerability actually lives on (entry host stays in `host`). */
+  service_host: string
   /** Initial entry point, e.g. /login. */
   entry_point: string
   vuln_name: string
@@ -136,6 +138,12 @@ export const VulnerabilityPayloadSchema = z
       .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'id 只能包含字母、数字、点、下划线和连字符')
       .optional(),
     host: hostString,
+    /**
+     * Optional internal service this vulnerability actually lives on, while
+     * `host` stays the entry asset. Example: entry host `opcenter.example.com`,
+     * service_host `10.0.0.5:8080` (a service reached by pivoting).
+     */
+    service_host: z.string().trim().max(4_000).default(''),
     entry_point: z.string().trim().max(4000).default(''),
     vuln_name: z.string().trim().min(1, 'vuln_name 不能为空').max(500),
     /** Optional taxonomy label; some older reports may omit it. */
@@ -902,6 +910,7 @@ export interface UpdateVulnerabilityResult {
 export interface VulnerabilityListItem {
   id: string
   host: string
+  service_host: string
   entry_point: string
   vuln_name: string
   vuln_type: string

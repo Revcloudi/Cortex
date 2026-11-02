@@ -9,7 +9,7 @@ export function SeverityBadge({ severity, className }: { severity: Severity; cla
   const { severityLabel } = useI18n()
   const style = SEVERITY_STYLES[severity]
   return (
-    <Badge className={cn(style.badge, className)}>
+    <Badge className={cn(style.badge, 'whitespace-nowrap', className)}>
       <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', style.dot)} />
       {severityLabel(severity)}
     </Badge>
@@ -20,7 +20,7 @@ export function StatusBadge({ status, className }: { status: VulnStatus; classNa
   const { statusLabel } = useI18n()
   const style = STATUS_STYLES[status]
   return (
-    <Badge className={cn(style.badge, className)}>
+    <Badge className={cn(style.badge, 'whitespace-nowrap', className)}>
       <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', style.dot)} />
       {statusLabel(status)}
     </Badge>

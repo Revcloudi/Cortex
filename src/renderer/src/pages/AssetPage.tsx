@@ -12,9 +12,11 @@ import { cn } from '@renderer/lib/utils'
 
 interface AssetPageProps {
   dataVersion: number
+  /** Deep link from the nebula inspector: open this asset immediately. */
+  initialHostPort?: string | null
 }
 
-export function AssetPage({ dataVersion }: AssetPageProps) {
+export function AssetPage({ dataVersion, initialHostPort = null }: AssetPageProps) {
   const { t, assetStatusLabel } = useI18n()
   const [items, setItems] = useState<AssetListItem[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -27,6 +29,11 @@ export function AssetPage({ dataVersion }: AssetPageProps) {
   const [relatedVulnId, setRelatedVulnId] = useState<string | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const debouncedSearch = useDebouncedValue(search, 180)
+
+  // Cross-page deep link (nebula → "view full details"): open the drawer once.
+  useEffect(() => {
+    if (initialHostPort !== null) setSelectedHostPort(initialHostPort)
+  }, [initialHostPort])
 
   const filters: AssetFilters = useMemo(
     () => ({

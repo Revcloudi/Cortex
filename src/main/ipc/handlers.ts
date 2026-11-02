@@ -10,6 +10,7 @@ import {
   ListAssetsIpcSchema,
   ListSnapshotsIpcSchema,
   ListVulnerabilitiesIpcSchema,
+  MemoryGraphQueryIpcSchema,
   SetupRunRequestIpcSchema,
   SnapshotArchiveIpcSchema,
   SnapshotSessionIdIpcSchema,
@@ -29,6 +30,8 @@ import type {
   Vulnerability
 } from '../../shared/types'
 import type { DatabaseService } from '../../core/db/DatabaseService'
+import { buildMemoryGraph } from '../../core/graph/buildMemoryGraph'
+import type { MemoryGraphData } from '../../shared/graph'
 import {
   buildReportFilename,
   buildVulnerabilityReportMarkdown
@@ -252,6 +255,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   )
 
+  /**
+   * Read-only Memory Nebula projection (P2): never writes, so it never emits
+   * `data:changed`. Validation mirrors `listSnapshots`; the builder clamps the
+   * caller limits and reports `meta.truncated` instead of silently dropping.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.getMemoryGraph,
+    (_event, rawQuery: unknown): MemoryGraphData => {
+      const parsed = MemoryGraphQueryIpcSchema.safeParse(rawQuery)
+      if (!parsed.success) {
+        throw new Error(`Invalid memory graph query: ${formatZodError(parsed.error)}`)
+      }
+      return buildMemoryGraph(db, parsed.data)
+    }
+  )
+
   ipcMain.handle(IPC_CHANNELS.getAppInfo, (): AppInfo => {
     return deps.appInfo
   })
@@ -363,6 +382,7 @@ export function unregisterIpcHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.restoreSnapshotPrevious)
   ipcMain.removeHandler(IPC_CHANNELS.archiveSnapshot)
   ipcMain.removeHandler(IPC_CHANNELS.deleteSnapshot)
+  ipcMain.removeHandler(IPC_CHANNELS.getMemoryGraph)
   ipcMain.removeHandler(IPC_CHANNELS.getDatabaseInfo)
   ipcMain.removeHandler(IPC_CHANNELS.chooseDatabase)
   ipcMain.removeHandler(IPC_CHANNELS.resetDatabase)

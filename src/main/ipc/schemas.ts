@@ -82,6 +82,59 @@ export const ListSnapshotsIpcSchema = z
   .strict()
   .optional()
 
+/**
+ * Read-only Memory Nebula graph query (guide §9.1).
+ *
+ * The asset scope reuses `AssetHostPortIpcSchema` so the desktop IPC bridge and
+ * the Web route reject exactly the same malformed host_port values as
+ * `getAssetDetail`; the task scope validates the snapshot `session_id` the same
+ * way the snapshot APIs do. Every nested object is strict so a renderer typo
+ * surfaces as a clear validation error instead of being silently ignored.
+ */
+const MemoryGraphScopeIpcSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('all') }).strict(),
+  z
+    .object({
+      kind: z.literal('asset'),
+      hostPort: AssetHostPortIpcSchema
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('task'),
+      sessionId: z.string().trim().min(1).max(100),
+      includeChildren: z.boolean().optional()
+    })
+    .strict()
+])
+
+export const MemoryGraphQueryIpcSchema = z
+  .object({
+    scope: MemoryGraphScopeIpcSchema,
+    /** Neighbourhood depth; the literal union keeps the `1 | 2` inferred type. */
+    depth: z.union([z.literal(1), z.literal(2)]).optional(),
+    /** Node-type switches forwarded to the builder (all types when omitted). */
+    filters: z
+      .object({
+        vulnerabilities: z.boolean().optional(),
+        leaks: z.boolean().optional(),
+        snapshots: z.boolean().optional()
+      })
+      .strict()
+      .optional(),
+    /** Per-type row limits, clamped again by the builder (guide §9.4). */
+    limits: z
+      .object({
+        hosts: z.number().int().min(1).max(500).optional(),
+        vulnerabilities: z.number().int().min(1).max(2_000).optional(),
+        leaks: z.number().int().min(1).max(1_000).optional(),
+        snapshots: z.number().int().min(1).max(200).optional()
+      })
+      .strict()
+      .optional()
+  })
+  .strict()
+
 export const SnapshotSessionIdIpcSchema = z.string().trim().min(1).max(100)
 
 /** Desktop-only archive toggle (Agent has no archive action). */

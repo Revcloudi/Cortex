@@ -13,12 +13,14 @@ import { cn } from '@renderer/lib/utils'
 
 interface SnapshotPageProps {
   dataVersion: number
+  /** Deep link from the nebula inspector: open this session immediately. */
+  initialSessionId?: string | null
 }
 
 /** The list endpoint returns compact summaries; 50 rows are enough for one run. */
 const SNAPSHOT_LIST_LIMIT = 50
 
-export function SnapshotPage({ dataVersion }: SnapshotPageProps) {
+export function SnapshotPage({ dataVersion, initialSessionId = null }: SnapshotPageProps) {
   const { t } = useI18n()
   const [items, setItems] = useState<SnapshotSummary[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -31,6 +33,11 @@ export function SnapshotPage({ dataVersion }: SnapshotPageProps) {
   const [relatedVulnId, setRelatedVulnId] = useState<string | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const debouncedSearch = useDebouncedValue(search, 180)
+
+  // Cross-page deep link (nebula → "view full details"): open the drawer once.
+  useEffect(() => {
+    if (initialSessionId !== null) setSelectedSessionId(initialSessionId)
+  }, [initialSessionId])
 
   const rootsOnly = debouncedSearch.trim().length === 0
 

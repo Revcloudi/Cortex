@@ -3,6 +3,7 @@ import { assetMessages } from './asset'
 import { commonMessages } from './common'
 import { dashboardMessages } from './dashboard'
 import { mcpMessages } from './mcp'
+import { nebulaMessages } from './nebula'
 import { snapshotMessages } from './snapshot'
 import { uiMessages } from './ui'
 import { vulnMessages } from './vuln'
@@ -16,6 +17,7 @@ const bundles: MessageBundle[] = [
   vulnMessages,
   assetMessages,
   snapshotMessages,
+  nebulaMessages,
   mcpMessages
 ]
 

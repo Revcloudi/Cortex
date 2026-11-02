@@ -1,3 +1,4 @@
+import type { MemoryGraphData, MemoryGraphQuery } from '@shared/graph'
 import type { CortexApi } from '@shared/ipc'
 import type {
   AppInfo,
@@ -308,6 +309,31 @@ export function createHttpApi(): CortexApi {
       request<DeleteSnapshotResult>(`${WEB_API_PATHS.snapshots}/${encodeURIComponent(sessionId)}`, {
         method: 'DELETE'
       }),
+
+    /**
+     * Read-only Memory Nebula projection: the discriminated `scope` is flattened
+     * into the query names `GET /api/graph` expects, and the existing `toQuery`
+     * helper drops every `undefined` field (only the active scope contributes).
+     */
+    getMemoryGraph: (query: MemoryGraphQuery) => {
+      const { scope, filters, limits } = query
+      return request<MemoryGraphData>(WEB_API_PATHS.graph, {
+        query: toQuery([
+          ['kind', scope.kind],
+          ['hostPort', scope.kind === 'asset' ? scope.hostPort : undefined],
+          ['sessionId', scope.kind === 'task' ? scope.sessionId : undefined],
+          ['includeChildren', scope.kind === 'task' ? scope.includeChildren : undefined],
+          ['depth', query.depth],
+          ['vulnerabilities', filters?.vulnerabilities],
+          ['leaks', filters?.leaks],
+          ['snapshots', filters?.snapshots],
+          ['limitHosts', limits?.hosts],
+          ['limitVulnerabilities', limits?.vulnerabilities],
+          ['limitLeaks', limits?.leaks],
+          ['limitSnapshots', limits?.snapshots]
+        ])
+      })
+    },
 
     getDatabaseInfo: () => request<DatabaseInfo>(WEB_API_PATHS.database),
 

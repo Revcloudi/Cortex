@@ -24,9 +24,11 @@ import { invalidateVulnerabilityCache } from '@renderer/lib/vulnPreload'
 interface DashboardPageProps {
   dataVersion: number
   onOpenMcp: () => void
+  /** Deep link from the nebula inspector: open this vulnerability immediately. */
+  initialVulnId?: string | null
 }
 
-export function DashboardPage({ dataVersion, onOpenMcp }: DashboardPageProps) {
+export function DashboardPage({ dataVersion, onOpenMcp, initialVulnId = null }: DashboardPageProps) {
   const { t } = useI18n()
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 180)
@@ -53,6 +55,11 @@ export function DashboardPage({ dataVersion, onOpenMcp }: DashboardPageProps) {
 
   const hasLoadedList = useRef(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Cross-page deep link (nebula → "view full details"): open the drawer once.
+  useEffect(() => {
+    if (initialVulnId !== null) setSelectedId(initialVulnId)
+  }, [initialVulnId])
 
   const clearSelection = useCallback(() => {
     setSelectedIds((previous) => (previous.size === 0 ? previous : new Set()))
@@ -400,6 +407,7 @@ export function DashboardPage({ dataVersion, onOpenMcp }: DashboardPageProps) {
             onSeedDemo={() => void handleSeedDemo()}
             onOpenMcp={onOpenMcp}
             onRetry={refresh}
+            fillHeight={(items?.length ?? 0) >= pageSize}
             footer={
               items !== null && total > 0 ? (
                 <PaginationBar

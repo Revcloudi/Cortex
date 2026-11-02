@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { Sidebar } from '@renderer/components/layout/Sidebar'
 import { Titlebar } from '@renderer/components/layout/Titlebar'
@@ -8,14 +9,35 @@ import { AssetPage } from '@renderer/pages/AssetPage'
 import { SnapshotPage } from '@renderer/pages/SnapshotPage'
 import { McpPage } from '@renderer/pages/McpPage'
 import { useAppInfo } from '@renderer/hooks/useAppInfo'
-import { I18nProvider } from '@renderer/i18n'
+import { I18nProvider, useI18n } from '@renderer/i18n'
 import { getApi } from '@renderer/lib/api'
-import type { AppPage } from '@renderer/lib/navigation'
+import type { AppDetailTarget, AppPage } from '@renderer/lib/navigation'
+
+/**
+ * The nebula page pulls in Three.js via react-force-graph-3d; it must stay out
+ * of the first-screen bundle, so it is the only lazily loaded page.
+ */
+const NebulaPage = lazy(async () => {
+  const module = await import('@renderer/pages/NebulaPage')
+  return { default: module.NebulaPage }
+})
 
 export default function App() {
   const [page, setPage] = useState<AppPage>('dashboard')
   const [dataVersion, setDataVersion] = useState(0)
+  /** Cross-page deep link opened by the nebula inspector. */
+  const [detailTarget, setDetailTarget] = useState<AppDetailTarget | null>(null)
   const { info } = useAppInfo()
+
+  const navigate = (next: AppPage): void => {
+    setDetailTarget(null)
+    setPage(next)
+  }
+
+  const openDetail = (target: AppDetailTarget): void => {
+    setDetailTarget(target)
+    setPage(target.page)
+  }
 
   useEffect(() => {
     const api = getApi()
@@ -38,16 +60,30 @@ export default function App() {
           <Titlebar />
 
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            <Sidebar page={page} onNavigate={setPage} databasePath={info?.dbPath ?? null} />
+            <Sidebar page={page} onNavigate={navigate} databasePath={info?.dbPath ?? null} />
 
             <div className="flex min-w-0 flex-1 flex-col">
               <main className="min-h-0 flex-1 overflow-y-auto">
                 {page === 'dashboard' ? (
-                  <DashboardPage dataVersion={dataVersion} onOpenMcp={() => setPage('mcp')} />
+                  <DashboardPage
+                    dataVersion={dataVersion}
+                    onOpenMcp={() => navigate('mcp')}
+                    initialVulnId={detailTarget?.kind === 'vuln' ? detailTarget.id : null}
+                  />
                 ) : page === 'assets' ? (
-                  <AssetPage dataVersion={dataVersion} />
+                  <AssetPage
+                    dataVersion={dataVersion}
+                    initialHostPort={detailTarget?.kind === 'asset' ? detailTarget.id : null}
+                  />
                 ) : page === 'snapshots' ? (
-                  <SnapshotPage dataVersion={dataVersion} />
+                  <SnapshotPage
+                    dataVersion={dataVersion}
+                    initialSessionId={detailTarget?.kind === 'snapshot' ? detailTarget.id : null}
+                  />
+                ) : page === 'nebula' ? (
+                  <Suspense fallback={<NebulaPageFallback />}>
+                    <NebulaPage dataVersion={dataVersion} onOpenDetail={openDetail} />
+                  </Suspense>
                 ) : (
                   <McpPage />
                 )}
@@ -81,5 +117,21 @@ export default function App() {
         </div>
       </TooltipProvider>
     </I18nProvider>
+  )
+}
+
+/**
+ * Suspense fallback for the lazy nebula chunk. Dark background so going from
+ * the click to the first canvas frame never flashes the light shell.
+ */
+function NebulaPageFallback() {
+  const { t } = useI18n()
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-[#06080f]">
+      <div className="flex items-center gap-2.5 text-[12px] text-white/45">
+        <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+        {t('nebula.loading')}
+      </div>
+    </div>
   )
 }

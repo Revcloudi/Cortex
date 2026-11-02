@@ -35,6 +35,8 @@ export const IPC_CHANNELS = {
   restoreSnapshotPrevious: 'snapshots:restore-previous',
   archiveSnapshot: 'snapshots:archive',
   deleteSnapshot: 'snapshots:delete',
+  /** Read-only Memory Nebula projection (P2). */
+  getMemoryGraph: 'graph:get',
   getDatabaseInfo: 'db:info',
   chooseDatabase: 'db:choose',
   resetDatabase: 'db:reset',
@@ -82,6 +84,7 @@ import type {
   VulnerabilityListItem,
   VulnStatus
 } from './types'
+import type { MemoryGraphData, MemoryGraphQuery } from './graph'
 
 export interface CortexApi {
   /** Server-side paginated + filtered vulnerability list. */
@@ -108,6 +111,11 @@ export interface CortexApi {
   deleteSnapshot(sessionId: string): Promise<DeleteSnapshotResult>
   /** One-step rollback of the latest overwrite (restores previous_state). */
   restoreSnapshotPrevious(sessionId: string): Promise<SnapshotSession>
+  /**
+   * Read-only Memory Nebula projection computed from the existing tables.
+   * Never writes and never mutates the database.
+   */
+  getMemoryGraph(query: MemoryGraphQuery): Promise<MemoryGraphData>
   /** Read-only database status for the MCP page / doctor view. */
   getDatabaseInfo(): Promise<DatabaseInfo>
   /** Open a native file picker and attach the selected SQLite database in the desktop app. */

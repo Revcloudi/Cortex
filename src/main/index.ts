@@ -1,5 +1,7 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   CORTEX_VERSION,
@@ -31,11 +33,58 @@ if (captureDir) {
   app.disableHardwareAcceleration()
 }
 
+/**
+ * GPU-less / remote-desktop Windows machines can fail to launch the Chromium GPU
+ * process (`GPU process isn't usable. Goodbye.`). Two mitigations:
+ *  - `CORTEX_DISABLE_GPU=1` (or `CTX_DISABLE_GPU=1`) skips GPU startup entirely so
+ *    the window still opens with software compositing;
+ *  - `enable-unsafe-swiftshader` keeps WebGL available through SwiftShader, so the
+ *    3D memory nebula falls back to software rendering instead of dropping to the
+ *    2D view (Chromium 137+ blocks software WebGL without this switch).
+ */
+const disableGpuRequested =
+  (process.env['CORTEX_DISABLE_GPU'] ?? process.env['CTX_DISABLE_GPU']) === '1'
+if (disableGpuRequested) {
+  app.disableHardwareAcceleration()
+}
+app.commandLine.appendSwitch('enable-unsafe-swiftshader')
+
+/**
+ * Windows Administrator sessions are the documented cause of
+ * `render-process-gone: launch-failed (exitCode 18)` (electron/electron#49167):
+ * the sandboxed renderer cannot start under an elevated token, so the window
+ * appears with no page. Both switches are required; `--no-sandbox` alone is not
+ * enough. Must run before `whenReady()`.
+ */
+function isWindowsAdministrator(): boolean {
+  if (process.platform !== 'win32') return false
+  try {
+    const groups = spawnSync('whoami', ['/groups'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 3_000
+    })
+    const text = typeof groups.stdout === 'string' ? groups.stdout : ''
+    // S-1-16-12288 = High (Administrator) integrity, S-1-16-16384 = System.
+    return /S-1-16-12288|S-1-16-16384/i.test(text)
+  } catch {
+    return false
+  }
+}
+
+const elevatedSession = isWindowsAdministrator()
+if (elevatedSession) {
+  app.commandLine.appendSwitch('no-sandbox')
+  app.commandLine.appendSwitch('disable-gpu-sandbox')
+}
+
 let mainWindow: BrowserWindow | null = null
 let database: DatabaseService | null = null
 let databaseWatcher: DatabaseWatcher | null = null
 let ipcRegistered = false
 let quitting = false
+/** One automatic relaunch for the elevated-sandbox renderer failure. */
+let rendererRelaunchAttempted = false
 
 function broadcastDataChanged(): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -161,6 +210,26 @@ function createWindow(): BrowserWindow {
 
   window.webContents.on('render-process-gone', (_event, details) => {
     logger.error(`[renderer] process gone: ${details.reason} (exit ${details.exitCode})`)
+    // Elevated Windows sessions can still hit the sandbox launch failure even
+    // when the switches above are set late; relaunch once with the documented
+    // workaround flags instead of showing an empty/closed window.
+    const sandboxLaunchFailure =
+      details.reason === 'launch-failed' || details.exitCode === 18
+    const alreadySandboxOff =
+      process.argv.includes('--no-sandbox') || app.commandLine.hasSwitch('no-sandbox')
+    if (!sandboxLaunchFailure || alreadySandboxOff || rendererRelaunchAttempted) return
+    rendererRelaunchAttempted = true
+    logger.info('[renderer] relaunching with --no-sandbox --disable-gpu-sandbox')
+    app.relaunch({
+      args: [
+        ...process.argv.slice(1),
+        '--no-sandbox',
+        '--disable-gpu-sandbox',
+        '--disable-gpu',
+        '--enable-unsafe-swiftshader'
+      ]
+    })
+    app.exit(0)
   })
 
   window.webContents.on('preload-error', (_event, preloadPath, error) => {
@@ -330,10 +399,77 @@ async function shutdown(): Promise<void> {
   }
 }
 
-const gotLock = app.requestSingleInstanceLock()
-if (!gotLock) {
+/**
+ * Custom single-instance lock.
+ *
+ * Electron's own lock lives in `userData`. When that directory cannot be
+ * written (sandboxed shells, locked-down profiles) `requestSingleInstanceLock()`
+ * returns false and the app silently quits with exit code 0 — it looks like
+ * `ctx open` succeeded but no window ever appears. This pid-file fallback lets
+ * the app start when the lock is unavailable and still blocks a real second
+ * instance whose process is alive.
+ */
+type InstanceLockState = 'acquired' | 'exists' | 'unavailable'
+
+function acquireInstanceLock(): InstanceLockState {
+  try {
+    const lockPath = join(app.getPath('userData'), 'instance.lock')
+    const read = (): { pid: number } | null => {
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(lockPath, 'utf8'))
+        if (
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          typeof (parsed as { pid?: unknown }).pid === 'number'
+        ) {
+          return { pid: (parsed as { pid: number }).pid }
+        }
+      } catch {
+        /* missing or unreadable */
+      }
+      return null
+    }
+    const isAlive = (pid: number): boolean => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+    const existing = read()
+    if (existing !== null && existing.pid !== process.pid && isAlive(existing.pid)) {
+      return 'exists'
+    }
+    mkdirSync(dirname(lockPath), { recursive: true })
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }),
+      'utf8'
+    )
+    app.on('will-quit', () => {
+      try {
+        const current = read()
+        if (current !== null && current.pid === process.pid) rmSync(lockPath, { force: true })
+      } catch {
+        /* best effort */
+      }
+    })
+    return 'acquired'
+  } catch {
+    return 'unavailable'
+  }
+}
+
+const instanceLock = acquireInstanceLock()
+const gotLock = instanceLock === 'exists' ? false : app.requestSingleInstanceLock()
+
+if (instanceLock === 'exists' || (!gotLock && instanceLock !== 'unavailable')) {
   app.quit()
 } else {
+  if (!gotLock) {
+    logger.warn('[cortex] single-instance lock unavailable; continuing without it')
+  }
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()

@@ -1,6 +1,6 @@
 ---
 name: asset-context
-description: 【硬性】完成 JS 审计、指纹识别、接口抓包等信息收集后，必须调用 sync_asset_info 把资产指纹、结构化接口（interfaces）、敏感泄露与关联漏洞沉淀到 Cortex；测试新资产前必须先 query_asset_context({ host_port }) 复用已有上下文。
+description: 【硬性】完成 JS 审计、指纹识别、接口抓包等信息收集后，必须调用 sync_asset_info 把资产指纹、结构化接口（interfaces）、敏感泄露与关联漏洞沉淀到 Cortex；测试新资产前必须先 query_asset_context({ host_port }) 复用已有上下文；同一项目保持一致的 project_name，以形成 Project/Target 归属。
 ---
 
 # 技能：资产情报收集与入库（Asset Context）
@@ -267,29 +267,11 @@ sync_asset_info({
 - ❌ 把密码 / Token / AK / PII 写进 `test_parameters`（属于 `leaked_infos`），或把普通 id / 订单号当敏感泄露、把整段响应塞进 `values`（只放 ≤50 个样例 + `pattern`）；
 - ❌ 漏洞写入后忘记关联资产。
 
-## 安装到 Agent
+## Project / Target 层级（记忆星云归属，P4）
 
-推荐用 `ctx init` 一次完成 MCP 配置 + 三个 Skill + 系统级规则（`--dry-run` 只预览，`--agents` 指定客户端）：
+- `project_name` 会生成星云的 **Project 节点**：同一项目的所有资产、快照必须使用**完全相同**的 `project_name`，否则会在全库视图里分裂成多个项目节点。
+- 快照的 `target_hosts` 表示**用户给的原始目标**，星云据此生成 **Target 节点**；通过该任务横向发现的内网服务**不要**塞进 `target_hosts`（会被当成伪目标）。
+- 横向/内网资产归属：正常 `sync_asset_info` 入库后，把它上面的漏洞 ID 写入同一会话的 `related_vuln_ids`（或让内网漏洞的 `related_vuln_ids` 指向入口漏洞）；星云会把该资产挂到对应 Target 节点下。
+- 非 Web 的纯 TCP 服务无法用 IP:端口单独入库：请以 `http://ip:port` 形式记录，或在备注/泄露来源中说明。
 
-```powershell
-ctx init
-ctx init --dry-run
-ctx init --agents dsh,claude,codex,cursor,workbuddy,zcode
-```
-
-- DSH：Skill 安装到 `~/.agents/skills/asset-context/SKILL.md`，硬性规则写入 `~/.dsh/AGENTS.md`；
-- Codex：Skill 安装到 `~/.codex/skills/asset-context/SKILL.md` 与共享 `.agents/skills`，规则写入 `~/.codex/AGENTS.md`；
-- Claude Code：Skill 安装到 `~/.claude/skills/asset-context/SKILL.md`，规则写入 `~/.claude/CLAUDE.md`；
-- Cursor：MCP 配置写入 `~/.cursor/mcp.json` 的 `mcpServers`（stdio），由 `ctx init` 按客户端能力处理。
-- WorkBuddy：MCP 配置写入 `~/.workbuddy/mcp.json` 的 `mcpServers`（stdio）；Skill 在 WorkBuddy「设置 → 技能」中从 `~/.agents/skills` 导入，无全局规则文件。
-- ZCode：MCP 配置写入 `~/.zcode/cli/config.json` 的 `mcp.servers`（stdio）；Skill 安装到 `~/.zcode/skills/asset-context/SKILL.md`，规则写入 `~/.zcode/AGENTS.md`。
-- MCP 由 Agent 自动拉起（stdio），无需启动桌面端；GUI 只是查看端，可随时开关。
-- 数据库：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`；可用 `CTX_DB_PATH` 覆盖（旧版 `PDH_DB_PATH` 仍可用）。
-- 需要手工配置时，用 `ctx mcp print-config <agent>` 打印与 GUI「MCP 接入」页一致的 stdio 配置片段。
-
-### 安装后自检
-
-1. 重启 Agent；在工具列表中确认存在 6 个工具：`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`。
-2. 让 Agent 执行一次 `query_asset_context`、`query_vulnerabilities` 与 `manage_snapshot({ action: "list" })`（只读）确认链路通畅。
-3. 完成一次资产侦察后，确认 Agent 主动调用 `sync_asset_info`；再次用 `query_asset_context({ host_port })` 读取时能看到结构化接口与敏感泄露。
-4. 工具缺失或连接断开时运行 `ctx doctor`，按提示修正配置后重启 Agent。
+## 复用已有上下文

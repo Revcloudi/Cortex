@@ -1,4 +1,5 @@
 import { basename } from 'node:path'
+import { buildMemoryGraph } from '../core/graph/buildMemoryGraph'
 import {
   AssetHostPortIpcSchema,
   DeleteVulnerabilityIpcSchema,
@@ -6,6 +7,7 @@ import {
   ListAssetsIpcSchema,
   ListSnapshotsIpcSchema,
   ListVulnerabilitiesIpcSchema,
+  MemoryGraphQueryIpcSchema,
   SetupRunRequestIpcSchema,
   SnapshotArchiveIpcSchema,
   SnapshotSessionIdIpcSchema,
@@ -16,6 +18,7 @@ import {
   buildReportFilename,
   buildVulnerabilityReportMarkdown
 } from '../shared/markdownReport'
+import type { MemoryGraphData } from '../shared/graph'
 import type {
   AppInfo,
   AssetContext,
@@ -392,6 +395,78 @@ export function createRoutes(deps: WebServerDeps): RouteDefinition[] {
         const deleted = db.deleteSnapshotSession(parsed.data)
         if (deleted > 0) deps.notifyDataChanged()
         return { deleted }
+      }
+    },
+
+    /**
+     * GET /api/graph — read-only Memory Nebula projection (guide §9.3).
+     *
+     * Mirrors `getMemoryGraph`: the query string is flattened into the shared
+     * `MemoryGraphQuery` shape and validated with the same strict schema the
+     * desktop IPC bridge uses. Unknown query parameters are ignored like every
+     * other route, and the builder never writes, so no `changed` event fires.
+     */
+    {
+      method: 'GET',
+      pattern: createPattern(WEB_API_PATHS.graph),
+      handler: (request: RouteRequest): MemoryGraphData => {
+        const errorScope = 'Invalid memory graph query'
+        const kind = stringQuery(request.query, 'kind') ?? 'all'
+        const hostPort = stringQuery(request.query, 'hostPort')
+        const sessionId = stringQuery(request.query, 'sessionId')
+        const includeChildren = booleanQuery(request.query, 'includeChildren', errorScope)
+        const depth = numberQuery(request.query, 'depth', errorScope)
+        // The shared schema is a strict discriminated union: only the fields
+        // that belong to the requested kind may reach validation.
+        const scope: Record<string, unknown> =
+          kind === 'asset'
+            ? { kind, ...(hostPort !== undefined ? { hostPort } : {}) }
+            : kind === 'task'
+              ? {
+                  kind,
+                  ...(sessionId !== undefined ? { sessionId } : {}),
+                  ...(includeChildren !== undefined ? { includeChildren } : {})
+                }
+              : { kind }
+        const vulnerabilities = booleanQuery(request.query, 'vulnerabilities', errorScope)
+        const leaks = booleanQuery(request.query, 'leaks', errorScope)
+        const snapshots = booleanQuery(request.query, 'snapshots', errorScope)
+        const filters =
+          vulnerabilities !== undefined || leaks !== undefined || snapshots !== undefined
+            ? {
+                ...(vulnerabilities !== undefined ? { vulnerabilities } : {}),
+                ...(leaks !== undefined ? { leaks } : {}),
+                ...(snapshots !== undefined ? { snapshots } : {})
+              }
+            : undefined
+        const hosts = numberQuery(request.query, 'limitHosts', errorScope)
+        const vulnerabilityLimit = numberQuery(request.query, 'limitVulnerabilities', errorScope)
+        const leakLimit = numberQuery(request.query, 'limitLeaks', errorScope)
+        const snapshotLimit = numberQuery(request.query, 'limitSnapshots', errorScope)
+        const limits =
+          hosts !== undefined ||
+          vulnerabilityLimit !== undefined ||
+          leakLimit !== undefined ||
+          snapshotLimit !== undefined
+            ? {
+                ...(hosts !== undefined ? { hosts } : {}),
+                ...(vulnerabilityLimit !== undefined
+                  ? { vulnerabilities: vulnerabilityLimit }
+                  : {}),
+                ...(leakLimit !== undefined ? { leaks: leakLimit } : {}),
+                ...(snapshotLimit !== undefined ? { snapshots: snapshotLimit } : {})
+              }
+            : undefined
+        const parsed = MemoryGraphQueryIpcSchema.safeParse({
+          scope,
+          ...(depth !== undefined ? { depth } : {}),
+          ...(filters !== undefined ? { filters } : {}),
+          ...(limits !== undefined ? { limits } : {})
+        })
+        if (!parsed.success) {
+          throw invalidInput(errorScope, parsed.error)
+        }
+        return buildMemoryGraph(deps.db, parsed.data)
       }
     },
 

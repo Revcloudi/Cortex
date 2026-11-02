@@ -1,6 +1,6 @@
 ---
 name: vuln-db
-description: 【硬性】确认新漏洞时先 query_vulnerabilities({ host }) 查重再 save_vulnerability；复测只用 update_vulnerability 的 retest 追加 Markdown 结论，禁止用 save_vulnerability 覆盖原始证据；reproduction_steps 必须是标准 Markdown（### 步骤 N、**请求**、**响应**、**判据** + http 代码块）。
+description: 【硬性】确认新漏洞时先 query_vulnerabilities({ host }) 查重再 save_vulnerability；复测只用 update_vulnerability 的 retest 追加 Markdown 结论，禁止用 save_vulnerability 覆盖原始证据；reproduction_steps 必须是标准 Markdown（### 步骤 N、**请求**、**响应**、**判据** + http 代码块）；内网/横向服务上的漏洞用 service_host 标注（host 仍填入口资产）。
 ---
 
 # 技能：漏洞发现与入库（Cortex）
@@ -10,7 +10,7 @@ Cortex 是本地 **stdio MCP Server**：由 Agent 自动拉起（`node <entry>`�
 ## 连接方式（stdio）
 
 - **传输**：stdio，Agent 在自己的进程里拉起 MCP server，通过 stdin/stdout 交换 JSON-RPC；不监听端口、没有 HTTP 端点，桌面端不启动 MCP。
-- **入口**：开发模式 `node <项目>/out/mcp/stdio.cjs`；Windows 安装版 `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs`（Server 名称 `cortex`，版本 `0.1.3`）。
+- **入口**：开发模式 `node <项目>/out/mcp/stdio.cjs`；Windows 安装版 `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs`（Server 名称 `cortex`，版本 `0.1.4`）。
 - **数据库**：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`，可用 `CTX_DB_PATH` 覆盖（旧版 `PDH_DB_PATH` 仍可用）；GUI / MCP / CLI 共用同一份文件。
 - **验证链路**：调用一次只读工具即可，例如 `manage_snapshot({ "action": "list" })` 或 `query_vulnerabilities({ "host": "example.com:443" })`；工具存在且返回正常即说明 stdio 连接可用。
 
@@ -41,6 +41,7 @@ Cortex 是本地 **stdio MCP Server**：由 Agent 自动拉起（`node <entry>`�
 | --- | --- | --- | --- |
 | `id` | string | 否 | 省略时自动分配 `VULN-YYYYMMDD-NNN`；相同 ID 会覆盖旧记录 |
 | `host` | string | 是 | 接受 `host` 或 `host:port`（如 `opcenter.example.com` / `opcenter.example.com:443`）；**按传入原样存储**，不带协议头/路径 |
+| `service_host` | string | 否 | 漏洞实际所在的内网/横向服务（如 `10.0.0.5:8080`）；填写时 `host` 必须填**入口资产** host，漏洞会归到入口资产下 |
 | `vuln_name` | string | 是 | 漏洞名称 |
 | `vuln_type` | string | 否 | 如 `SQLi` / `SSRF` / `Arbitrary_File_Download`；省略 = `Unclassified`（UI 显示「未分类」） |
 | `severity` | enum | 是 | `Critical` / `High` / `Medium` / `Low` / `Info` |
@@ -187,60 +188,3 @@ stdio MCP 由 Agent 拉起，不存在「服务是否在线」的前置条件；
 4. 数据库忙 / schema 过旧：打开一次 GUI 让主进程完成迁移，或运行 `ctx doctor` 查看详情；只读 CLI 命令不会替你迁移。
 5. 仍失败时设置 `CTX_MCP_LOG=<日志路径>` 后重启 Agent，查看 stderr / 日志文件里的启动错误；也可运行 `node scripts/mcp-stdio-smoke.mjs` 单独验证入口。
 6. 工具名带命名空间（DSH `mcp__cortex__*`，其他客户端可能显示为 `cortex.*`），按实际暴露的名字调用；`ctx mcp print-config dsh|codex|claude|cursor|workbuddy|zcode` 可打印官方 stdio 配置片段。
-
-## 安装到 Agent（含强制化）
-
-**只注册 MCP 通常不够**：Agent 客户端不会仅因为工具存在就强制调用它。必须同时安装三层：
-
-1. **MCP server**：以 stdio 启动，让 6 个工具可见（3 个漏洞工具 + 2 个资产工具 + 1 个认知快照工具）；
-2. **Skill**：把本文件与 `asset-context`、`snapshot` 安装到 Agent 的技能目录，提供漏洞字段、Markdown、复测与资产上下文规范；
-3. **系统级硬性规则**：把「确认漏洞必须入库 + 侦察后同步资产 + 认知快照」写进 Agent 的全局指令文件（DSH `AGENTS.md`、Codex `AGENTS.md`、Claude `CLAUDE.md`、ZCode `AGENTS.md`；WorkBuddy 无全局规则文件）。
-
-### 推荐：`ctx init` 一条命令
-
-```powershell
-ctx init                          # 检测本机 Agent，展示文件与 diff，备份后幂等写入
-ctx init --dry-run                # 只展示将修改的文件，不写任何文件
-ctx init --agents dsh,claude      # 只处理指定 Agent（dsh / claude / codex / cursor / workbuddy / zcode）
-```
-
-`ctx init` 会安装 MCP 配置、三个 Skill 与系统级规则，备份为 `.bak-YYYYMMDD-HHmmss`，校验写入后的 JSON/TOML/YAML 可解析，最后提示重启 Agent。安装完成后运行 `ctx doctor` 自检。
-
-也可以运行 `ctx mcp print-config <agent>` 打印配置片段，或在 MCP 接入页点击「接入 Agent」自动写入。
-
-### 各 Agent 的安装落点
-
-| Agent | MCP 配置 | Skill 目录 | 系统级强制规则 |
-| --- | --- | --- | --- |
-| DeepSeek Harness | `~/.dsh/profiles/<profile>/cordis.patch.yml` 中 `@deepseek-ai/dsh-mcp-client`（stdio：`node` + `<entry>`） | `~/.agents/skills/vuln-db/SKILL.md` | `~/.dsh/AGENTS.md` |
-| Codex CLI | `~/.codex/config.toml` 的 `[mcp_servers.cortex]`（stdio） | `~/.codex/skills/vuln-db/SKILL.md` 与 `~/.agents/skills/vuln-db/SKILL.md` | `~/.codex/AGENTS.md` |
-| Claude Code | `claude mcp add --transport stdio cortex -- <node> <entry>` | `~/.claude/skills/vuln-db/SKILL.md` 与 `~/.agents/skills/vuln-db/SKILL.md` | `~/.claude/CLAUDE.md` |
-| Cursor | `~/.cursor/mcp.json` 的 `mcpServers`（stdio） | 由 `ctx init` 按客户端能力安装 | — |
-| WorkBuddy | `~/.workbuddy/mcp.json` 的 `mcpServers`（stdio） | 在 WorkBuddy「设置 → 技能」中从 `~/.agents/skills` 导入 | — |
-| ZCode | `~/.zcode/cli/config.json` 的 `mcp.servers`（stdio） | `~/.zcode/skills/vuln-db/SKILL.md` | `~/.zcode/AGENTS.md` |
-
-> stdio MCP 由 Agent 拉起，桌面端不需要常驻；关闭 GUI 不影响 MCP 读写。修改配置或安装 Skill / 规则后重启对应 Agent 生效。
-
-### 安装后自检
-
-1. 重启 Agent；在工具列表中确认存在 6 个工具：`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`。
-2. 让 Agent 执行一次 `query_vulnerabilities`、`query_asset_context` 与 `manage_snapshot({ action: "list" })`（只读）确认链路通畅。
-3. 确认一个测试漏洞，观察 Agent 是否在回复前主动调用 `save_vulnerability`；若仍不调用，检查系统级规则文件是否被 Agent 实际加载（不同客户端的规则文件路径不同）。资产侦察完成后同理应调用 `sync_asset_info`；复测时只用 `update_vulnerability` 追加。
-4. 工具缺失或连接断开时运行 `ctx doctor`，按「MCP 连接故障排查」逐项检查后重启 Agent。
-
-### 手动安装（任选）
-
-- 通用 stdio MCP 配置（Cursor 等客户端可直接使用；安装版把 `command` 换成 `<install>\bin\node.exe`，入口换成 `<install>\bin\mcp-stdio.cjs`）：
-  ```json
-  {
-    "mcpServers": {
-      "cortex": {
-        "command": "node",
-        "args": ["<项目>/out/mcp/stdio.cjs"]
-      }
-    }
-  }
-  ```
-- 手动安装 Skill：把本文件复制到上表对应 Skill 目录。
-- 手动强制规则：把本文件开头的「硬性规则（MUST）」整段追加到对应 Agent 的全局指令文件（DSH `~/.dsh/AGENTS.md`、Codex `~/.codex/AGENTS.md`、Claude `~/.claude/CLAUDE.md`、ZCode `~/.zcode/AGENTS.md`；WorkBuddy 无全局规则文件）。
-- 数据位置：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`；需要隔离多库时设置 `CTX_DB_PATH`（旧版 `PDH_DB_PATH` 仍可用）。

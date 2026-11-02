@@ -103,6 +103,7 @@ export function readSchemaVersion(dbPath: string): number | null {
 interface VulnerabilityRow {
   id: string
   host: string
+  service_host: string
   entry_point: string
   vuln_name: string
   vuln_type: string
@@ -165,7 +166,53 @@ interface SnapshotSessionRow {
   updated_at: string
 }
 
-/** The nine cognitive-state fields stored on one snapshot session. */
+/**
+ * Trimmed vulnerability projection used only by the Memory Nebula graph builder.
+ *
+ * The full `vulnerabilities` rows can carry up to 500 KB of Markdown evidence per
+ * row, so the graph reads a bounded preview instead of the whole archive; the
+ * inspector only ever renders a short excerpt of it.
+ */
+export interface GraphVulnerabilityRecord {
+  id: string
+  host: string
+  service_host: string
+  vuln_name: string
+  vuln_type: string
+  severity: Severity
+  status: VulnStatus
+  target_url: string
+  created_at: string
+  /** Markdown preview, already truncated to `GRAPH_REPRODUCTION_PREVIEW_CHARS`. */
+  reproduction_steps: string
+  related_vuln_ids: string[]
+}
+
+/** Max Markdown characters of `reproduction_steps` carried into the graph. */
+export const GRAPH_REPRODUCTION_PREVIEW_CHARS = 4_000
+/** Hard SQL caps mirroring `MEMORY_GRAPH_HARD_LIMITS` in `shared/graph.ts`. */
+const GRAPH_MAX_HOSTS = 500
+const GRAPH_MAX_VULNERABILITIES = 2_000
+const GRAPH_MAX_SNAPSHOTS = 200
+
+/** Row shape returned by the graph-specific vulnerability query. */
+interface GraphVulnerabilityRow {
+  id: string
+  host: string
+  service_host: string
+  vuln_name: string
+  vuln_type: string
+  severity: string
+  status: string
+  target_url: string
+  created_at: string
+  reproduction_steps: string
+  related_vuln_ids: string
+}
+
+/**
+ * The nine cognitive-state fields stored on one snapshot session.
+ */
 const SNAPSHOT_PAYLOAD_FIELDS = [
   'project_name',
   'target_hosts',
@@ -210,7 +257,7 @@ export class DatabaseError extends Error {
 }
 
 const LIST_COLUMNS = `
-  id, host, entry_point, vuln_name, vuln_type, severity,
+  id, host, service_host, entry_point, vuln_name, vuln_type, severity,
   target_url, status, created_at
 `
 
@@ -578,6 +625,7 @@ export class DatabaseService {
       CREATE TABLE IF NOT EXISTS vulnerabilities (
         id TEXT PRIMARY KEY,
         host TEXT NOT NULL,
+        service_host TEXT NOT NULL DEFAULT '',
         entry_point TEXT NOT NULL DEFAULT '',
         vuln_name TEXT NOT NULL,
         vuln_type TEXT NOT NULL,
@@ -692,6 +740,10 @@ export class DatabaseService {
     const columns = this.db.prepare('PRAGMA table_info(vulnerabilities)').all() as Array<{
       name: string
     }>
+
+    if (!columns.some((column) => column.name === 'service_host')) {
+      this.db.exec("ALTER TABLE vulnerabilities ADD COLUMN service_host TEXT NOT NULL DEFAULT ''")
+    }
 
     if (!columns.some((column) => column.name === 'retest_results')) {
       this.db.exec("ALTER TABLE vulnerabilities ADD COLUMN retest_results TEXT NOT NULL DEFAULT '[]'")
@@ -847,6 +899,7 @@ export class DatabaseService {
       ? `
         ON CONFLICT(id) DO UPDATE SET
           host = excluded.host,
+          service_host = excluded.service_host,
           entry_point = excluded.entry_point,
           vuln_name = excluded.vuln_name,
           vuln_type = excluded.vuln_type,
@@ -869,11 +922,11 @@ export class DatabaseService {
       .prepare(
         `
         INSERT INTO vulnerabilities (
-          id, host, entry_point, vuln_name, vuln_type, severity, target_url,
+          id, host, service_host, entry_point, vuln_name, vuln_type, severity, target_url,
           description, impact, affected_interfaces, reproduction_steps, remediation,
           crypto_details, test_boundaries, retest_results, related_vuln_ids, status, created_at
         ) VALUES (
-          @id, @host, @entry_point, @vuln_name, @vuln_type, @severity, @target_url,
+          @id, @host, @service_host, @entry_point, @vuln_name, @vuln_type, @severity, @target_url,
           @description, @impact, @affected_interfaces, @reproduction_steps, @remediation,
           @crypto_details, @test_boundaries, @retest_results, @related_vuln_ids, @status, @created_at
         )
@@ -883,6 +936,7 @@ export class DatabaseService {
       .run({
         id: vuln.id,
         host: vuln.host,
+        service_host: vuln.service_host,
         entry_point: vuln.entry_point,
         vuln_name: vuln.vuln_name,
         vuln_type: vuln.vuln_type,
@@ -926,6 +980,7 @@ export class DatabaseService {
     if (search) {
       clauses.push(
         `(lower(host) LIKE @search
+          OR lower(service_host) LIKE @search
           OR lower(vuln_name) LIKE @search
           OR lower(id) LIKE @search
           OR lower(vuln_type) LIKE @search
@@ -983,6 +1038,7 @@ export class DatabaseService {
         VulnerabilityRow,
         | 'id'
         | 'host'
+        | 'service_host'
         | 'entry_point'
         | 'vuln_name'
         | 'vuln_type'
@@ -997,6 +1053,7 @@ export class DatabaseService {
       items: rows.map((row) => ({
         id: row.id,
         host: row.host,
+        service_host: row.service_host ?? '',
         entry_point: row.entry_point,
         vuln_name: row.vuln_name,
         vuln_type: row.vuln_type,
@@ -1344,6 +1401,92 @@ export class DatabaseService {
     })
   }
 
+  /**
+   * Read-only asset projection for the Memory Nebula builder.
+   *
+   * Unlike `listAssets` (compact table rows capped at 500) this returns full
+   * `AssetContext` rows including interfaces/leaks, because the graph needs those
+   * to derive leak nodes and host weights. The caller bounds the row count.
+   */
+  listAssetsForGraph(limit: number): AssetContext[] {
+    const bounded = Math.max(1, Math.min(Math.floor(limit), GRAPH_MAX_HOSTS))
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM assets ORDER BY last_seen DESC, host_port ASC LIMIT ?`
+      )
+      .all(bounded) as AssetRow[]
+    return rows.map((row) => this.mapAssetRow(row))
+  }
+
+  /**
+   * Read-only vulnerability projection for the Memory Nebula builder: newest
+   * rows first, bounded count, and `reproduction_steps` truncated in SQL so the
+   * graph payload can never explode on large evidence text.
+   */
+  listGraphVulnerabilities(limit: number, host?: string): GraphVulnerabilityRecord[] {
+    const bounded = Math.max(1, Math.min(Math.floor(limit), GRAPH_MAX_VULNERABILITIES))
+    const columns = `
+      id, host, service_host, vuln_name, vuln_type, severity, status, target_url, created_at,
+      related_vuln_ids,
+      substr(COALESCE(reproduction_steps, ''), 1, ${GRAPH_REPRODUCTION_PREVIEW_CHARS}) AS reproduction_steps
+    `
+    const rows = (
+      host === undefined
+        ? this.db
+            .prepare(`SELECT ${columns} FROM vulnerabilities ORDER BY created_at DESC, id ASC LIMIT ?`)
+            .all(bounded)
+        : this.db
+            .prepare(
+              `SELECT ${columns} FROM vulnerabilities WHERE lower(host) = lower(?) ORDER BY created_at DESC, id ASC LIMIT ?`
+            )
+            .all(host, bounded)
+    ) as GraphVulnerabilityRow[]
+    return rows.map((row) => ({
+      id: row.id,
+      host: row.host,
+      service_host: row.service_host ?? '',
+      vuln_name: row.vuln_name,
+      vuln_type: row.vuln_type,
+      severity: toSeverity(row.severity),
+      status: toStatus(row.status),
+      target_url: row.target_url,
+      created_at: row.created_at,
+      reproduction_steps: row.reproduction_steps ?? '',
+      related_vuln_ids: parseJsonArray<string>(row.related_vuln_ids)
+    }))
+  }
+
+  /**
+   * Read-only snapshot projection for the Memory Nebula builder. Passing
+   * `parentSessionId` returns the direct children of a project session.
+   */
+  listGraphSnapshots(limit: number, parentSessionId?: string): SnapshotSession[] {
+    const bounded = Math.max(1, Math.min(Math.floor(limit), GRAPH_MAX_SNAPSHOTS))
+    const where = parentSessionId === undefined ? '' : 'WHERE s.parent_session_id = @parentSessionId'
+    const params: Record<string, string | number> = { limit: bounded }
+    if (parentSessionId !== undefined) params.parentSessionId = parentSessionId
+    const rows = this.db
+      .prepare(
+        `
+        SELECT ${SNAPSHOT_SELECT_COLUMNS}
+        FROM snapshot_sessions s
+        ${where}
+        ORDER BY s.updated_at DESC, s.session_id DESC
+        LIMIT @limit
+        `
+      )
+      .all(params) as SnapshotSessionRow[]
+    return rows.map((row) => this.mapSnapshotRow(row))
+  }
+
+  /** Total snapshot session rows (for `meta.truncated` on the graph). */
+  countSnapshotSessions(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS total FROM snapshot_sessions').get() as {
+      total: number
+    }
+    return row.total
+  }
+
   /** Case-insensitive project-name substring search, newest assets first. */
   queryAssetsByProject(projectName: string): AssetContext[] {
     const needle = projectName.trim()
@@ -1407,6 +1550,7 @@ export class DatabaseService {
         VulnerabilityRow,
         | 'id'
         | 'host'
+        | 'service_host'
         | 'entry_point'
         | 'vuln_name'
         | 'vuln_type'
@@ -1420,6 +1564,7 @@ export class DatabaseService {
     return rows.map((row) => ({
       id: row.id,
       host: row.host,
+      service_host: row.service_host ?? '',
       entry_point: row.entry_point,
       vuln_name: row.vuln_name,
       vuln_type: row.vuln_type,
@@ -1990,6 +2135,7 @@ export class DatabaseService {
     return {
       id: row.id,
       host: row.host,
+      service_host: row.service_host ?? '',
       entry_point: row.entry_point,
       vuln_name: row.vuln_name,
       vuln_type: row.vuln_type,

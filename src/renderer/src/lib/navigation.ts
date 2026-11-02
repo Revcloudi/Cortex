@@ -1,6 +1,16 @@
-import { Boxes, Brain, Plug, ShieldAlert, type LucideIcon } from 'lucide-react'
+import { Boxes, Brain, Orbit, Plug, ShieldAlert, type LucideIcon } from 'lucide-react'
 
-export type AppPage = 'dashboard' | 'assets' | 'snapshots' | 'mcp'
+export type AppPage = 'dashboard' | 'nebula' | 'assets' | 'snapshots' | 'mcp'
+
+/** Cross-page deep link used by the nebula inspector ("view full details"). */
+export type AppDetailKind = 'vuln' | 'asset' | 'snapshot'
+
+export interface AppDetailTarget {
+  page: AppPage
+  kind: AppDetailKind
+  /** Vulnerability id, asset host_port or snapshot session_id. */
+  id: string
+}
 
 /**
  * Navigation exposes message keys instead of literals so the sidebar (and any
@@ -14,6 +24,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { page: 'dashboard', labelKey: 'nav.dashboard', icon: ShieldAlert },
+  { page: 'nebula', labelKey: 'nav.nebula', icon: Orbit },
   { page: 'assets', labelKey: 'nav.assets', icon: Boxes },
   { page: 'snapshots', labelKey: 'nav.snapshots', icon: Brain },
   { page: 'mcp', labelKey: 'nav.mcp', icon: Plug }
@@ -23,6 +34,10 @@ export const PAGE_META: Record<AppPage, { titleKey: string; descriptionKey: stri
   dashboard: {
     titleKey: 'nav.dashboard',
     descriptionKey: 'ui.pageMeta.dashboard.description'
+  },
+  nebula: {
+    titleKey: 'nav.nebula',
+    descriptionKey: 'ui.pageMeta.nebula.description'
   },
   assets: {
     titleKey: 'nav.assets',

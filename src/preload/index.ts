@@ -28,6 +28,7 @@ import type {
   VulnerabilityListItem,
   VulnStatus
 } from '../shared/types'
+import type { MemoryGraphData, MemoryGraphQuery } from '../shared/graph'
 
 const api: CortexApi = {
   listVulnerabilities(query?: VulnListQuery): Promise<PaginatedVulnerabilities> {
@@ -91,6 +92,9 @@ const api: CortexApi = {
       IPC_CHANNELS.deleteSnapshot,
       sessionId
     ) as Promise<DeleteSnapshotResult>
+  },
+  getMemoryGraph(query: MemoryGraphQuery): Promise<MemoryGraphData> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getMemoryGraph, query) as Promise<MemoryGraphData>
   },
   getDatabaseInfo(): Promise<DatabaseInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.getDatabaseInfo) as Promise<DatabaseInfo>

@@ -1,6 +1,6 @@
 ---
 name: vuln-db
-description: "[MUST] Before saving a new vulnerability, deduplicate with query_vulnerabilities({ host }) and then call save_vulnerability; for retests only append a Markdown conclusion via update_vulnerability retest, and never overwrite the original evidence with save_vulnerability; reproduction_steps must be standard Markdown (### Step N, **Request**, **Response**, **Evidence** + http code blocks)."
+description: "[MUST] Before saving a new vulnerability, deduplicate with query_vulnerabilities({ host }) and then call save_vulnerability; for retests only append a Markdown conclusion via update_vulnerability retest, and never overwrite the original evidence with save_vulnerability; reproduction_steps must be standard Markdown (### Step N, **Request**, **Response**, **Evidence** + http code blocks); mark findings on internal/pivoted services with service_host (host stays the entry asset)."
 ---
 
 # Skill: Vulnerability Discovery and Persistence (Cortex)
@@ -10,7 +10,7 @@ Cortex is a local **stdio MCP Server**: the agent launches it automatically (`no
 ## Connection (stdio)
 
 - **Transport**: stdio. The agent starts the MCP server inside its own process and exchanges JSON-RPC over stdin/stdout; there is no listening port and no HTTP endpoint, and the desktop app does not start the MCP.
-- **Entry point**: development mode `node <project>/out/mcp/stdio.cjs`; Windows installed build `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs` (server name `cortex`, version `0.1.3`).
+- **Entry point**: development mode `node <project>/out/mcp/stdio.cjs`; Windows installed build `<install>\bin\node.exe` + `<install>\bin\mcp-stdio.cjs` (server name `cortex`, version `0.1.4`).
 - **Database**: Windows `%USERPROFILE%\.cortex\data.db`, macOS/Linux `~/.cortex/data.db`, overridable with `CTX_DB_PATH` (the legacy `PDH_DB_PATH` still works); the GUI / MCP / CLI share the same file.
 - **Verify the link**: call one read-only tool, e.g. `manage_snapshot({ "action": "list" })` or `query_vulnerabilities({ "host": "example.com:443" })`; if the tool exists and returns normally, the stdio connection works.
 
@@ -41,6 +41,7 @@ This is an **execution gate**, not a "recommended call":
 | --- | --- | --- | --- |
 | `id` | string | No | Omit it to auto-assign `VULN-YYYYMMDD-NNN`; the same ID overwrites the old record |
 | `host` | string | Yes | Accepts `host` or `host:port` (e.g. `opcenter.example.com` / `opcenter.example.com:443`); **stored verbatim**, no scheme and no path |
+| `service_host` | string | No | Internal/pivoted service the vulnerability actually lives on (e.g. `10.0.0.5:8080`); when set, `host` must be the **entry asset** host so the vuln is attributed to the entry asset |
 | `vuln_name` | string | Yes | Vulnerability name |
 | `vuln_type` | string | No | e.g. `SQLi` / `SSRF` / `Arbitrary_File_Download`; omitted = `Unclassified` (the UI renders the localized “unclassified” label) |
 | `severity` | enum | Yes | `Critical` / `High` / `Medium` / `Low` / `Info` |
@@ -187,60 +188,3 @@ The stdio MCP is launched by the agent, so there is no "is the service online" p
 4. Database busy / schema too old: open the GUI once so the main process runs the migration, or run `ctx doctor` for details; read-only CLI commands will not migrate for you.
 5. If it still fails, set `CTX_MCP_LOG=<log path>` and restart the agent, then check stderr / the log file for startup errors; you can also run `node scripts/mcp-stdio-smoke.mjs` to verify the entry point on its own.
 6. Tool names may be namespaced (DSH `mcp__cortex__*`, other clients may show `cortex.*`); call the tool by the name actually exposed; `ctx mcp print-config dsh|codex|claude|cursor|workbuddy|zcode` prints the official stdio config snippet.
-
-## Installing into agents (including enforcement)
-
-**Registering the MCP alone is usually not enough**: agent clients do not call a tool merely because it exists. All three layers must be installed together:
-
-1. **MCP server**: start it over stdio so the 6 tools are visible (3 vulnerability tools + 2 asset tools + 1 cognitive snapshot tool);
-2. **Skill**: install this file together with `asset-context` and `snapshot` into the agent's skills directory, providing the vulnerability field, Markdown, retest and asset-context specifications;
-3. **System-level hard rules**: write "confirmed vulnerabilities must be persisted + assets must be synced after recon + cognitive snapshot" into the agent's global instruction file (DSH `AGENTS.md`, Codex `AGENTS.md`, Claude `CLAUDE.md`, ZCode `AGENTS.md`; WorkBuddy has no global rule file).
-
-### Recommended: a single `ctx init` command
-
-```powershell
-ctx init                          # detect local agents, show files and diff, back up, then write idempotently
-ctx init --dry-run                # only show which files would change; write nothing
-ctx init --agents dsh,claude      # only handle the specified agents (dsh / claude / codex / cursor / workbuddy / zcode)
-```
-
-`ctx init` installs the MCP config, the three skills and the system-level rules, backs files up as `.bak-YYYYMMDD-HHmmss`, validates that the written JSON/TOML/YAML parses, and finally prompts you to restart the agent. Run `ctx doctor` for a self-check after installation.
-
-You can also print a snippet with `ctx mcp print-config <agent>`, or use the **Connect agents** button on the MCP page.
-
-### Installation locations per agent
-
-| Agent | MCP config | Skill directory | System-level enforcement rules |
-| --- | --- | --- | --- |
-| DeepSeek Harness | `@deepseek-ai/dsh-mcp-client` in `~/.dsh/profiles/<profile>/cordis.patch.yml` (stdio: `node` + `<entry>`) | `~/.agents/skills/vuln-db/SKILL.md` | `~/.dsh/AGENTS.md` |
-| Codex CLI | `[mcp_servers.cortex]` in `~/.codex/config.toml` (stdio) | `~/.codex/skills/vuln-db/SKILL.md` and `~/.agents/skills/vuln-db/SKILL.md` | `~/.codex/AGENTS.md` |
-| Claude Code | `claude mcp add --transport stdio cortex -- <node> <entry>` | `~/.claude/skills/vuln-db/SKILL.md` and `~/.agents/skills/vuln-db/SKILL.md` | `~/.claude/CLAUDE.md` |
-| Cursor | `mcpServers` in `~/.cursor/mcp.json` (stdio) | Installed by `ctx init` according to client capabilities | — |
-| WorkBuddy | `mcpServers` in `~/.workbuddy/mcp.json` (stdio) | Import from `~/.agents/skills` in WorkBuddy Settings → Skills | — |
-| ZCode | `mcp.servers` in `~/.zcode/cli/config.json` (stdio) | `~/.zcode/skills/vuln-db/SKILL.md` | `~/.zcode/AGENTS.md` |
-
-> The stdio MCP is launched by the agent, so no desktop app needs to stay running; closing the GUI does not affect MCP reads/writes. Restart the corresponding agent after changing the config or installing the skill / rules.
-
-### Post-install self-check
-
-1. Restart the agent; confirm the 6 tools are present in the tool list: `save_vulnerability`, `query_vulnerabilities`, `update_vulnerability`, `sync_asset_info`, `query_asset_context`, `manage_snapshot`.
-2. Ask the agent to run `query_vulnerabilities`, `query_asset_context` and `manage_snapshot({ action: "list" })` once (read-only) to confirm the link works.
-3. Confirm a test vulnerability and watch whether the agent proactively calls `save_vulnerability` before replying; if it still does not, check whether the system-level rules file is actually loaded by the agent (rule file paths differ between clients). After asset recon it should likewise call `sync_asset_info`; for retests only append via `update_vulnerability`.
-4. If tools are missing or the connection drops, run `ctx doctor`, check each item in "MCP connection troubleshooting", then restart the agent.
-
-### Manual installation (either option)
-
-- Generic stdio MCP config (usable directly by Cursor and similar clients; for the installed build, replace `command` with `<install>\bin\node.exe` and the entry with `<install>\bin\mcp-stdio.cjs`):
-  ```json
-  {
-    "mcpServers": {
-      "cortex": {
-        "command": "node",
-        "args": ["<project>/out/mcp/stdio.cjs"]
-      }
-    }
-  }
-  ```
-- Manual skill installation: copy this file to the matching skill directory in the table above.
-- Manual enforcement rules: append the entire "Hard rules (MUST)" section from the top of this file to the agent's global instruction file (DSH `~/.dsh/AGENTS.md`, Codex `~/.codex/AGENTS.md`, Claude `~/.claude/CLAUDE.md`, ZCode `~/.zcode/AGENTS.md`; WorkBuddy has no global rule file).
-- Data location: Windows `%USERPROFILE%\.cortex\data.db`, macOS/Linux `~/.cortex/data.db`; set `CTX_DB_PATH` to isolate multiple databases (the legacy `PDH_DB_PATH` still works).

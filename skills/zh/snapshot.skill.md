@@ -51,7 +51,7 @@ Cortex 的认知快照保存任务的战术进度：项目 / 目标 Host / 阶�
 7. **归档 / 删除只由用户在桌面端操作**（MCP 无此 action，Agent 不能删除）。归档会话默认不出现在 `list`（`include_archived: true` 才显示，`load` 仍可查看）；归档会话不可 `save` / `attach_assets` / `restore_previous`，需提示用户在 UI 取消归档。
 8. **职责分工**：漏洞详情 / HTTP 报文 / 复现步骤 / 修复建议 → `save_vulnerability`；接口目录 / 完整原始请求 / 技术栈 / 敏感泄露 → `sync_asset_info`；快照只放测试结论（`tested_interfaces`）、备注（`notes`）、关联 ID（`related_vuln_ids`）。大段报文、截图不进快照。
 9. **payload 上限**：整体序列化 ≤32,000 字符；`tested_interfaces` ≤50 条（`target` ≤300 / `method` ≤300 / `result` ≤500）、`notes` ≤8,000 字符、`related_vuln_ids` ≤100 个。超限先压缩 `notes`、精简矩阵。
-10. **资产归属用 `attach_assets`**（去重并入 `target_hosts`），不要用 save 重写别处的会话。
+10. **资产归属用 `attach_assets`**（去重并入 `target_hosts`），不要用 save 重写别处的会话；但 `target_hosts` 只放**用户给的原始目标**——横向发现的内网服务不要 attach 成 target，改用 `related_vuln_ids` 归属，星云会把它挂到对应 Target 节点下。
 11. **回滚只用 `restore_previous`**（单步，执行前向用户确认；回滚后 `previous_state` 清空，不能连续回滚）。
 12. **乐观锁**：更新传 `base_updated_at`（本次修改基于的 `updated_at`）；返回 `STALE` 说明会话已变，必须先重新 `load` 再改。
 13. **MCP 不可用**（工具缺失 / `server is disconnected`）→ 先运行 `ctx doctor`，确认 Agent 以 stdio 拉起 MCP（开发版 `node <项目>/out/mcp/stdio.cjs`，安装版 `<install>\bin\node.exe` + `mcp-stdio.cjs`）、数据库路径正确，然后**重启 Agent**（不是重启 GUI）；数据库忙 / schema 过旧时打开一次 GUI 或运行 `ctx doctor`。禁止假装已保存 / 静默跳过；用户明确说不用保存时从其指令。
@@ -198,11 +198,3 @@ manage_snapshot({
 - ❌ 每轮对话都 save、把已完成事项留在 `unfinished_tasks`、`STALE` 后不重新 `load` 就重试；
 - ❌ 把完整 HTTP 报文 / 截图塞进 `tested_interfaces` 或 `notes`、或引用漏洞后又抄复现步骤（撑爆 32,000 上限）；
 - ❌ 用快照代替漏洞 / 资产入库（仍走 `save_vulnerability` / `sync_asset_info`）。
-
-## 安装到 Agent
-
-推荐用 `ctx init` 一条命令完成 MCP 配置 + 三个 Skill + 系统规则（幂等、自动备份、`--dry-run` 只预览）；也可以在 MCP 接入页点击「接入 Agent」按钮。落点：`~/.agents/skills/snapshot/SKILL.md`（DSH / Codex / Claude / ZCode 各自技能目录见 README；WorkBuddy 从 `~/.agents/skills` 导入），硬性规则写入对应全局指令文件；Cursor 等客户端可用 `ctx mcp print-config cursor` 打印的 stdio 配置。
-
-stdio MCP 由 Agent 自动拉起，无需启动 GUI；GUI 只是查看端，归档 / 删除仍在桌面端操作。数据库：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`（`CTX_DB_PATH` 可覆盖，旧版 `PDH_DB_PATH` 仍可用）。
-
-安装后自检：工具列表确认 6 个工具（`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`）；执行一次 `manage_snapshot({ action: "list" })` 与只读查询确认链路；保存一次测试快照后，新会话能 `list` → `load` 恢复，`parent_session_id` / `children` / `restore_previous` 行为正常。工具缺失或连接断开时运行 `ctx doctor`，修正配置后重启 Agent。

@@ -30,14 +30,25 @@ interface VulnTableProps {
   onRetry: () => void
   /** Optional panel footer (pagination) rendered inside the table border. */
   footer?: ReactNode
+  /**
+   * True when the current page holds a full page of rows: the table then
+   * stretches its rows to fill the panel. With fewer rows the panel shrinks to
+   * its content height so the pagination footer sits right under the rows.
+   */
+  fillHeight: boolean
 }
 
 const thBase =
   'sticky top-0 z-10 border-b border-border bg-background px-3 py-1.5 text-left text-[10px] font-medium text-muted-foreground'
 
-function Panel({ children }: { children: ReactNode }) {
+function Panel({ children, fill = true }: { children: ReactNode; fill?: boolean }) {
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-[10px] border border-border bg-background">
+    <div
+      className={cn(
+        'flex min-h-0 flex-col rounded-[10px] border border-border bg-background',
+        fill ? 'h-full' : 'h-auto'
+      )}
+    >
       {children}
     </div>
   )
@@ -49,7 +60,7 @@ function TableSkeleton({ selectMode }: { selectMode: boolean }) {
   return (
     <div className="flex h-full min-h-0 flex-col" aria-hidden="true">
       <div className="min-h-0 flex-1 overflow-x-auto">
-        <table className="h-full w-full table-fixed">
+        <table className="w-full table-fixed">
           <thead className="sticky top-0 z-10">
             <tr>
               {selectMode ? <th className={cn(thBase, 'w-9')} /> : null}
@@ -57,7 +68,7 @@ function TableSkeleton({ selectMode }: { selectMode: boolean }) {
               <th className={cn(thBase, 'hidden w-[142px] lg:table-cell')}>ID</th>
               <th className={thBase}>{t('vuln.table.name')}</th>
               <th className={cn(thBase, 'w-[156px]')}>Host</th>
-              <th className={cn(thBase, 'w-[100px] text-center')}>{t('common.status')}</th>
+              <th className={cn(thBase, 'w-[112px] text-center')}>{t('common.status')}</th>
               <th className={cn(thBase, 'hidden w-[100px] md:table-cell')}>
                 {t('vuln.table.discoveredAt')}
               </th>
@@ -119,7 +130,8 @@ export function VulnTable({
   onSeedDemo,
   onOpenMcp,
   onRetry,
-  footer
+  footer,
+  fillHeight
 }: VulnTableProps) {
   const { t } = useI18n()
 
@@ -203,7 +215,7 @@ export function VulnTable({
   }
 
   return (
-    <Panel>
+    <Panel fill={fillHeight}>
       {error !== null ? (
         <div className="flex items-center justify-between gap-3 border-b border-red-200/70 bg-red-50 px-4 py-1.5 text-[11.5px] text-red-700">
           <span className="flex min-w-0 items-center gap-2">
@@ -221,7 +233,12 @@ export function VulnTable({
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-x-auto">
-        <table className="h-full w-full table-fixed border-separate border-spacing-0 text-left">
+        <table
+          className={cn(
+            'w-full table-fixed border-separate border-spacing-0 text-left',
+            fillHeight && 'h-full'
+          )}
+        >
           <caption className="sr-only">{t('vuln.table.caption')}</caption>
           <thead className="sticky top-0 z-10">
             <tr>
@@ -248,7 +265,7 @@ export function VulnTable({
               <th scope="col" className={cn(thBase, 'w-[156px]')}>
                 Host
               </th>
-              <th scope="col" className={cn(thBase, 'w-[100px] text-center')}>
+              <th scope="col" className={cn(thBase, 'w-[112px] text-center')}>
                 {t('common.status')}
               </th>
               <th scope="col" className={cn(thBase, 'hidden w-[100px] md:table-cell')}>
@@ -342,6 +359,11 @@ export function VulnTable({
                       {formatVulnType(item.vuln_type, t)}
                       {' · '}
                       {item.entry_point || '/'}
+                      {item.service_host.trim().length > 0 ? (
+                        <span className="ml-1.5 text-amber-600/80">
+                          {`↳ ${item.service_host}`}
+                        </span>
+                      ) : null}
                     </p>
                   </td>
                   <td

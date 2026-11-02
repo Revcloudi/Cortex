@@ -392,6 +392,18 @@ export function VulnDetail({
                         toastMessage={t('vuln.copy.hostDone')}
                       />
                     </MetaRow>
+                    {detail.service_host.trim().length > 0 ? (
+                      <MetaRow label={t('vuln.detail.serviceHost')}>
+                        <span className="truncate" title={detail.service_host}>
+                          {detail.service_host}
+                        </span>
+                        <CopyButton
+                          value={detail.service_host}
+                          label={t('vuln.copy.serviceHost')}
+                          toastMessage={t('vuln.copy.serviceHostDone')}
+                        />
+                      </MetaRow>
+                    ) : null}
                     <MetaRow label="Target">
                       <span className="truncate" title={detail.target_url}>
                         {detail.target_url}

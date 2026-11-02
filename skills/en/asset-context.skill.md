@@ -1,6 +1,6 @@
 ---
 name: asset-context
-description: "[MUST] After JS auditing, fingerprinting, endpoint capture and other recon, you must call sync_asset_info to persist the asset fingerprint, structured interfaces (interfaces), leaked information and related vulnerabilities into Cortex; before testing a new asset you must first call query_asset_context({ host_port }) to reuse existing context."
+description: "[MUST] After JS auditing, fingerprinting, endpoint capture and other recon, you must call sync_asset_info to persist the asset fingerprint, structured interfaces (interfaces), leaked information and related vulnerabilities into Cortex; before testing a new asset you must first call query_asset_context({ host_port }) to reuse existing context; keep project_name consistent per project so the Project/Target hierarchy is complete."
 ---
 
 # Skill: Asset Context (Collection and Persistence)
@@ -267,29 +267,11 @@ After confirming a vulnerability:
 - ❌ Writing passwords / tokens / AK / PII into `test_parameters` (they belong in `leaked_infos`), or treating ordinary ids / order numbers as sensitive leaks, or stuffing a whole response into `values` (at most 50 samples + `pattern`);
 - ❌ Forgetting to link the asset after saving a vulnerability.
 
-## Installing into agents
+## Project / Target hierarchy (Memory Nebula attribution, P4)
 
-Use `ctx init` to do the MCP config + three skills + system-level rules in one go (`--dry-run` only previews, `--agents` selects clients):
+- `project_name` becomes a **Project** node: every asset and snapshot of the same project must use the exact same `project_name`, otherwise the global nebula splits into several project nodes.
+- `snapshot.target_hosts` are the **original targets the user gave**; they become **Target** nodes. Never put pivoted/internal services into `target_hosts` (they would look like fake targets).
+- Attribution of pivoted assets: sync them normally, then reference their vulnerability IDs in the same session's `related_vuln_ids` (or link the internal vuln's `related_vuln_ids` back to the entry vulnerability). The nebula then attaches the asset under the matching Target node.
+- Pure TCP services cannot be stored as IP:port; record them as `http://ip:port` or describe them in leak source / notes.
 
-```powershell
-ctx init
-ctx init --dry-run
-ctx init --agents dsh,claude,codex,cursor,workbuddy,zcode
-```
-
-- DSH: skill installed to `~/.agents/skills/asset-context/SKILL.md`, hard rules written to `~/.dsh/AGENTS.md`;
-- Codex: skill installed to `~/.codex/skills/asset-context/SKILL.md` and the shared `.agents/skills`, rules written to `~/.codex/AGENTS.md`;
-- Claude Code: skill installed to `~/.claude/skills/asset-context/SKILL.md`, rules written to `~/.claude/CLAUDE.md`;
-- Cursor: MCP config written to `mcpServers` in `~/.cursor/mcp.json` (stdio), handled by `ctx init` according to client capabilities.
-- WorkBuddy: MCP config written to `mcpServers` in `~/.workbuddy/mcp.json` (stdio); import the skill from `~/.agents/skills` in WorkBuddy Settings → Skills; no global rule file.
-- ZCode: MCP config written to `mcp.servers` in `~/.zcode/cli/config.json` (stdio); skill installed to `~/.zcode/skills/asset-context/SKILL.md`, rules written to `~/.zcode/AGENTS.md`.
-- The MCP is launched by the agent (stdio), so no desktop app needs to run; the GUI is only a viewer and can be opened or closed at any time.
-- Database: Windows `%USERPROFILE%\.cortex\data.db`, macOS/Linux `~/.cortex/data.db`; override with `CTX_DB_PATH` (the legacy `PDH_DB_PATH` still works).
-- For manual configuration, use `ctx mcp print-config <agent>` to print the stdio config snippet that matches the GUI's "MCP Access" page.
-
-### Post-install self-check
-
-1. Restart the agent; confirm the 6 tools are present in the tool list: `save_vulnerability`, `query_vulnerabilities`, `update_vulnerability`, `sync_asset_info`, `query_asset_context`, `manage_snapshot`.
-2. Ask the agent to run `query_asset_context`, `query_vulnerabilities` and `manage_snapshot({ action: "list" })` once (read-only) to confirm the link works.
-3. After one asset recon round, confirm the agent proactively calls `sync_asset_info`; reading again with `query_asset_context({ host_port })` should show the structured endpoints and sensitive leaks.
-4. If tools are missing or the connection drops, run `ctx doctor`, fix the config as prompted, then restart the agent.
+## Reusing existing context

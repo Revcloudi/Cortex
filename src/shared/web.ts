@@ -40,6 +40,8 @@ export const WEB_API_PATHS = {
   vulnerabilitiesExport: '/api/vulns/export',
   assets: '/api/assets',
   snapshots: '/api/snapshots',
+  /** Read-only Memory Nebula projection (P2). */
+  graph: '/api/graph',
   setup: '/api/setup',
   seedDemoData: '/api/demo/seed',
   events: '/api/events'
