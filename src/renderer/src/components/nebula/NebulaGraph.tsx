@@ -11,7 +11,7 @@ import {
 } from 'react'
 import ForceGraph3DImport from 'react-force-graph-3d'
 import * as THREE from 'three'
-import type { GraphRelation, NebulaLink, NebulaNode } from '@shared/graph'
+import type { NebulaLink, NebulaNode } from '@shared/graph'
 import { NebulaGraph2D } from '@renderer/components/nebula/NebulaGraph2D'
 import { useI18n } from '@renderer/i18n'
 import {
@@ -20,10 +20,10 @@ import {
   CAMERA_FOCUS_MS,
   CAMERA_RESET_MS,
   DEFAULT_CAMERA_DISTANCE,
+  DERIVED_LINK_WIDTH,
   DIM_OPACITY,
   FOCUS_DIM_OPACITY,
   HALO_SCALE,
-  HOVER_CONTEXT_DIM_OPACITY,
   LABEL_BG_COLOR,
   LABEL_BORDER_COLOR,
   LABEL_DIM_FACTOR,
@@ -36,6 +36,7 @@ import {
   LABEL_TEXTURE_HEIGHT,
   LABEL_TEXTURE_WIDTH,
   LINK_COLORS,
+  LINK_WIDTH,
   NEBULA_BACKGROUND,
   NEBULA_SKYBOX_HEIGHT,
   NEBULA_SKYBOX_WIDTH,
@@ -54,6 +55,7 @@ import {
   STARFIELD_FAR_OPACITY,
   STARFIELD_FAR_SIZE,
   STARFIELD_ROTATE_SPEED,
+  blendOnCanvas,
   linkOpacity,
   nodeColor,
   nodeRadius,
@@ -118,7 +120,6 @@ interface ForceLike {
   distance?(value: number | ((link: unknown) => number)): unknown
 }
 
-
 /** Deterministic FNV-1a hash → stable 0..1 unit value (survives re-renders). */
 function hashUnit(value: string): number {
   let hash = 2166136261
@@ -142,124 +143,12 @@ function linkKey(link: { source: unknown; target: unknown }): string {
 }
 
 /**
- * Relation-aware link lengths: vulnerabilities hang close to their host, while
- * credentials/leaks and session links stretch farther out. A single distance
- * for every edge made the graph read as one rigid shell.
+ * Per-link distance: a fixed distance made every child sit on one shell, which
+ * looks like a rigid cone under a busy hub. A deterministic 32–100 spread puts
+ * children on several shells while the edges stay straight.
  */
-const LINK_DISTANCE_BY_RELATION: Record<GraphRelation, readonly [number, number]> = {
-  HAS_VULN: [28, 44],
-  LEAKED: [66, 96],
-  RELATED_VULN: [52, 78],
-  SNAPSHOT_VULN: [50, 72],
-  SNAPSHOT_TARGETS: [58, 84],
-  TARGET_SESSION: [58, 82],
-  TARGET_ASSET: [52, 76],
-  BELONGS_TO: [48, 72],
-  TASK_TOUCHED_HOST: [46, 70]
-}
-
 function linkDistance(link: GraphLink): number {
-  const [min, max] = LINK_DISTANCE_BY_RELATION[link.relation] ?? [46, 74]
-  return min + hashUnit(`${linkKey(link)}|${link.relation}`) * (max - min)
-}
-
-/* ------------------------------------------------------------- link art -- */
-
-/**
- * Edges are a short polyline whose vertex colours fade to black at both ends.
- * With additive blending the line dissolves into the node glow instead of
- * ending in a hard point at the node centre, while the trimmed middle keeps
- * the web readable. Deterministic per-link colours keep the look stable.
- */
-const LINK_SEGMENT_COUNT = 20
-const LINK_FADE_FRACTION = 0.2
-const LINK_TRIM_RATIO = 0.045
-const LINK_TRIM_MIN = 1.5
-const LINK_TRIM_MAX = 7
-const LINK_COLOR_GAIN = 2.4
-
-function linkBaseColor(link: GraphLink): THREE.Color {
-  const opacity = linkOpacity(link.relation, link.derived === true)
-  // Slight per-link brightness variation keeps the web organic instead of a
-  // uniform wireframe; deterministic so the look is stable across reloads.
-  const variation = 0.82 + hashUnit(`${linkKey(link)}|brightness`) * 0.36
-  return new THREE.Color(LINK_COLORS[link.relation]).multiplyScalar(
-    Math.min(1, opacity * LINK_COLOR_GAIN * variation)
-  )
-}
-
-function createLinkObject(link: GraphLink): THREE.Object3D {
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute(
-    'position',
-    new THREE.BufferAttribute(new Float32Array(LINK_SEGMENT_COUNT * 3), 3)
-  )
-  const base = linkBaseColor(link)
-  const colors = new Float32Array(LINK_SEGMENT_COUNT * 3)
-  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
-    const t = index / (LINK_SEGMENT_COUNT - 1)
-    const fadeIn = Math.min(1, t / LINK_FADE_FRACTION)
-    const fadeOut = Math.min(1, (1 - t) / LINK_FADE_FRACTION)
-    const fade = Math.min(fadeIn, fadeOut) ** 1.2
-    colors[index * 3] = base.r * fade
-    colors[index * 3 + 1] = base.g * fade
-    colors[index * 3 + 2] = base.b * fade
-  }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  const line = new THREE.Line(
-    geometry,
-    new THREE.LineBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: 1,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    })
-  )
-  line.frustumCulled = false
-  line.renderOrder = 2
-  // Remember the unfaded colour profile so hover focus can re-tint edges
-  // without rebuilding geometry.
-  const fadeProfile = new Float32Array(LINK_SEGMENT_COUNT)
-  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
-    const t = index / (LINK_SEGMENT_COUNT - 1)
-    const fadeIn = Math.min(1, t / LINK_FADE_FRACTION)
-    const fadeOut = Math.min(1, (1 - t) / LINK_FADE_FRACTION)
-    fadeProfile[index] = Math.min(fadeIn, fadeOut) ** 1.2
-  }
-  line.userData = {
-    key: `${linkKey(link)}|${link.relation}`,
-    baseColor: base.clone(),
-    fadeProfile,
-    relation: link.relation
-  }
-  return line
-}
-
-function updateLinkPosition(
-  object: THREE.Object3D,
-  coords: { start: Coords; end: Coords }
-): void {
-  if (!(object instanceof THREE.Line)) return
-  const position = object.geometry.getAttribute('position') as THREE.BufferAttribute
-  const dx = coords.end.x - coords.start.x
-  const dy = coords.end.y - coords.start.y
-  const dz = coords.end.z - coords.start.z
-  const length = Math.sqrt(dx * dx + dy * dy + dz * dz)
-  const trim =
-    length > 0
-      ? Math.min(LINK_TRIM_MAX, Math.max(LINK_TRIM_MIN, length * LINK_TRIM_RATIO))
-      : 0
-  const t0 = length > 0 ? Math.min(0.45, trim / length) : 0
-  const t1 = 1 - t0
-  const array = position.array as Float32Array
-  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
-    const t = t0 + (t1 - t0) * (index / (LINK_SEGMENT_COUNT - 1))
-    array[index * 3] = coords.start.x + dx * t
-    array[index * 3 + 1] = coords.start.y + dy * t
-    array[index * 3 + 2] = coords.start.z + dz * t
-  }
-  position.needsUpdate = true
+  return 32 + hashUnit(linkKey(link)) * 68
 }
 
 /**
@@ -293,8 +182,9 @@ interface ForceGraphProps {
   cooldownTicks: number
   d3AlphaDecay: number
   nodeThreeObject: (node: GraphNode) => THREE.Object3D
-  linkThreeObject: (link: GraphLink) => THREE.Object3D
-  linkPositionUpdate: (object: THREE.Object3D, coords: { start: Coords; end: Coords }, link: GraphLink) => void
+  linkColor: (link: GraphLink) => string
+  linkWidth: (link: GraphLink) => number
+  linkOpacity: number
   onNodeClick: (node: GraphNode, event: MouseEvent) => void
   onNodeHover: (node: GraphNode | null, previousNode: GraphNode | null) => void
   onBackgroundClick: () => void
@@ -318,8 +208,6 @@ interface NodeVisual {
   labelTexture: THREE.Texture
   /** World-space radius of the core sprite, used to park the label above it. */
   radius: number
-  /** Drives LOD: leaves lose their labels when the camera pulls far away. */
-  nodeType: NebulaNode['type']
 }
 
 function detectWebGl(): boolean {
@@ -834,8 +722,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [webglSupported] = useState(detectWebGl)
   const [contextLost, setContextLost] = useState(false)
-  const [hoverFocusId, setHoverFocusId] = useState<string | null>(null)
-  const [lodLevel, setLodLevel] = useState(0)
 
   const visualsRef = useRef<Map<string, NodeVisual>>(new Map())
   const glowCacheRef = useRef<Map<string, THREE.Texture>>(new Map())
@@ -849,11 +735,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   const focusSetRef = useRef<Set<string> | null>(null)
   const performanceModeRef = useRef(performanceMode)
   const autoRotateRef = useRef(autoRotate)
-  /** Hovered node + its direct neighbours ("focus + context"); null = none. */
-  const hoverFocusIdRef = useRef<string | null>(null)
-  const neighborMapRef = useRef<Map<string, Set<string>>>(new Map())
-  /** 0 = normal, 1 = far (leaf labels hidden), 2 = very far (leaves dimmed). */
-  const lodRef = useRef(0)
   const onSelectRef = useRef(onSelect)
   const autoFitTimerRef = useRef<number | undefined>(undefined)
   /** Decorative space background (stars + dust); not graph data. */
@@ -886,21 +767,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
 
   useEffect(() => {
     nodeByIdRef.current = new Map(graphData.nodes.map((node) => [node.id, node] as const))
-  }, [graphData])
-
-  /** Direct-neighbour adjacency used by the hover "focus + context" pass. */
-  useEffect(() => {
-    const map = new Map<string, Set<string>>()
-    for (const link of graphData.links) {
-      const source = linkEndpointId(link.source)
-      const target = linkEndpointId(link.target)
-      if (source === target) continue
-      if (!map.has(source)) map.set(source, new Set())
-      if (!map.has(target)) map.set(target, new Set())
-      map.get(source)?.add(target)
-      map.get(target)?.add(source)
-    }
-    neighborMapRef.current = map
   }, [graphData])
 
   // The canvas sits inside a flex shell, so it must track its own box instead of
@@ -936,10 +802,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     const highlightSet = highlightSetRef.current
     const focusSet = focusSetRef.current
     const performance = performanceModeRef.current
-    const lod = lodRef.current
-    const hoverFocus = hoverFocusIdRef.current
     const labelRatio = LABEL_TEXTURE_HEIGHT / LABEL_TEXTURE_WIDTH
-    const leaf = visual.nodeType === 'vuln' || visual.nodeType === 'leak'
 
     const selected = nodeId === selectedIdRef.current
     const hovered = nodeId === hoveredIdRef.current
@@ -948,24 +811,10 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     const emphasized = selected || hovered
     const visible = matched && inFocus
 
-    // Hover: keep the hovered node and its direct neighbours bright, fade the
-    // rest hard so the local structure reads immediately.
-    const hoverLinked =
-      hoverFocus === null ||
-      nodeId === hoverFocus ||
-      neighborMapRef.current.get(hoverFocus)?.has(nodeId) === true
-    const hoverDimmed = hoverFocus !== null && !hoverLinked && !hovered
-
-    let coreOpacity = visible ? 1 : focusSet !== null ? FOCUS_DIM_OPACITY : DIM_OPACITY
-    if (hoverFocus !== null) {
-      coreOpacity = hoverDimmed ? HOVER_CONTEXT_DIM_OPACITY : Math.max(coreOpacity, 0.95)
-    }
-    // LOD level 2: far away, leaves are only faint dust around the large hubs.
-    if (lod >= 2 && leaf) coreOpacity = Math.min(coreOpacity, 0.22)
-    visual.coreMaterial.opacity = coreOpacity
+    visual.coreMaterial.opacity = visible ? 1 : focusSet !== null ? FOCUS_DIM_OPACITY : DIM_OPACITY
 
     // Performance mode keeps a halo only for the selected node.
-    let haloOpacity = performance
+    const haloOpacity = performance
       ? selected
         ? PERFORMANCE_SELECTED_HALO_OPACITY
         : 0
@@ -974,28 +823,21 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
         : hovered
           ? 0.45
           : 0
-    if (!performance && hoverFocus !== null && hoverLinked && !hovered && !selected) {
-      haloOpacity = Math.max(haloOpacity, 0.16)
-    }
     visual.haloMaterial.opacity = haloOpacity
     visual.halo.visible = haloOpacity > 0
 
-    // LOD level 1 hides leaf labels; hovering a node hides unrelated labels.
-    const hideLabel = (lod >= 1 && leaf) || hoverDimmed
-
     if (performance) {
       // Large graphs: labels only while hovered/selected, never at rest.
-      visual.label.visible = emphasized && visible && !hideLabel
-      visual.labelMaterial.opacity = emphasized && visible && !hideLabel ? LABEL_EMPHASIS_OPACITY : 0
+      visual.label.visible = emphasized && visible
+      visual.labelMaterial.opacity = emphasized && visible ? LABEL_EMPHASIS_OPACITY : 0
       visual.label.scale.set(LABEL_SPRITE_SCALE, LABEL_SPRITE_SCALE * labelRatio, 1)
       visual.label.position.y = visual.radius + LABEL_SPRITE_SCALE * 0.12
       return
     }
 
-    visual.label.visible = visible && !hideLabel
+    visual.label.visible = visible
     const labelOpacity = emphasized ? LABEL_EMPHASIS_OPACITY : LABEL_IDLE_OPACITY
-    visual.labelMaterial.opacity =
-      visible && !hideLabel ? labelOpacity : hideLabel ? 0 : LABEL_IDLE_OPACITY * LABEL_DIM_FACTOR
+    visual.labelMaterial.opacity = visible ? labelOpacity : LABEL_IDLE_OPACITY * LABEL_DIM_FACTOR
     const scale = emphasized ? LABEL_SPRITE_SCALE : LABEL_IDLE_SCALE
     visual.label.scale.set(scale, scale * labelRatio, 1)
     visual.label.position.y = visual.radius + scale * 0.12
@@ -1009,91 +851,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
 
   useEffect(() => {
     applyVisualState()
-  }, [applyVisualState, nodes, selectedId, highlightIds, focusIds, performanceMode, hoverFocusId, lodLevel])
-
-  /**
-   * Hover "focus + context" for edges: links touching the hovered node are
-   * boosted (additive brightness reads as a thicker fibre), everything else
-   * drops to a near-invisible thread. Restores the base tint on leave.
-   */
-  const applyLinkHoverState = useCallback(() => {
-    const scene = graphRef.current?.scene()
-    if (!scene) return
-    const hoverId = hoverFocusIdRef.current
-    const connected = new Set<string>()
-    if (hoverId !== null) {
-      for (const link of links) {
-        if (linkEndpointId(link.source) === hoverId || linkEndpointId(link.target) === hoverId) {
-          connected.add(`${linkKey(link)}|${link.relation}`)
-        }
-      }
-    }
-    scene.traverse((object: THREE.Object3D) => {
-      if (!(object instanceof THREE.Line)) return
-      const data = object.userData as {
-        key?: string
-        baseColor?: THREE.Color
-        fadeProfile?: Float32Array
-      }
-      const base = data.baseColor
-      const profile = data.fadeProfile
-      if (!base || !profile || data.key === undefined) return
-      const factor = hoverId === null ? 1 : connected.has(data.key) ? 2.8 : 0.08
-      const geometry = object.geometry as THREE.BufferGeometry
-      const colorAttribute = geometry.getAttribute('color') as THREE.BufferAttribute
-      const array = colorAttribute.array as Float32Array
-      for (let index = 0; index < profile.length; index += 1) {
-        const value = profile[index] * factor
-        array[index * 3] = base.r * value
-        array[index * 3 + 1] = base.g * value
-        array[index * 3 + 2] = base.b * value
-      }
-      colorAttribute.needsUpdate = true
-    })
-  }, [links])
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => applyLinkHoverState())
-    const timer = window.setTimeout(applyLinkHoverState, 360)
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.clearTimeout(timer)
-    }
-  }, [applyLinkHoverState, hoverFocusId, nodes, links, graphData])
-
-  /** Camera-distance LOD: hide leaf labels first, then dim leaves entirely. */
-  useEffect(() => {
-    let frame = 0
-    let last = 0
-    const tick = (time: number): void => {
-      if (time - last >= 240) {
-        last = time
-        const controller = graphRef.current
-        if (controller) {
-          const camera = controller.cameraPosition()
-          const target = controller.controls().target ?? { x: 0, y: 0, z: 0 }
-          const distance = Math.hypot(
-            camera.x - target.x,
-            camera.y - target.y,
-            camera.z - target.z
-          )
-          const next =
-            distance > DEFAULT_CAMERA_DISTANCE * 2.8
-              ? 2
-              : distance > DEFAULT_CAMERA_DISTANCE * 1.8
-                ? 1
-                : 0
-          if (next !== lodRef.current) {
-            lodRef.current = next
-            setLodLevel(next)
-          }
-        }
-      }
-      frame = window.requestAnimationFrame(tick)
-    }
-    frame = window.requestAnimationFrame(tick)
-    return () => window.cancelAnimationFrame(frame)
-  }, [webglSupported])
+  }, [applyVisualState, nodes, selectedId, highlightIds, focusIds, performanceMode])
 
   /* --------------------------------------------------------------- node art -- */
 
@@ -1158,8 +916,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       haloMaterial,
       labelMaterial,
       labelTexture,
-      radius,
-      nodeType: node.type
+      radius
     }
     visualsRef.current.set(node.id, visual)
     // The engine creates objects after the first paint; apply the current
@@ -1176,8 +933,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       const nextId = node ? node.id : null
       if (hoveredIdRef.current === nextId) return
       hoveredIdRef.current = nextId
-      hoverFocusIdRef.current = nextId
-      setHoverFocusId(nextId)
       applyVisualState()
       const element = containerRef.current
       if (element) element.style.cursor = nextId ? 'pointer' : 'grab'
@@ -1242,6 +997,17 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     centerView({ x: center.x, y: center.y, z: center.z })
   }, [centerView])
 
+  const linkColor = useCallback(
+    (link: GraphLink): string =>
+      blendOnCanvas(LINK_COLORS[link.relation], linkOpacity(link.relation, link.derived === true)),
+    []
+  )
+
+  const linkWidth = useCallback(
+    (link: GraphLink): number => (link.derived === true ? DERIVED_LINK_WIDTH : LINK_WIDTH),
+    []
+  )
+
   const nodeValue = useCallback((node: GraphNode): number => node.val, [])
   const emptyNodeLabel = useCallback((): string => '', [])
 
@@ -1256,7 +1022,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       const controller = graphRef.current
       if (controller) {
         const charge = controller.d3Force('charge')
-        charge?.strength(-70)
+        charge?.strength(-85)
         const linkForce = controller.d3Force('link')
         linkForce?.distance?.((link: unknown) => linkDistance(link as GraphLink))
         controller.d3ReheatSimulation()
@@ -1578,8 +1344,9 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
           cooldownTicks={140}
           d3AlphaDecay={0.022}
           nodeThreeObject={buildNodeObject}
-          linkThreeObject={createLinkObject}
-          linkPositionUpdate={updateLinkPosition}
+          linkColor={linkColor}
+          linkWidth={linkWidth}
+          linkOpacity={1}
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onBackgroundClick={handleBackgroundClick}
