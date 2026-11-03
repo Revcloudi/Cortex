@@ -2,7 +2,7 @@
 
 # Cortex
 
-Cortex: local-first pentest intelligence hub. One SQLite memory shared by a pure stdio MCP server for agents, a ctx CLI and a desktop dashboard with a tactical 3D Memory Nebula for humans. An optional browser Web UI serves the same dashboard on the local machine or a trusted intranet.
+Cortex: local-first pentest intelligence hub. Agents (pure stdio MCP server), the terminal (ctx CLI) and humans (desktop dashboard with a tactical 3D Memory Nebula) share one SQLite pentest memory; the same UI is also available in a browser on the local machine or a trusted intranet.
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)

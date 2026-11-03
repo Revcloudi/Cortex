@@ -2,7 +2,7 @@
 
 # Cortex
 
-Cortex：本地优先的渗透测试情报中枢。同一份 SQLite 记忆库同时服务于面向 Agent 的纯 stdio MCP server、面向终端的 ctx CLI 与面向人类的桌面看板（含战术 3D「记忆星云」）。此外，本机或受信任内网还可通过浏览器 Web 端使用同一套看板。
+Cortex 是本地优先的渗透测试情报中枢。Agent（纯 stdio MCP server）、终端（ctx CLI）与人类（桌面看板，含战术 3D「记忆星云」）共用同一份 SQLite 测试记忆；本机或受信任内网还可通过浏览器访问同一套界面。
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
