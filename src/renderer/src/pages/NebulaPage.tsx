@@ -132,7 +132,6 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   const [filters, setFilters] = useState<GraphFilters>(DEFAULT_FILTERS)
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [reducedMotion, setReducedMotion] = useState(false)
   const [graph, setGraph] = useState<MemoryGraphData | null>(null)
   const [allGraph, setAllGraph] = useState<MemoryGraphData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -147,37 +146,26 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   /** Left command column can slide fully off-canvas for an unobstructed map. */
   const [hudCollapsed, setHudCollapsed] = useState(false)
   /**
-   * Motion switch. `null` follows the OS `prefers-reduced-motion` setting; a
-   * boolean is an explicit user override persisted across reloads. The HUD
-   * toggle is the only way to turn the subtle breathing/rotation back on for
-   * users whose system asks for reduced motion.
+   * Motion switch: ON by default (breathing / slow rotation / flow particles)
+   * and persisted across reloads. Users who prefer reduced motion can switch it
+   * off with the HUD toolbar button; the explicit choice is remembered.
    */
-  const [motionPreference, setMotionPreference] = useState<boolean | null>(() => {
+  const [motionEnabled, setMotionEnabled] = useState<boolean>(() => {
     try {
       const stored = window.localStorage.getItem('cortex.nebula.motion')
-      return stored === null ? null : stored === '1'
+      return stored === null ? true : stored === '1'
     } catch {
-      return null
+      return true
     }
   })
-  const motionEnabled = motionPreference ?? !reducedMotion
-
-  // Keep the camera from auto-rotating for users who asked for less motion.
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const sync = (): void => setReducedMotion(media.matches)
-    sync()
-    media.addEventListener('change', sync)
-    return () => media.removeEventListener('change', sync)
-  }, [])
 
   const handleToggleHud = useCallback(() => {
     setHudCollapsed((value) => !value)
   }, [])
 
   const handleToggleMotion = useCallback(() => {
-    setMotionPreference((current) => {
-      const next = !(current ?? !reducedMotion)
+    setMotionEnabled((current) => {
+      const next = !current
       try {
         window.localStorage.setItem('cortex.nebula.motion', next ? '1' : '0')
       } catch {
@@ -185,7 +173,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
       }
       return next
     })
-  }, [reducedMotion])
+  }, [])
 
   const pendingTarget =
     (scopeKind === 'asset' && activeHostPort === null) ||
