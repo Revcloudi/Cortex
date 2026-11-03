@@ -2,7 +2,7 @@
 
 # Cortex
 
-Cortex：本地优先的渗透测试情报中枢。同一份 SQLite 记忆库同时服务于面向 Agent 的纯 stdio MCP server、面向终端的 ctx CLI 与面向人类的桌面看板。此外，本机或受信任内网还可通过浏览器 Web 端使用同一套看板。
+Cortex：本地优先的渗透测试情报中枢。同一份 SQLite 记忆库同时服务于面向 Agent 的纯 stdio MCP server、面向终端的 ctx CLI 与面向人类的桌面看板（含战术 3D「记忆星云」）。此外，本机或受信任内网还可通过浏览器 Web 端使用同一套看板。
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
@@ -30,7 +30,7 @@ ctx init --yes            # 自动检测并写入 Claude Code / DSH / Codex / Cu
 ctx web
 ```
 
-`ctx init --yes` 会自动检测本机已安装的 Agent，并写入 MCP 配置、三个 Skill 与系统级强制规则；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`；只配单个 Agent 例如 `ctx init --yes --agents claude`。英文 Skill 用 `--skill-lang en`。
+`ctx init --yes` 会自动检测本机已安装的 Agent，并写入 MCP 配置、三个 Skill 与系统级强制规则；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`；只配单个 Agent 例如 `ctx init --yes --agents claude`。英文 Skill 用 `--skill-lang en`（Skill 语言默认 `zh`，可用 `CTX_SKILL_LANG` 覆盖默认值）。
 
 ### 命令行参数
 
@@ -54,7 +54,7 @@ ctx web --no-open --json                     # 不打开浏览器；输出含 to
 
 ### 登录方式
 
-启动时会打印一到多个包含一次性 token 的登录链接（`http://…/?token=…`）。打开后服务端写入 `HttpOnly` + `SameSite=Strict` 会话 cookie（12 小时）并重定向，token 从地址栏消失；刷新页面仍保持登录，重启服务后旧链接立即失效。token 只存在于该链接中——不写日志、不落盘，也不接受其他查询参数传入。脚本可改用 `Authorization: Bearer <token>`。
+启动时会打印一到多个包含本次运行临时 token 的登录链接（`http://…/?token=…`，每次启动重新生成）。打开后服务端写入 `HttpOnly` + `SameSite=Strict` 会话 cookie（12 小时）并重定向，token 从地址栏消失；刷新页面仍保持登录，重启服务后旧链接立即失效。token 只存在于该链接中——不写日志、不落盘，也不接受其他查询参数传入。脚本可改用 `Authorization: Bearer <token>`。
 
 ### 安全红线
 
@@ -63,7 +63,7 @@ ctx web --no-open --json                     # 不打开浏览器；输出含 to
 - 不把 SQLite 文件、token、日志放到任何公开目录。
 - 把打印出来的登录链接当作密码：不要截图、分享或粘贴到聊天工具。token 不写日志；重启服务后旧链接失效并打印新链接。
 - 所有 API 都要求会话 cookie 或 Bearer token；HTML 与静态资源同样需要鉴权。服务不开放 CORS，只接受同源请求；校验 `Host` 头防 DNS rebinding；写请求另外校验 `Origin` / `Referer` / `Sec-Fetch-Site`。
-- 严格 CSP、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`，API 响应带 `Cache-Control: no-store`；JSON 请求体上限 2 MB；按 IP 限流（约 300 请求 / 10 秒）；错误信息脱敏，请求日志不记录 token、cookie 或请求体。`/api/app`、`/api/db`、`/api/config` 只暴露数据库文件名，不暴露绝对路径。
+- CSP（脚本仅允许 `'self'`，样式允许 Tailwind 运行期内联）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`，API 响应带 `Cache-Control: no-store`；JSON 请求体上限 2 MB；按 IP 限流（约 300 请求 / 10 秒）；错误信息脱敏，请求日志不记录 token、cookie 或请求体。`/api/app`、`/api/db`、`/api/config` 只暴露数据库文件名，不暴露绝对路径。
 
 ### Web 端与桌面端的差异
 
@@ -93,6 +93,8 @@ Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex
 
 > 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。安装包未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"）。
 
+在无 GPU、虚拟机或远程桌面环境中，可用 `ctx open --software` 强制软件渲染；安装包已内置 SwiftShader，因此记忆星云的 3D 渲染会继续工作，而不会直接降级到 2D。
+
 ### 安装后接入 Agent
 
 安装器只负责安装 Cortex 和快捷方式。启动 Cortex，打开 **MCP 接入** 页面，然后任选其一：
@@ -115,7 +117,7 @@ ctx --version            # 验证命令可用
 ctx doctor               # 检查数据库、MCP 运行时与 Agent 配置
 ```
 
-`ctx init --yes` 会自动检测本机已安装的 Agent；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`，只配单个 Agent 例如 `ctx init --yes --agents claude`；英文 Skill 用 `--skill-lang en`；手动配置可用 `ctx mcp print-config <agent>`。
+`ctx init --yes` 会自动检测本机已安装的 Agent；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`，只配单个 Agent 例如 `ctx init --yes --agents claude`；英文 Skill 用 `--skill-lang en`（Skill 语言默认 `zh`，`CTX_SKILL_LANG` 可覆盖默认值）；手动配置可用 `ctx mcp print-config <agent>`。
 
 首次启动会在 `%USERPROFILE%\.cortex\data.db`（macOS/Linux：`~/.cortex/data.db`）创建数据库，可用 `CTX_DB_PATH` 覆盖。
 
@@ -132,7 +134,7 @@ ctx doctor               # 检查数据库、MCP 运行时与 Agent 配置
 | `ctx snapshots list [--keyword]` | 认知快照列表 |
 | `ctx snapshots get <session_id>` | 查看单条会话 |
 | `ctx search <keyword>` | 同时搜索漏洞 / 资产 / 快照 |
-| `ctx open [--dev] [--path <exe>]` | 启动/聚焦桌面端（Windows 安装版或源码构建） |
+| `ctx open [--dev] [--path <exe>] [--software]` | 启动/聚焦桌面端（Windows 安装版或源码构建）；`--software` 在无 GPU / 虚拟机 / 远程桌面环境强制软件渲染 |
 | `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | 在浏览器中使用同一套看板（仅回环或受信任内网） |
 
 ## 日常使用
@@ -157,7 +159,8 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 - 固定 6 个 MCP 工具：`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`。
 - `ctx init` 自动检测 Agent，幂等写入 MCP 配置、3 个 Skill 与系统级强制规则（带备份、`--dry-run`、JSON/TOML/YAML 校验）。
 - 桌面端：漏洞看板（服务端过滤/分页）、资产库（接口浏览器）、认知快照（项目 → 子会话层级）、Markdown 报告导出、双语 MCP 接入页（一键「接入 Agent」+ 精简工具表）。
-- 可选 Web 端（`ctx web`）：在本机或受信任内网的浏览器里使用同一套看板、资产库、快照与 MCP 页面；一次性 token 登录，无账号体系，默认只监听回环地址，共享数据库变更时通过 SSE 自动刷新。
+- **记忆星云**（详见下文）：把同一份记忆呈现为可交互的 3D HUD——战术 HUD 外壳、线框节点、全息网格地板、投影 DOM 标签，支持全库/资产/任务 Scope、搜索/过滤/聚焦、`+N` 聚合、全屏与 PNG 导出。
+- 可选 Web 端（`ctx web`）：在本机或受信任内网的浏览器里使用同一套看板、资产库、快照与 MCP 页面；每次运行临时 token 登录，无账号体系，默认只监听回环地址，共享数据库变更时通过 SSE 自动刷新。
 - 侧边栏数据库按钮可切换到任意 Cortex SQLite 文件查看（仅桌面端；Agent 仍使用默认数据库）。
 - 主进程用 chokidar 监听 SQLite 文件（`data.db`、`-wal`、`-shm`）并推送 `data:changed`，Agent 写入通常 1 秒内可见，且不丢失筛选与打开的详情。
 - Skill 双语：`skills/zh/**` 与 `skills/en/**`，安装时选择。
@@ -167,6 +170,7 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 **记忆星云**把本地 SQLite 记忆变成一张可探索的 3D 星图：项目/目标、Host 资产、漏洞、泄露与快照会话通过派生关系连成可旋转、可缩放的网络（纯只读，不新增数据表）。支持全库 / 当前资产 / 当前任务三种 Scope、搜索与类型过滤、聚焦邻域、`+N` 性能聚合、全屏与 PNG 导出，无 WebGL 时自动降级为 2D SVG。
 
 ![记忆星云：由本地 Cortex 数据库生成的项目/目标/资产/漏洞关系图](assets/readme-nebula.png)
+
 ## 环境要求
 
 - CLI 与源码构建需要 Node.js **≥ 22.12**；Windows 桌面安装包内置 Node 运行时，最终用户无需安装 Node。
@@ -290,7 +294,7 @@ npm run dist:win     # Windows 安装包（含内置 Node 运行时，产物在 
 
 ### 安装版构建
 
-`npm run build:runtime` 会把 `out/web` 复制到 `<install>/bin/web/`、`out/server/web.cjs` 复制到 `<install>/bin/web-server.cjs`；`npm run dist:win` 会在打包前执行 `build:web` + `build:server`，因此重新构建的 Windows 安装包包含 Web 组件。缺少 Web 产物的 runtime 构建仍可用于 CLI/MCP（会打印警告）；半成品状态（有 SPA 但没有 server bundle）会明确失败。
+`npm run build:runtime` 会先生成仓库内的 `runtime/` 暂存目录（`out/web` → `runtime/web/`、`out/server/web.cjs` → `runtime/web-server.cjs`），再由 electron-builder 把 `runtime/` 映射到安装目录的 `<install>/bin/`；`npm run dist:win` 会在打包前执行 `build:web` + `build:server`，因此重新构建的 Windows 安装包包含 Web 组件。runtime 构建会从配置的镜像下载固定版本 Node LTS（`v24.22.2`，可用 `CTX_NODE_VERSION` 覆盖）。缺少 Web 产物的 runtime 构建仍可用于 CLI/MCP（会打印警告）；半成品状态（有 SPA 但没有 server bundle）会明确失败。
 
 ## 打包与发布
 

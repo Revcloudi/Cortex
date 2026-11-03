@@ -2,7 +2,7 @@
 
 # Cortex
 
-Cortex: local-first pentest intelligence hub. One SQLite memory shared by a pure stdio MCP server for agents, a ctx CLI and a desktop dashboard for humans. An optional browser Web UI serves the same dashboard on the local machine or a trusted intranet.
+Cortex: local-first pentest intelligence hub. One SQLite memory shared by a pure stdio MCP server for agents, a ctx CLI and a desktop dashboard with a tactical 3D Memory Nebula for humans. An optional browser Web UI serves the same dashboard on the local machine or a trusted intranet.
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
@@ -30,7 +30,7 @@ ctx init --yes            # auto-detect and write MCP config + skills + hard rul
 ctx web
 ```
 
-`ctx init --yes` auto-detects installed agents and writes their MCP config, the three skills and the system-level hard rules. To target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en`.
+`ctx init --yes` auto-detects installed agents and writes their MCP config, the three skills and the system-level hard rules. To target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en` (skill language defaults to `zh` and can be overridden with `CTX_SKILL_LANG`).
 
 ### Command-line options
 
@@ -54,7 +54,7 @@ ctx web --no-open --json                     # no browser; JSON with tokenUrls, 
 
 ### Logging in
 
-Startup prints one or more login URLs containing a one-time token (`http://…/?token=…`). Opening one sets an `HttpOnly` + `SameSite=Strict` session cookie (12 h) and redirects so the token disappears from the address bar; reloads keep the session, restarting the server invalidates it. The token exists only in that URL — it is never logged, persisted or accepted from any other query string. Scripts may send `Authorization: Bearer <token>` instead of the cookie.
+Startup prints one or more login URLs containing a per-run ephemeral token (`http://…/?token=…`, regenerated on every server start). Opening one sets an `HttpOnly` + `SameSite=Strict` session cookie (12 h) and redirects so the token disappears from the address bar; reloads keep the session, restarting the server invalidates it. The token exists only in that URL — it is never logged, persisted or accepted from any other query string. Scripts may send `Authorization: Bearer <token>` instead of the cookie.
 
 ### Security red lines
 
@@ -63,7 +63,7 @@ Startup prints one or more login URLs containing a one-time token (`http://…/?
 - Keep the SQLite file, the token and the logs out of any public directory.
 - Treat the printed login URL as a secret: do not screenshot, share or paste it into chat tools. The token is never logged, and restarting the server invalidates the old link and prints a fresh one.
 - Every API call requires the session cookie or Bearer token; HTML and static assets require it too. There is no CORS: only same-origin requests are accepted, `Host` is validated against DNS rebinding, and writes are additionally gated by `Origin` / `Referer` / `Sec-Fetch-Site`.
-- Strict CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Cache-Control: no-store` on API responses; 2 MB JSON body limit; per-IP rate limit (~300 requests / 10 s); errors are sanitized, and request logs never contain tokens, cookies or bodies. `/api/app`, `/api/db` and `/api/config` expose only the database file name, never its absolute path.
+- CSP (scripts restricted to `'self'`; inline styles are allowed for Tailwind runtime styles), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Cache-Control: no-store` on API responses; 2 MB JSON body limit; per-IP rate limit (~300 requests / 10 s); errors are sanitized, and request logs never contain tokens, cookies or bodies. `/api/app`, `/api/db` and `/api/config` expose only the database file name, never its absolute path.
 
 ### Web vs desktop differences
 
@@ -93,6 +93,8 @@ The Windows installer is published to GitHub Releases by the release workflow. C
 
 > The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
 
+On GPU-less, VM or remote-desktop Windows machines, `ctx open --software` forces software rendering. The installer already enables SwiftShader, so the 3D Memory Nebula keeps rendering instead of dropping straight to the 2D fallback.
+
 ### Connect agents after installation
 
 The installer only installs Cortex and its shortcuts. Start Cortex, open **MCP Access**, then either:
@@ -115,7 +117,7 @@ ctx --version            # verify the command works
 ctx doctor               # verify DB, MCP runtime and agent configs
 ```
 
-`ctx init --yes` auto-detects installed agents; to target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en`, and for manual setups use `ctx mcp print-config <agent>`.
+`ctx init --yes` auto-detects installed agents; to target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en` (skill language defaults to `zh`, and `CTX_SKILL_LANG` overrides the default), and for manual setups use `ctx mcp print-config <agent>`.
 
 The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macOS/Linux: `~/.cortex/data.db`); override with `CTX_DB_PATH`.
 
@@ -132,7 +134,7 @@ The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macO
 | `ctx snapshots list [--keyword]` | List cognitive snapshot sessions |
 | `ctx snapshots get <session_id>` | Show one snapshot session |
 | `ctx search <keyword>` | Search vulnerabilities, assets and snapshots together |
-| `ctx open [--dev] [--path <exe>]` | Launch or focus the desktop app (Windows install or source build) |
+| `ctx open [--dev] [--path <exe>] [--software]` | Launch or focus the desktop app (Windows install or source build); `--software` forces software rendering for GPU-less / VM / remote-desktop machines |
 | `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | Serve the same dashboard in a browser (loopback or trusted intranet only) |
 
 ## Daily workflow
@@ -157,7 +159,8 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 - One MCP server with exactly six tools: `save_vulnerability`, `query_vulnerabilities`, `update_vulnerability`, `sync_asset_info`, `query_asset_context`, `manage_snapshot`.
 - `ctx init` detects installed agents and writes their MCP config, the three skills and system-level hard rules idempotently (with backups, a dry-run mode and JSON / TOML / YAML validation).
 - GUI: vulnerability dashboard with server-side filtering/pagination, asset library with interface explorer, cognitive snapshot sessions (project → child hierarchy), Markdown report export, and a compact bilingual MCP page with a one-click **Connect agents** action and the six-tool reference.
-- Optional Web UI (`ctx web`): the same dashboard, asset library, snapshot and MCP pages in a browser on the same machine or a trusted intranet; one-time token login, no accounts, loopback-only by default, SSE refresh when the shared database changes.
+- **Memory Nebula** (details below): an interactive 3D HUD view of the same memory, with tactical HUD chrome, wireframe nodes, a holographic grid floor, projected DOM labels, all/asset/task scopes, search/filter/focus, `+N` aggregation, fullscreen and PNG export.
+- Optional Web UI (`ctx web`): the same dashboard, asset library, snapshot and MCP pages in a browser on the same machine or a trusted intranet; per-run token login, no accounts, loopback-only by default, SSE refresh when the shared database changes.
 - The sidebar database button can attach another Cortex SQLite file for browsing (desktop view only; agents keep using the default database).
 - The main process watches the SQLite files (`data.db`, `-wal`, `-shm`) with chokidar and pushes `data:changed`, so agent writes usually show up in under a second without losing filters or open detail panels.
 - Bilingual skills: `skills/zh/**` and `skills/en/**`; choose per installation.
@@ -167,6 +170,7 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 **Memory Nebula** turns the local SQLite memory into an explorable 3D star map: project/target hubs, host assets, vulnerabilities, leaks and snapshot sessions are connected by derived, read-only relations (no extra tables). It supports all-library / single-asset / single-task scopes, search and type filters, a focus neighbourhood, `+N` performance aggregation, fullscreen view and PNG export, plus a 2D SVG fallback when WebGL is unavailable.
 
 ![Memory Nebula: project/target/host/vulnerability graph generated from the local Cortex database](assets/readme-nebula.png)
+
 ## Requirements
 
 - Node.js **≥ 22.12** for the CLI and source builds. The Windows desktop installer bundles its own Node runtime, so Windows end users do not need Node.
@@ -290,7 +294,7 @@ npm run dist:win     # Windows installer (bundled Node runtime, artifact in rele
 
 ### Installer build
 
-`npm run build:runtime` copies `out/web` to `<install>/bin/web/` and `out/server/web.cjs` to `<install>/bin/web-server.cjs`; `npm run dist:win` runs `build:web` + `build:server` before packaging, so a freshly built installer includes the Web UI. A runtime built without the Web artifacts still works for CLI/MCP (it prints a warning); a half-built state (SPA present but server bundle missing) fails the build on purpose.
+`npm run build:runtime` materializes the staged `runtime/` directory (`out/web` → `runtime/web/`, `out/server/web.cjs` → `runtime/web-server.cjs`); electron-builder then maps `runtime/` to `<install>/bin/` in the installer. `npm run dist:win` runs `build:web` + `build:server` before packaging, so a freshly built installer includes the Web UI. The runtime build downloads a pinned Node LTS (`v24.22.2`) from the configured mirror (`CTX_NODE_VERSION` overrides the version). A runtime built without the Web artifacts still works for CLI/MCP (it prints a warning); a half-built state (SPA present but server bundle missing) fails the build on purpose.
 
 ## Packaging and releases
 
