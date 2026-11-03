@@ -1,7 +1,20 @@
-import { useMemo } from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { aggregateInfoOf, type NebulaLink, type NebulaNode } from '@shared/graph'
+import { HudStatusDot } from '@renderer/components/nebula/HudChrome'
 import { useI18n } from '@renderer/i18n'
-import { LINK_COLORS, NEBULA_BACKGROUND, nodeColor } from '@renderer/lib/graphTheme'
+import {
+  DERIVED_LINK_DASH,
+  HUD,
+  HUD_FONT,
+  HUD_OVERLAY,
+  LINK_COLORS,
+  NEBULA_BACKGROUND,
+  labelVariantOf,
+  linkOpacity,
+  nodeColor,
+  rgba,
+  type LabelVariant
+} from '@renderer/lib/graphTheme'
 import { cn } from '@renderer/lib/utils'
 
 /**
@@ -11,6 +24,11 @@ import { cn } from '@renderer/lib/utils'
  * children in golden-angle orbits around the host, unparented nodes on an outer
  * ring), rendered as SVG so search highlighting, type filters, selection and
  * the inspector keep working without a GPU. No simulation and no animation.
+ *
+ * The HUD dress keeps the layout maths untouched: the canvas gets the same
+ * #02040A holo grid as the 3D scene, nodes become wireframe glyphs with a white
+ * core, and labels are counter-scaled so they stay 12px mono boxes no matter how
+ * far the graph zooms out.
  */
 
 export interface NebulaGraph2DProps {
@@ -37,6 +55,24 @@ interface Layout {
 }
 
 const PADDING = 90
+
+/** Label boxes are drawn in screen pixels via a counter-scale transform. */
+const LABEL_FONT_SIZE = 12
+const LABEL_CHAR_WIDTH = 7.2
+const LABEL_BOX_HEIGHT = 19
+const LABEL_BAR_WIDTH = 3
+/** Hard cap for one label box (px); longer names get a single ellipsis. */
+const LABEL_MAX_WIDTH = 210
+
+/** Label text / border / 3px bar colours per HUD label variant. */
+const LABEL_SVG: Record<LabelVariant, { border: string; bar: string; text: string }> = {
+  default: { border: rgba(HUD.cyan, 0.4), bar: HUD.cyan, text: HUD.text },
+  danger: { border: rgba(HUD.danger, 0.45), bar: HUD.danger, text: '#FF7A9C' },
+  warning: { border: rgba(HUD.warning, 0.45), bar: HUD.warning, text: '#FFC766' },
+  white: { border: 'rgba(255,255,255,0.35)', bar: HUD.white, text: HUD.white },
+  success: { border: rgba(HUD.success, 0.45), bar: HUD.success, text: '#5EEAD4' },
+  muted: { border: rgba(HUD.muted, 0.4), bar: HUD.muted, text: '#8FB8CC' }
+}
 
 function radiusOf(node: NebulaNode): number {
   if (node.type === 'host') return 11 + Math.min(10, Math.sqrt(node.val) * 1.4)
@@ -142,6 +178,201 @@ function computeLayout(nodes: readonly NebulaNode[], links: readonly NebulaLink[
   }
 }
 
+/** CJK glyphs are nearly square: account for them when sizing label boxes. */
+function charWidth(char: string): number {
+  return /[\u2E80-\u9FFF\uFF00-\uFFEF]/.test(char) ? LABEL_FONT_SIZE : LABEL_CHAR_WIDTH
+}
+
+/** Truncate by rendered width so the SVG label text never spills out of its box. */
+function truncateLabel(name: string, maxWidth: number): string {
+  let result = ''
+  let width = 0
+  for (const char of name) {
+    const next = charWidth(char)
+    if (width + next > maxWidth) return `${result}…`
+    result += char
+    width += next
+  }
+  return result
+}
+
+function textWidth(text: string): number {
+  let width = 0
+  for (const char of text) width += charWidth(char)
+  return width
+}
+
+/** Regular polygon centred on the node origin (rotation −90° puts a corner up). */
+function polygonPoints(radius: number, sides: number, rotation = -Math.PI / 2): string {
+  const points: string[] = []
+  for (let index = 0; index < sides; index += 1) {
+    const angle = rotation + (index * Math.PI * 2) / sides
+    points.push(`${(Math.cos(angle) * radius).toFixed(2)},${(Math.sin(angle) * radius).toFixed(2)}`)
+  }
+  return points.join(' ')
+}
+
+/** Four HUD viewfinder brackets around the selected node. */
+function SelectionBrackets({ radius }: { radius: number }) {
+  const box = radius * 1.55
+  const arm = Math.max(2.5, radius * 0.45)
+  const path = [
+    `M ${-box} ${-box + arm} L ${-box} ${-box} L ${-box + arm} ${-box}`,
+    `M ${box - arm} ${-box} L ${box} ${-box} L ${box} ${-box + arm}`,
+    `M ${box} ${box - arm} L ${box} ${box} L ${box - arm} ${box}`,
+    `M ${-box + arm} ${box} L ${-box} ${box} L ${-box} ${box - arm}`
+  ].join(' ')
+  return (
+    <path
+      d={path}
+      fill="none"
+      stroke={HUD.cyan}
+      strokeOpacity={0.9}
+      strokeWidth={1.1}
+      strokeLinecap="square"
+    />
+  )
+}
+
+/** Holographic node glyph: wireframe shell + white core + selection brackets. */
+function NodeGlyph({
+  node,
+  radius,
+  color,
+  selected,
+  focused
+}: {
+  node: NebulaNode
+  radius: number
+  color: string
+  selected: boolean
+  focused: boolean
+}): ReactNode {
+  const core = Math.max(1.6, radius * 0.22)
+  return (
+    <>
+      {/* Outer additive halo (the reference's glow mesh). */}
+      <circle r={radius * 1.9} fill={color} fillOpacity={0.1} />
+
+      {node.type === 'project' ? (
+        <>
+          <polygon
+            points={polygonPoints(radius * 1.1, 5)}
+            fill={rgba(color, 0.08)}
+            stroke={color}
+            strokeOpacity={0.95}
+            strokeWidth={1.2}
+          />
+          <circle r={radius * 0.62} fill="none" stroke={color} strokeOpacity={0.35} strokeWidth={0.6} />
+        </>
+      ) : node.type === 'target' ? (
+        <>
+          <polygon
+            points={polygonPoints(radius * 0.95, 6)}
+            fill={rgba(color, 0.08)}
+            stroke={color}
+            strokeOpacity={0.9}
+            strokeWidth={1.1}
+          />
+          <polygon
+            points={polygonPoints(radius * 0.5, 6, Math.PI / 2)}
+            fill="none"
+            stroke={color}
+            strokeOpacity={0.35}
+            strokeWidth={0.6}
+          />
+        </>
+      ) : node.type === 'host' ? (
+        <>
+          {/* Icosahedron-ish host shell: hexagon + inner triangle + orbit ring. */}
+          <polygon
+            points={polygonPoints(radius, 6)}
+            fill={rgba(color, 0.1)}
+            stroke={color}
+            strokeOpacity={0.95}
+            strokeWidth={1.2}
+          />
+          <polygon
+            points={polygonPoints(radius * 0.62, 3, Math.PI / 2)}
+            fill="none"
+            stroke={color}
+            strokeOpacity={0.55}
+            strokeWidth={0.7}
+          />
+          <circle r={radius * 1.22} fill="none" stroke={color} strokeOpacity={0.3} strokeWidth={0.6} />
+        </>
+      ) : node.type === 'vuln' ? (
+        <>
+          {/* Octagon; the severity colour comes from nodeColor(). */}
+          <polygon
+            points={polygonPoints(radius, 8)}
+            fill={rgba(color, 0.12)}
+            stroke={color}
+            strokeWidth={1.5}
+          />
+          <polygon
+            points={polygonPoints(radius * 0.58, 8)}
+            fill="none"
+            stroke={color}
+            strokeOpacity={0.45}
+            strokeWidth={0.6}
+          />
+        </>
+      ) : node.type === 'leak' ? (
+        <>
+          <polygon
+            points={polygonPoints(radius, 4)}
+            fill={rgba(color, 0.08)}
+            stroke={color}
+            strokeOpacity={0.95}
+            strokeWidth={1.2}
+          />
+          <polygon
+            points={polygonPoints(radius * 0.55, 4)}
+            fill="none"
+            stroke={color}
+            strokeOpacity={0.35}
+            strokeWidth={0.6}
+          />
+        </>
+      ) : (
+        <>
+          {/* Snapshot: emerald double ring. */}
+          <circle r={radius} fill="none" stroke={color} strokeWidth={1.4} />
+          <circle r={radius * 0.6} fill="none" stroke={color} strokeOpacity={0.4} strokeWidth={0.6} />
+        </>
+      )}
+
+      {/* Pure white emissive core, matching the 3D scene. */}
+      <circle r={core * 2.2} fill={HUD.white} fillOpacity={0.1} />
+      <circle r={core} fill={HUD.white} />
+
+      {selected ? (
+        <>
+          <circle
+            r={radius * 1.8}
+            fill="none"
+            stroke={HUD.white}
+            strokeOpacity={0.8}
+            strokeWidth={0.7}
+            strokeDasharray="3 3"
+          />
+          <SelectionBrackets radius={radius} />
+        </>
+      ) : focused ? (
+        <circle
+          r={radius * 1.8}
+          fill="none"
+          stroke={HUD.cyan}
+          strokeOpacity={0.6}
+          strokeWidth={0.7}
+          strokeDasharray="2 3"
+        />
+      ) : null}
+    </>
+  )
+}
+
 export function NebulaGraph2D({
   nodes,
   links,
@@ -182,29 +413,83 @@ export function NebulaGraph2D({
     return node.val >= 14
   }
 
+  // Unique per instance: pattern ids cannot collide if the fallback ever mounts
+  // twice (StrictMode / future split view).
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const gridId = `nebula2d-grid-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+
+  /**
+   * SVG text scales with the viewBox, so labels would shrink to nothing on a
+   * large graph. Measure the real px-per-user-unit factor and counter-scale the
+   * label groups, keeping every HUD label at a constant 11px.
+   */
+  const [pixelScale, setPixelScale] = useState(1)
+  // Measure before paint so the label counter-scale never flashes at the wrong size.
+  useLayoutEffect(() => {
+    const svg = svgRef.current
+    if (svg === null) return
+    const measure = (): void => {
+      const rect = svg.getBoundingClientRect()
+      const box = svg.viewBox.baseVal
+      if (rect.width <= 0 || rect.height <= 0 || box.width <= 0 || box.height <= 0) return
+      setPixelScale(Math.min(rect.width / box.width, rect.height / box.height))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(svg)
+    return () => observer.disconnect()
+  }, [layout.viewBox])
+  const labelScale = 1 / Math.min(10, Math.max(0.05, pixelScale))
+
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+
   return (
     <div
       className={cn('relative h-full w-full overflow-hidden', className)}
-      style={{ backgroundColor: NEBULA_BACKGROUND }}
-      role="img"
+      style={{ backgroundColor: NEBULA_BACKGROUND, backgroundImage: HUD_OVERLAY.vignette }}
+      role="group"
       aria-label={t('nebula.canvas.ariaLabel')}
     >
-      <p className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-white/10 bg-[#0b0c10]/[0.82] px-3 py-1 text-[10.5px] text-white/45 backdrop-blur-xl">
+      <p className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-[2px] border border-[#00E5FF]/30 bg-[#020A14]/[0.88] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.08em] text-[#00E5FF] shadow-[0_0_20px_-8px_rgba(0,229,255,0.6)] backdrop-blur-md">
+        <HudStatusDot tone="warning" />
         {t('nebula.mode2d.label')}
       </p>
 
       <svg
-        className="h-full w-full"
+        ref={svgRef}
+        className="h-full w-full select-none"
         viewBox={layout.viewBox}
         preserveAspectRatio="xMidYMid meet"
         onClick={() => onSelect(null)}
       >
+        <defs>
+          {/* 40-user-unit cyan holo grid, the SVG counterpart of the HUD backdrop. */}
+          <pattern id={gridId} width={40} height={40} patternUnits="userSpaceOnUse">
+            <path
+              d="M 40 0 L 0 0 0 40"
+              fill="none"
+              stroke={HUD.cyan}
+              strokeOpacity={0.05}
+              strokeWidth={0.5}
+            />
+          </pattern>
+        </defs>
+
+        <rect
+          x={-5000}
+          y={-5000}
+          width={10000}
+          height={10000}
+          fill={`url(#${gridId})`}
+        />
+
+        {/* Faint cyan link web; derived edges are thinner + dashed (see legend). */}
         <g>
           {links.map((link, index) => {
             const from = positions.get(link.source)
             const to = positions.get(link.target)
             if (from === undefined || to === undefined) return null
-            const opacity = link.derived === true ? 0.1 : 0.2
+            const derived = link.derived === true
             return (
               <line
                 key={`link-${index}`}
@@ -213,51 +498,100 @@ export function NebulaGraph2D({
                 x2={to.x}
                 y2={to.y}
                 stroke={LINK_COLORS[link.relation]}
-                strokeOpacity={opacity}
-                strokeWidth={0.9}
+                strokeOpacity={linkOpacity(link.relation, derived)}
+                strokeWidth={derived ? 0.5 : 0.85}
+                strokeDasharray={
+                  derived ? `${DERIVED_LINK_DASH[0]} ${DERIVED_LINK_DASH[1]}` : undefined
+                }
               />
             )
           })}
         </g>
+
         <g>
           {layout.nodes.map(({ node, x, y, radius }) => {
             const color = nodeColor(node)
             const opacity = opacityOf(node)
             const selected = node.id === selectedId
-            const label = node.name.length > 34 ? `${node.name.slice(0, 33)}…` : node.name
+            const focused = focusedId === node.id && !selected
+            const label = truncateLabel(node.name, LABEL_MAX_WIDTH - 14)
+            const labelWidth = Math.round(textWidth(label) + 14)
+            const labelStyle = LABEL_SVG[labelVariantOf(node)]
             return (
               <g
                 key={node.id}
                 transform={`translate(${x} ${y})`}
                 opacity={opacity}
-                className="cursor-pointer"
+                role="button"
+                tabIndex={0}
+                aria-label={t('nebula.inspector.openNode', { name: node.name })}
+                className="cursor-pointer outline-none"
+                onFocus={() => setFocusedId(node.id)}
+                onBlur={() => setFocusedId((current) => (current === node.id ? null : current))}
                 onClick={(event) => {
                   event.stopPropagation()
                   onSelect(node.id)
                 }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onSelect(node.id)
+                  }
+                }}
               >
-                {/* soft glow ring */}
-                <circle r={radius * 2.1} fill={color} fillOpacity={0.16} />
-                <circle
-                  r={radius}
-                  fill={color}
-                  fillOpacity={0.9}
-                  stroke={selected ? 'rgba(255,255,255,0.9)' : 'transparent'}
-                  strokeWidth={selected ? 1.6 : 0}
+                {/* Browser tooltip for unlabeled nodes (aria-label names the action). */}
+                <title>{node.name}</title>
+                <NodeGlyph
+                  node={node}
+                  radius={radius}
+                  color={color}
+                  selected={selected}
+                  focused={focused}
                 />
+
                 {showLabel(node) ? (
-                  <text
-                    x={0}
-                    y={radius + 10}
-                    textAnchor="middle"
-                    fontSize={9}
-                    fill="rgba(255,255,255,0.72)"
-                    style={{ pointerEvents: 'none', paintOrder: 'stroke' }}
-                    stroke="rgba(5,5,5,0.75)"
-                    strokeWidth={2.5}
-                  >
-                    {label}
-                  </text>
+                  <>
+                    {/* Stem connecting the glyph to its projected-style label box. */}
+                    <line
+                      x1={0}
+                      y1={-radius}
+                      x2={0}
+                      y2={-(radius + 4)}
+                      stroke={labelStyle.bar}
+                      strokeOpacity={0.45}
+                      strokeWidth={0.8}
+                    />
+                    <g transform={`translate(0 ${-(radius + 5)}) scale(${labelScale})`}>
+                      <rect
+                        x={-labelWidth / 2}
+                        y={-LABEL_BOX_HEIGHT}
+                        width={labelWidth}
+                        height={LABEL_BOX_HEIGHT}
+                        fill={NEBULA_BACKGROUND}
+                        fillOpacity={0.92}
+                        stroke={labelStyle.border}
+                        strokeWidth={1}
+                      />
+                      {/* 3px left bar — the reference label's signature detail. */}
+                      <rect
+                        x={-labelWidth / 2}
+                        y={-LABEL_BOX_HEIGHT}
+                        width={LABEL_BAR_WIDTH}
+                        height={LABEL_BOX_HEIGHT}
+                        fill={labelStyle.bar}
+                      />
+                      <text
+                        x={-labelWidth / 2 + LABEL_BAR_WIDTH + 5}
+                        y={-6.5}
+                        fontFamily={HUD_FONT}
+                        fontSize={LABEL_FONT_SIZE}
+                        fill={labelStyle.text}
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  </>
                 ) : null}
               </g>
             )

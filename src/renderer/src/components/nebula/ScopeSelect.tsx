@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } f
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown } from 'lucide-react'
 import { useI18n } from '@renderer/i18n'
+import { NEBULA_UI } from '@renderer/lib/graphTheme'
 import { cn } from '@renderer/lib/utils'
 
 export interface ScopeSelectOption {
@@ -27,14 +28,16 @@ interface DropdownPosition {
 }
 
 /**
- * Dark themed dropdown that replaces the native `<select>` in the nebula
- * control panel. Native option lists cannot be styled consistently (they fall
- * back to the OS menu), so the trigger is a styled button and the list is
- * rendered in a portal that matches the glass panel.
+ * HUD dropdown that replaces the native `<select>` in the nebula control panel.
+ * Native option lists cannot be styled consistently (they fall back to the OS
+ * menu), so the trigger is a styled button and the list is rendered in a portal
+ * that follows the tactical HUD glass language: cyan hairlines, mono type and a
+ * left 2px accent on the highlighted row.
  *
  * Keyboard: Enter/Space/ArrowUp/ArrowDown open, arrows/Home/End move, Enter or
  * Space select, Escape closes. Mouse: click toggles, hover highlights, an
- * outside click / scroll / resize closes.
+ * outside click / scroll / resize closes. Behaviour is intentionally unchanged
+ * from the previous themed dropdown — only the dress changed.
  */
 export function ScopeSelect({
   id,
@@ -159,18 +162,30 @@ export function ScopeSelect({
         onClick={() => (open ? close() : openList())}
         onKeyDown={handleKeyDown}
         className={cn(
-          'flex h-8 w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.04]',
-          'pl-2 pr-2 text-[12px] outline-none transition-colors duration-150',
-          'hover:border-white/20 hover:bg-white/[0.06]',
-          'focus-visible:border-sky-400/40 focus-visible:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-sky-400/40',
-          'disabled:cursor-not-allowed disabled:opacity-50',
+          'group flex h-8 w-full items-center gap-2 rounded-[2px] border border-[#00E5FF]/25 bg-[#01060D]/80',
+          'px-2 outline-none transition-colors duration-150',
+          'hover:border-[#00E5FF]/50 hover:bg-[#00E5FF]/[0.05]',
+          'focus-visible:border-[#00E5FF]/70 focus-visible:bg-[#00E5FF]/[0.07]',
+          NEBULA_UI.focusRing,
+          open && 'border-[#00E5FF]/60 bg-[#00E5FF]/[0.07]',
+          'disabled:cursor-not-allowed disabled:opacity-40',
           className
         )}
       >
+        {/* 2px cyan accent bar: same signature as the HUD panels. */}
+        <span
+          aria-hidden="true"
+          className={cn(
+            'h-3 w-[2px] shrink-0 bg-[#00E5FF]/45 transition-colors duration-150',
+            'group-hover:bg-[#00E5FF]/80',
+            open && 'bg-[#00E5FF]'
+          )}
+        />
         <span
           className={cn(
-            'min-w-0 flex-1 truncate text-left',
-            selected === null ? 'text-white/35' : 'text-white/85'
+            'min-w-0 flex-1 truncate text-left font-mono',
+            selected === null ? 'text-[11px] text-[#7FA9BE]' : 'text-[12.5px] text-[#C7E9F5]',
+            open && 'text-[#00E5FF]'
           )}
         >
           {selected?.label ?? t('nebula.scope.selectPlaceholder')}
@@ -178,8 +193,9 @@ export function ScopeSelect({
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            'h-3.5 w-3.5 shrink-0 text-white/35 transition-transform duration-150',
-            open && 'rotate-180'
+            'h-3.5 w-3.5 shrink-0 text-[#5C8FAE] transition-transform duration-150',
+            'group-hover:text-[#00E5FF]',
+            open && 'rotate-180 text-[#00E5FF]'
           )}
         />
       </button>
@@ -192,9 +208,9 @@ export function ScopeSelect({
               role="listbox"
               aria-label={ariaLabel}
               className={cn(
-                'scrollbar-thin fixed z-[70] max-h-64 overflow-y-auto rounded-md',
-                'border border-white/[0.12] bg-[#0b0c10]/[0.98] p-1',
-                'shadow-[0_20px_50px_-20px_rgba(0,0,0,0.9)] backdrop-blur-xl'
+                'scrollbar-thin fixed z-[70] max-h-64 overflow-y-auto rounded-[3px]',
+                'border border-[#00E5FF]/30 bg-[#020A14]/[0.97] p-1',
+                'shadow-[0_22px_50px_-18px_rgba(0,0,0,0.95),0_0_24px_-8px_rgba(0,229,255,0.35)] backdrop-blur-md'
               )}
               style={{ top: position.top, left: position.left, width: position.width }}
             >
@@ -211,17 +227,21 @@ export function ScopeSelect({
                     onMouseEnter={() => setActiveIndex(index)}
                     onClick={() => selectOption(option)}
                     className={cn(
-                      'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px]',
+                      'flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-left font-mono text-[12.5px]',
                       'transition-colors duration-100',
-                      isHighlighted ? 'bg-white/[0.08]' : 'bg-transparent',
-                      isSelected ? 'text-sky-200' : 'text-white/70'
+                      NEBULA_UI.focusRing,
+                      isHighlighted
+                        ? 'bg-[#00E5FF]/[0.1] text-[#00E5FF] shadow-[inset_2px_0_0_rgba(0,229,255,0.85)]'
+                        : isSelected
+                          ? 'bg-[#00E5FF]/[0.04] text-[#00E5FF]'
+                          : 'text-[#A9D6E5]'
                     )}
                   >
                     <span className="min-w-0 flex-1 truncate" title={option.label}>
                       {option.label}
                     </span>
                     {isSelected ? (
-                      <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+                      <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#00E5FF]" />
                     ) : null}
                   </button>
                 )

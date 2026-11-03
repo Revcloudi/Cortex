@@ -45,6 +45,10 @@ module.exports = {
         sans: [
           '"Inter Variable"',
           'Inter',
+          '"Microsoft YaHei UI"',
+          '"Microsoft YaHei"',
+          '"PingFang SC"',
+          '"Noto Sans SC"',
           'system-ui',
           '-apple-system',
           '"Segoe UI"',
@@ -53,6 +57,14 @@ module.exports = {
         mono: [
           '"JetBrains Mono Variable"',
           '"JetBrains Mono"',
+          // JetBrains Mono has no CJK glyphs: without an explicit modern CJK
+          // fallback the browser picks legacy SimSun at 9–11px, which renders
+          // thin/broken strokes on the dark HUD. Latin still uses JetBrains
+          // Mono; Chinese characters use the crisp UI sans.
+          '"Microsoft YaHei UI"',
+          '"Microsoft YaHei"',
+          '"PingFang SC"',
+          '"Noto Sans SC"',
           'ui-monospace',
           'SFMono-Regular',
           'Consolas',

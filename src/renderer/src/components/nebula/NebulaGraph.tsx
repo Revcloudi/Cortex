@@ -11,55 +11,62 @@ import {
 } from 'react'
 import ForceGraph3DImport from 'react-force-graph-3d'
 import * as THREE from 'three'
-import type { GraphRelation, NebulaLink, NebulaNode } from '@shared/graph'
+import { aggregateInfoOf, type GraphRelation, type NebulaLink, type NebulaNode } from '@shared/graph'
+import { HudButton } from '@renderer/components/nebula/HudChrome'
 import { NebulaGraph2D } from '@renderer/components/nebula/NebulaGraph2D'
+import { NebulaLabelLayer, type NebulaLabelDatum } from '@renderer/components/nebula/nebulaLabels'
 import { useI18n } from '@renderer/i18n'
 import {
   AUTO_ROTATE_RESUME_MS,
   AUTO_ROTATE_SPEED,
   CAMERA_FOCUS_MS,
+  CAMERA_FOV,
+  CAMERA_LOD_FAR,
+  CAMERA_LOD_NEAR,
   CAMERA_RESET_MS,
+  DEFAULT_CAMERA_ELEVATION,
   DEFAULT_CAMERA_DISTANCE,
   DIM_OPACITY,
+  EMPHASIS_OPACITY,
+  FLOW_PARTICLE_COLOR,
   FOCUS_DIM_OPACITY,
-  HALO_SCALE,
+  FOG_DENSITY,
   HOVER_CONTEXT_DIM_OPACITY,
-  LABEL_BG_COLOR,
-  LABEL_BORDER_COLOR,
-  LABEL_DIM_FACTOR,
-  LABEL_EMPHASIS_OPACITY,
-  LABEL_FONT,
-  LABEL_IDLE_OPACITY,
-  LABEL_IDLE_SCALE,
-  LABEL_SPRITE_SCALE,
-  LABEL_TEXT_COLOR,
-  LABEL_TEXTURE_HEIGHT,
-  LABEL_TEXTURE_WIDTH,
+  HUD,
+  LABEL,
   LINK_COLORS,
+  LINK_DIM_OPACITY,
+  LINK_HIGHLIGHT_OPACITY,
   NEBULA_BACKGROUND,
-  NEBULA_SKYBOX_HEIGHT,
-  NEBULA_SKYBOX_WIDTH,
+  NEBULA_UI,
+  NODE_BREATHE_AMPLITUDE,
+  NODE_BREATHE_SPEED,
+  NODE_HOVER_SCALE,
+  NODE_SPIN_SPEED,
   PERFORMANCE_SELECTED_HALO_OPACITY,
-  SPRITE_TEXTURE_SIZE,
-  STARFIELD_BRIGHT_COUNT,
-  STARFIELD_BRIGHT_OPACITY,
-  STARFIELD_BRIGHT_SIZE,
-  STARFIELD_DUST_CLUSTERS,
-  STARFIELD_DUST_COUNT,
-  STARFIELD_DUST_OPACITY,
-  STARFIELD_DUST_SIZE,
-  STARFIELD_FAR_COUNT,
-  STARFIELD_FAR_MAX_RADIUS,
-  STARFIELD_FAR_MIN_RADIUS,
-  STARFIELD_FAR_OPACITY,
-  STARFIELD_FAR_SIZE,
-  STARFIELD_ROTATE_SPEED,
+  STARFIELD_RADIUS,
+  blendOnCanvas,
+  labelVariantOf,
   linkOpacity,
   nodeColor,
-  nodeRadius,
-  rgba
+  nodeCoreRadius,
+  nodeGlowScale,
+  nodeLabelPriority,
+  nodeRadius
 } from '@renderer/lib/graphTheme'
 import { cn } from '@renderer/lib/utils'
+import {
+  FlowParticles,
+  GridFloor,
+  Starfield,
+  coreSphereGeometry,
+  glowTexture,
+  haloRingGeometry,
+  hashUnit,
+  shellLineGeometry,
+  type FlowRoute,
+  type GeometryDetail
+} from './nebulaSceneFx'
 
 /**
  * Imperative camera/selection API exposed to `NebulaPage`. All Three.js objects
@@ -90,6 +97,11 @@ export interface NebulaGraphProps {
   /** Auto-rotation is already reduced-motion aware upstream. */
   autoRotate: boolean
   onSelect: (nodeId: string | null) => void
+  /**
+   * Optional live label counter for HUD status lines: how many projected DOM
+   * labels are currently on screen out of the total label count.
+   */
+  onLabelStats?: (visible: number, total: number) => void
   className?: string
 }
 
@@ -97,13 +109,16 @@ export interface NebulaGraphProps {
 
 /** Nodes as the force engine sees them: positions are injected at runtime. */
 type GraphNode = NebulaNode & { x?: number; y?: number; z?: number }
-type GraphLink = NebulaLink & { source: string; target: string }
+/** Links carry string ids until the simulation replaces them with node objects. */
+type GraphLink = NebulaLink & { source: string | GraphNode; target: string | GraphNode }
 
 interface Coords {
   x: number
   y: number
   z: number
 }
+
+const ORIGIN: Coords = { x: 0, y: 0, z: 0 }
 
 interface OrbitControlsLike {
   autoRotate: boolean
@@ -118,16 +133,82 @@ interface ForceLike {
   distance?(value: number | ((link: unknown) => number)): unknown
 }
 
-
-/** Deterministic FNV-1a hash → stable 0..1 unit value (survives re-renders). */
-function hashUnit(value: string): number {
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return (hash >>> 0) / 4_294_967_296
+/**
+ * Minimal slice of the kapsule instance we drive. The library ships hand-written
+ * types that do not cover every accessor consistently across versions, so this
+ * is the single documented boundary between our code and `3d-force-graph`.
+ */
+interface GraphController {
+  cameraPosition(): Coords
+  cameraPosition(position: Partial<Coords>, lookAt?: Coords, transitionMs?: number): unknown
+  /** Live camera (POS, controls target and LOD math), added for the DOM labels. */
+  camera(): THREE.Camera
+  controls(): OrbitControlsLike
+  d3ReheatSimulation(): unknown
+  d3Force(name: string): ForceLike | undefined
+  scene(): THREE.Scene
 }
+
+interface ForceGraphProps {
+  graphData: { nodes: GraphNode[]; links: GraphLink[] }
+  width: number
+  height: number
+  backgroundColor: string
+  showNavInfo: boolean
+  nodeId: string
+  nodeVal: (node: GraphNode) => number
+  /** The library's DOM tooltip is redundant with our projected DOM labels. */
+  nodeLabel: () => string
+  /** Keep the drawing buffer so PNG export can read the frame. */
+  rendererConfig: { preserveDrawingBuffer: boolean; antialias: boolean }
+  /**
+   * Init prop. The library defaults to TrackballControls, which has no
+   * `autoRotate`; the HUD holo-table needs OrbitControls (reference demo) for
+   * the slow auto-rotation + damping semantics below.
+   */
+  controlType: 'orbit'
+  enableNodeDrag: boolean
+  warmupTicks: number
+  cooldownTicks: number
+  d3AlphaDecay: number
+  nodeThreeObject: (node: GraphNode) => THREE.Object3D
+  /**
+   * Links are rendered by our own batched `LineSegments` layer (one draw call,
+   * per-edge vertex colours); hiding the library's per-link objects avoids
+   * duplicate geometry + per-frame work.
+   */
+  linkVisibility: (link: GraphLink) => boolean
+  onNodeClick: (node: GraphNode, event: MouseEvent) => void
+  onNodeHover: (node: GraphNode | null, previousNode: GraphNode | null) => void
+  onBackgroundClick: () => void
+  onEngineStop: () => void
+}
+
+const ForceGraph3D = ForceGraph3DImport as unknown as ForwardRefExoticComponent<
+  ForceGraphProps & RefAttributes<GraphController>
+>
+
+/** Above this many graph elements we surface the heavy-graph HUD banner. */
+const HEAVY_GRAPH_ELEMENT_LIMIT = 800
+/** Fallback re-frame if the simulation never reports stopping (old behaviour). */
+const AUTO_FIT_FALLBACK_MS = 3200
+/** LOD is recomputed at ~4 Hz, not every frame (camera damping is smooth). */
+const LOD_CHECK_INTERVAL_MS = 240
+/** Camera-distance LOD turns the DOM labels / leaves down when far away. */
+const LOD_FAR_DISTANCE = DEFAULT_CAMERA_DISTANCE * CAMERA_LOD_FAR
+const LOD_NEAR_DISTANCE = DEFAULT_CAMERA_DISTANCE * CAMERA_LOD_NEAR
+
+/** Shared HUD white used to brighten selected/hovered wireframes + rings. */
+const EMPHASIS_COLOR = new THREE.Color(HUD.white)
+
+/**
+ * `nebulaLabels.ts` makes its overlay `pointer-events: none` so drags/wheel pass
+ * through to the canvas, but `pointer-events` is an *inherited* property: the
+ * projected label buttons would inherit `none` too and could not be clicked.
+ * Re-enable pointer events for the buttons only, keeping the surrounding overlay
+ * click-through.
+ */
+const LABEL_INTERACTION_CSS = '[data-nebula-labels] > button { pointer-events: auto; }'
 
 /** Links are string ids before simulation and node objects during it. */
 function linkEndpointId(value: unknown): string {
@@ -143,8 +224,8 @@ function linkKey(link: { source: unknown; target: unknown }): string {
 
 /**
  * Relation-aware link lengths: vulnerabilities hang close to their host, while
- * credentials/leaks and session links stretch farther out. A single distance
- * for every edge made the graph read as one rigid shell.
+ * leaks and session links stretch farther out. A single distance for every edge
+ * made the graph read as one rigid shell.
  */
 const LINK_DISTANCE_BY_RELATION: Record<GraphRelation, readonly [number, number]> = {
   HAS_VULN: [28, 44],
@@ -163,163 +244,98 @@ function linkDistance(link: GraphLink): number {
   return min + hashUnit(`${linkKey(link)}|${link.relation}`) * (max - min)
 }
 
-/* ------------------------------------------------------------- link art -- */
-
-/**
- * Edges are a short polyline whose vertex colours fade to black at both ends.
- * With additive blending the line dissolves into the node glow instead of
- * ending in a hard point at the node centre, while the trimmed middle keeps
- * the web readable. Deterministic per-link colours keep the look stable.
- */
-const LINK_SEGMENT_COUNT = 20
-const LINK_FADE_FRACTION = 0.2
-const LINK_TRIM_RATIO = 0.045
-const LINK_TRIM_MIN = 1.5
-const LINK_TRIM_MAX = 7
-const LINK_COLOR_GAIN = 2.4
-
-function linkBaseColor(link: GraphLink): THREE.Color {
-  const opacity = linkOpacity(link.relation, link.derived === true)
-  // Slight per-link brightness variation keeps the web organic instead of a
-  // uniform wireframe; deterministic so the look is stable across reloads.
-  const variation = 0.82 + hashUnit(`${linkKey(link)}|brightness`) * 0.36
-  return new THREE.Color(LINK_COLORS[link.relation]).multiplyScalar(
-    Math.min(1, opacity * LINK_COLOR_GAIN * variation)
-  )
+/** Adjacency of the undirected graph, used by hover "focus + context" mode. */
+function buildNeighborMap(links: readonly GraphLink[]): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>()
+  for (const link of links) {
+    const source = linkEndpointId(link.source)
+    const target = linkEndpointId(link.target)
+    if (source === target) continue
+    const sourceBucket = map.get(source)
+    if (sourceBucket === undefined) map.set(source, new Set([target]))
+    else sourceBucket.add(target)
+    const targetBucket = map.get(target)
+    if (targetBucket === undefined) map.set(target, new Set([source]))
+    else targetBucket.add(source)
+  }
+  return map
 }
 
-function createLinkObject(link: GraphLink): THREE.Object3D {
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute(
-    'position',
-    new THREE.BufferAttribute(new Float32Array(LINK_SEGMENT_COUNT * 3), 3)
-  )
-  const base = linkBaseColor(link)
-  const colors = new Float32Array(LINK_SEGMENT_COUNT * 3)
-  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
-    const t = index / (LINK_SEGMENT_COUNT - 1)
-    const fadeIn = Math.min(1, t / LINK_FADE_FRACTION)
-    const fadeOut = Math.min(1, (1 - t) / LINK_FADE_FRACTION)
-    const fade = Math.min(fadeIn, fadeOut) ** 1.2
-    colors[index * 3] = base.r * fade
-    colors[index * 3 + 1] = base.g * fade
-    colors[index * 3 + 2] = base.b * fade
-  }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  const line = new THREE.Line(
-    geometry,
-    new THREE.LineBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: 1,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    })
-  )
-  line.frustumCulled = false
-  line.renderOrder = 2
-  // Remember the unfaded colour profile so hover focus can re-tint edges
-  // without rebuilding geometry.
-  const fadeProfile = new Float32Array(LINK_SEGMENT_COUNT)
-  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
-    const t = index / (LINK_SEGMENT_COUNT - 1)
-    const fadeIn = Math.min(1, t / LINK_FADE_FRACTION)
-    const fadeOut = Math.min(1, (1 - t) / LINK_FADE_FRACTION)
-    fadeProfile[index] = Math.min(fadeIn, fadeOut) ** 1.2
-  }
-  line.userData = {
-    key: `${linkKey(link)}|${link.relation}`,
-    baseColor: base.clone(),
-    fadeProfile,
-    relation: link.relation
-  }
-  return line
+function toFlowRoutes(links: readonly GraphLink[]): FlowRoute[] {
+  return links.map((link) => ({
+    sourceId: linkEndpointId(link.source),
+    targetId: linkEndpointId(link.target)
+  }))
 }
 
-function updateLinkPosition(
-  object: THREE.Object3D,
-  coords: { start: Coords; end: Coords }
-): void {
-  if (!(object instanceof THREE.Line)) return
-  const position = object.geometry.getAttribute('position') as THREE.BufferAttribute
-  const dx = coords.end.x - coords.start.x
-  const dy = coords.end.y - coords.start.y
-  const dz = coords.end.z - coords.start.z
-  const length = Math.sqrt(dx * dx + dy * dy + dz * dz)
-  const trim =
-    length > 0
-      ? Math.min(LINK_TRIM_MAX, Math.max(LINK_TRIM_MIN, length * LINK_TRIM_RATIO))
-      : 0
-  const t0 = length > 0 ? Math.min(0.45, trim / length) : 0
-  const t1 = 1 - t0
-  const array = position.array as Float32Array
-  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
-    const t = t0 + (t1 - t0) * (index / (LINK_SEGMENT_COUNT - 1))
-    array[index * 3] = coords.start.x + dx * t
-    array[index * 3 + 1] = coords.start.y + dy * t
-    array[index * 3 + 2] = coords.start.z + dz * t
-  }
-  position.needsUpdate = true
+/** Translator signature (matches `useI18n().t`). */
+type TranslateFn = (key: string, params?: Record<string, string | number>) => string
+
+/** Single-line ellipsis for label summaries. */
+function truncateLabel(value: string, max: number): string {
+  const trimmed = value.trim()
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed
 }
 
 /**
- * Minimal slice of the kapsule instance we drive. The library ships hand-written
- * types that do not cover every accessor consistently across versions, so this
- * is the single documented boundary between our code and `3d-force-graph`.
+ * Short, localized HUD label text.
+ *
+ * Long record titles made the projected labels overlap in dense clusters, so the
+ * pucks show the *category* instead: vulnerability type, leaked-secret type,
+ * snapshot phase, or the host/target/project name (truncated). The full original
+ * name stays available as the native tooltip and in the inspector.
+ *
+ * Built from `t()` so the summaries follow the zh/en language switch — the page
+ * re-renders on language change and the label layer re-syncs its text.
  */
-interface GraphController {
-  cameraPosition(): Coords
-  cameraPosition(position: Partial<Coords>, lookAt?: Coords, transitionMs?: number): unknown
-  controls(): OrbitControlsLike
-  d3ReheatSimulation(): unknown
-  d3Force(name: string): ForceLike | undefined
-  scene(): THREE.Scene
+function summarizeLabel(node: GraphNode, t: TranslateFn): string {
+  const aggregate = aggregateInfoOf(node)
+  if (aggregate !== null) {
+    return `+${aggregate.count} ${t(`nebula.type.${node.type}`)}`
+  }
+  switch (node.type) {
+    case 'vuln': {
+      const type = node.data.vuln_type.trim()
+      if (type === '' || type === 'Unclassified') return truncateLabel(node.name, 20)
+      return truncateLabel(type, 22)
+    }
+    case 'leak':
+      return t('nebula.label.leakSummary', {
+        type: t(`ui.leakType.${node.data.info_type}`)
+      })
+    case 'snapshot': {
+      const phase = truncateLabel(node.data.current_phase, 16)
+      const kind = t('nebula.type.snapshot')
+      return phase === '' ? kind : `${kind} · ${phase}`
+    }
+    case 'project':
+    case 'target':
+    case 'host':
+      return truncateLabel(node.name, 24)
+  }
 }
 
-interface ForceGraphProps {
-  graphData: { nodes: GraphNode[]; links: GraphLink[] }
-  width: number
-  height: number
-  backgroundColor: string
-  showNavInfo: boolean
-  nodeId: string
-  nodeVal: (node: GraphNode) => number
-  /** The library's DOM tooltip is redundant with our sprite labels. */
-  nodeLabel: () => string
-  /** Keep the drawing buffer so PNG export can read the frame. */
-  rendererConfig: { preserveDrawingBuffer: boolean; antialias: boolean }
-  enableNodeDrag: boolean
-  warmupTicks: number
-  cooldownTicks: number
-  d3AlphaDecay: number
-  nodeThreeObject: (node: GraphNode) => THREE.Object3D
-  linkThreeObject: (link: GraphLink) => THREE.Object3D
-  linkPositionUpdate: (object: THREE.Object3D, coords: { start: Coords; end: Coords }, link: GraphLink) => void
-  onNodeClick: (node: GraphNode, event: MouseEvent) => void
-  onNodeHover: (node: GraphNode | null, previousNode: GraphNode | null) => void
-  onBackgroundClick: () => void
-  onEngineStop: () => void
-}
-
-const ForceGraph3D = ForceGraph3DImport as unknown as ForwardRefExoticComponent<
-  ForceGraphProps & RefAttributes<GraphController>
->
-
-/** Above this many graph elements we stop adding halos and warn the user. */
-const PERFORMANCE_ELEMENT_LIMIT = 800
-
-interface NodeVisual {
-  core: THREE.Sprite
-  halo: THREE.Sprite
-  label: THREE.Sprite
-  coreMaterial: THREE.SpriteMaterial
-  haloMaterial: THREE.SpriteMaterial
-  labelMaterial: THREE.SpriteMaterial
-  labelTexture: THREE.Texture
-  /** World-space radius of the core sprite, used to park the label above it. */
-  radius: number
-  /** Drives LOD: leaves lose their labels when the camera pulls far away. */
-  nodeType: NebulaNode['type']
+/** DOM label datum for one live force-graph node (position is mutated in place). */
+function buildLabelDatum(
+  node: GraphNode,
+  selectedId: string | null,
+  hoveredId: string | null,
+  t: TranslateFn
+): NebulaLabelDatum {
+  const aggregate = aggregateInfoOf(node) !== null
+  return {
+    id: node.id,
+    name: node.name,
+    label: summarizeLabel(node, t),
+    kind: node.type,
+    variant: labelVariantOf(node),
+    priority: nodeLabelPriority(node, node.id === selectedId, node.id === hoveredId),
+    danger: node.type === 'vuln' && (node.severity === 'Critical' || node.severity === 'High'),
+    aggregate,
+    lift: nodeRadius(node) + LABEL.lift,
+    // Live object on purpose: the force engine rewrites x/y/z every tick.
+    position: node
+  }
 }
 
 function detectWebGl(): boolean {
@@ -331,551 +347,247 @@ function detectWebGl(): boolean {
   }
 }
 
-/**
- * Soft additive glow disc; one texture per colour, shared by every node.
- *
- * Brighter than a plain gaussian: a hot core plus a white specular pin makes the
- * nodes read as sparkling lights instead of flat dim blobs (all additive, so the
- * canvas background stays black).
- */
-function createGlowTexture(color: string): THREE.Texture {
-  const canvas = document.createElement('canvas')
-  canvas.width = SPRITE_TEXTURE_SIZE
-  canvas.height = SPRITE_TEXTURE_SIZE
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('2D canvas unavailable')
-  const center = SPRITE_TEXTURE_SIZE / 2
-  const gradient = context.createRadialGradient(center, center, 0, center, center, center)
-  gradient.addColorStop(0, rgba(color, 1))
-  gradient.addColorStop(0.12, rgba(color, 1))
-  gradient.addColorStop(0.3, rgba(color, 0.68))
-  gradient.addColorStop(0.56, rgba(color, 0.24))
-  gradient.addColorStop(0.8, rgba(color, 0.06))
-  gradient.addColorStop(1, rgba(color, 0))
-  context.fillStyle = gradient
-  context.fillRect(0, 0, SPRITE_TEXTURE_SIZE, SPRITE_TEXTURE_SIZE)
-
-  // White-hot pinpoint in the middle: the "sparkle" highlight.
-  const sparkle = context.createRadialGradient(
-    center,
-    center,
-    0,
-    center,
-    center,
-    center * 0.3
-  )
-  sparkle.addColorStop(0, 'rgba(255, 255, 255, 0.95)')
-  sparkle.addColorStop(0.45, 'rgba(255, 255, 255, 0.35)')
-  sparkle.addColorStop(1, 'rgba(255, 255, 255, 0)')
-  context.fillStyle = sparkle
-  context.fillRect(0, 0, SPRITE_TEXTURE_SIZE, SPRITE_TEXTURE_SIZE)
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.needsUpdate = true
-  return texture
+/** `prefers-reduced-motion` as reactive state (canvas motion respects it). */
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  })
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onChange = (): void => setReduced(query.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+  return reduced
 }
 
-/** Rounded dark pill with the node name; visible at low opacity by default. */
-function createLabelTexture(text: string): THREE.Texture {
-  const canvas = document.createElement('canvas')
-  canvas.width = LABEL_TEXTURE_WIDTH
-  canvas.height = LABEL_TEXTURE_HEIGHT
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('2D canvas unavailable')
-  context.font = LABEL_FONT
-  const maxTextWidth = LABEL_TEXTURE_WIDTH - 72
-  let display = text.trim()
-  if (display.length === 0) display = '—'
-  if (context.measureText(display).width > maxTextWidth) {
-    while (display.length > 1 && context.measureText(`${display}…`).width > maxTextWidth) {
-      display = display.slice(0, -1)
-    }
-    display = `${display}…`
-  }
-  const textWidth = Math.min(maxTextWidth, context.measureText(display).width)
-  const paddingX = 32
-  const width = Math.min(LABEL_TEXTURE_WIDTH, textWidth + paddingX * 2)
-  const height = 84
-  const x = (LABEL_TEXTURE_WIDTH - width) / 2
-  const y = (LABEL_TEXTURE_HEIGHT - height) / 2
-  context.beginPath()
-  context.roundRect(x, y, width, height, 20)
-  context.fillStyle = LABEL_BG_COLOR
-  context.fill()
-  context.lineWidth = 2
-  context.strokeStyle = LABEL_BORDER_COLOR
-  context.stroke()
-  context.fillStyle = LABEL_TEXT_COLOR
-  context.textAlign = 'center'
-  context.textBaseline = 'middle'
-  context.fillText(display, LABEL_TEXTURE_WIDTH / 2, LABEL_TEXTURE_HEIGHT / 2)
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.needsUpdate = true
-  return texture
+/* ----------------------------------------------------------------- node art -- */
+
+interface NodeVisual {
+  group: THREE.Group
+  /** Wireframe shell (LineSegments) animated by the HUD frame loop. */
+  shell: THREE.LineSegments
+  shellMaterial: THREE.LineBasicMaterial
+  /** White-hot core sphere; opacity carries search/focus/hover dimming. */
+  core: THREE.Mesh
+  coreMaterial: THREE.MeshBasicMaterial
+  /** Additive radial halo sprite (shared glow texture per colour). */
+  glow: THREE.Sprite
+  glowMaterial: THREE.SpriteMaterial
+  /** Rotating selection ring / snapshot orbit ring, created lazily. */
+  ring: THREE.LineLoop | null
+  ringMaterial: THREE.LineBasicMaterial | null
+  readonly nodeType: NebulaNode['type']
+  readonly baseColor: THREE.Color
+  readonly radius: number
+  /** Deterministic per-node phases so neighbours never pulse/spin in sync. */
+  readonly spinDirection: number
+  readonly spinSeed: number
+  readonly breatheSeed: number
+  /** Interaction target scale (hover growth); breathing multiplies it. */
+  baseScale: number
 }
 
 function disposeVisual(visual: NodeVisual): void {
+  visual.shellMaterial.dispose()
   visual.coreMaterial.dispose()
-  visual.haloMaterial.dispose()
-  visual.labelMaterial.dispose()
-  visual.labelTexture.dispose()
-  visual.label.removeFromParent()
-  visual.halo.removeFromParent()
-  visual.core.removeFromParent()
+  visual.glowMaterial.dispose()
+  visual.ringMaterial?.dispose()
+  visual.group.removeFromParent()
+  visual.group.clear()
 }
 
-/* ------------------------------------------------------- background starfield -- */
-
-/**
- * Purely decorative space background behind the graph: distant stars + a faint
- * dust cloud, both static THREE.Points layers that drift on their own. They are
- * not nodes: never raycast, never labelled, never counted in stats.
- */
-interface SceneDecor {
-  /** Attach the skybox + drifting point layers to the given scene. */
-  attach(scene: THREE.Scene): void
-  rotate(deltaSeconds: number): void
-  dispose(): void
-}
-
-/** Deterministic PRNG so the generated nebula looks identical on every load. */
-function createRandom(seed: number): () => number {
-  let state = seed >>> 0
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0
-    let t = state
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296
-  }
-}
-
-/**
- * Procedurally painted nebula cloud: clustered gas complexes, wispy filament
- * chains, high-frequency grains, dark dust lanes and bright star-forming knots,
- * then a round edge fade so the square sprite melts into the black canvas. Two
- * variants layer for depth.
- */
-/**
- * Procedurally painted equirectangular nebula skybox (360° × 180°).
- *
- * A world-space sprite only covers the side of the scene facing -Z, so when the
- * camera orbits to the other half the backdrop disappears (user report: "只有
- * 一小面存在，另一面还是黑的"). Baking the same gas clouds into a 2:1 texture
- * assigned to `scene.background` keeps the nebula behind the camera on every
- * side, while the separate THREE.Points star/dust layers still drift for
- * parallax.
- *
- * Horizontal wrap: every puff is painted three times (x-W, x, x+W) so the
- * left/right seams of the equirectangular map join without a visible edge.
- */
-function createNebulaSkyboxTexture(): THREE.Texture {
-  const width = NEBULA_SKYBOX_WIDTH
-  const height = NEBULA_SKYBOX_HEIGHT
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('2D canvas unavailable')
-  const random = createRandom(0x5f356495)
-  const palettes: ReadonlyArray<readonly string[]> = [
-    ['#1e3a8a', '#1d4ed8'],
-    ['#0e7490', '#22d3ee'],
-    ['#4c1d95', '#7c3aed'],
-    ['#831843', '#db2777']
-  ]
-
-  /** Soft elongated gas puff: a radial gradient painted under an ellipse transform. */
-  const paintPuff = (
-    x: number,
-    y: number,
-    radiusX: number,
-    radiusY: number,
-    rotation: number,
-    color: string,
-    alpha: number
-  ): void => {
-    context.save()
-    context.translate(x, y)
-    context.rotate(rotation)
-    context.scale(1, radiusY / radiusX)
-    const gradient = context.createRadialGradient(0, 0, 0, 0, 0, radiusX)
-    gradient.addColorStop(0, rgba(color, alpha))
-    gradient.addColorStop(0.55, rgba(color, alpha * 0.45))
-    gradient.addColorStop(1, rgba(color, 0))
-    context.fillStyle = gradient
-    context.beginPath()
-    context.arc(0, 0, radiusX, 0, Math.PI * 2)
-    context.fill()
-    context.restore()
-  }
-
-  /** Paint the same puff at x-W, x and x+W so the 2:1 map wraps seamlessly. */
-  const wrappedPuff = (
-    x: number,
-    y: number,
-    radiusX: number,
-    radiusY: number,
-    rotation: number,
-    color: string,
-    alpha: number
-  ): void => {
-    for (const offset of [-width, 0, width]) {
-      paintPuff(x + offset, y, radiusX, radiusY, rotation, color, alpha)
-    }
-  }
-
-  // 1) deep-space base
-  const base = context.createLinearGradient(0, 0, 0, height)
-  base.addColorStop(0, '#02030a')
-  base.addColorStop(0.5, '#05070f')
-  base.addColorStop(1, '#02030a')
-  context.fillStyle = base
-  context.fillRect(0, 0, width, height)
-  context.globalCompositeOperation = 'lighter'
-
-  // 2) cloud complexes spread across the whole sky
-  const clusterCount = 12
-  for (let cluster = 0; cluster < clusterCount; cluster += 1) {
-    const palette = palettes[cluster % palettes.length]
-    const centerX = random() * width
-    const centerY = height * (0.18 + random() * 0.64)
-    const spread = width * (0.02 + random() * 0.06)
-    const puffCount = 18 + Math.floor(random() * 14)
-    for (let index = 0; index < puffCount; index += 1) {
-      const angle = random() * Math.PI * 2
-      const distance = Math.abs(random() + random() - 1) * spread * 2.2
-      const x = centerX + Math.cos(angle) * distance
-      const y = centerY + Math.sin(angle) * distance * 0.55
-      const radiusX = width * (0.008 + random() * 0.03)
-      wrappedPuff(
-        x,
-        y,
-        radiusX,
-        radiusX * (0.5 + random() * 0.6),
-        random() * Math.PI,
-        palette[Math.floor(random() * palette.length)],
-        0.07 + random() * 0.13
-      )
-    }
-  }
-
-  // 3) wispy filament chains (small puffs following a wandering path)
-  for (let tendril = 0; tendril < 22; tendril += 1) {
-    const palette = palettes[Math.floor(random() * palettes.length)]
-    const color = palette[Math.floor(random() * palette.length)]
-    let x = random() * width
-    let y = height * (0.2 + random() * 0.6)
-    const direction = random() * Math.PI * 2
-    const steps = 12 + Math.floor(random() * 12)
-    for (let step = 0; step < steps; step += 1) {
-      const t = step / steps
-      x += Math.cos(direction + Math.sin(t * 4) * 0.8) * width * 0.006
-      y += Math.sin(direction + Math.cos(t * 3) * 0.8) * height * 0.014
-      const radius = width * (0.0025 + random() * 0.006) * (1 - t * 0.5)
-      wrappedPuff(
-        x,
-        y,
-        radius,
-        radius * (0.5 + random() * 0.7),
-        direction + random(),
-        color,
-        (0.06 + random() * 0.09) * (1 - t)
-      )
-    }
-  }
-
-  // 4) bright star-forming knots
-  for (let index = 0; index < 10; index += 1) {
-    const x = random() * width
-    const y = height * (0.2 + random() * 0.6)
-    const radius = width * (0.004 + random() * 0.01)
-    wrappedPuff(
-      x,
-      y,
-      radius,
-      radius * (0.7 + random() * 0.6),
-      random() * Math.PI,
-      random() > 0.5 ? '#f9a8d4' : '#a5f3fc',
-      0.18 + random() * 0.16
-    )
-  }
-
-  // 5) dark dust lanes carved back into the glow
-  context.globalCompositeOperation = 'source-over'
-  for (let index = 0; index < 52; index += 1) {
-    const x = random() * width
-    const y = height * (0.12 + random() * 0.76)
-    const radius = height * (0.03 + random() * 0.12)
-    const gradient = context.createRadialGradient(x, y, 0, x, y, radius)
-    gradient.addColorStop(0, 'rgba(2, 3, 8, 0.34)')
-    gradient.addColorStop(1, 'rgba(2, 3, 8, 0)')
-    context.fillStyle = gradient
-    context.beginPath()
-    context.arc(x, y, radius, 0, Math.PI * 2)
-    context.fill()
-  }
-
-  // 6) darken the poles so the equirectangular stretching is hidden
-  const poleHeight = height * 0.2
-  const topFade = context.createLinearGradient(0, 0, 0, poleHeight)
-  topFade.addColorStop(0, 'rgba(2, 3, 8, 0.95)')
-  topFade.addColorStop(1, 'rgba(2, 3, 8, 0)')
-  context.fillStyle = topFade
-  context.fillRect(0, 0, width, poleHeight)
-  const bottomFade = context.createLinearGradient(0, height - poleHeight, 0, height)
-  bottomFade.addColorStop(0, 'rgba(2, 3, 8, 0)')
-  bottomFade.addColorStop(1, 'rgba(2, 3, 8, 0.95)')
-  context.fillStyle = bottomFade
-  context.fillRect(0, height - poleHeight, width, poleHeight)
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.mapping = THREE.EquirectangularReflectionMapping
-  texture.needsUpdate = true
-  return texture
-}
-
-const STAR_COLORS = ['#ffffff', '#e0e7ff', '#bfdbfe', '#fde68a', '#fca5a5', '#c4b5fd']
-const DUST_COLORS = ['#3b82f6', '#22d3ee', '#a855f7', '#f472b6', '#93c5fd']
-
-interface PointsLayer {
-  points: THREE.Points
-  geometry: THREE.BufferGeometry
-  material: THREE.PointsMaterial
-}
-
-function createPointsLayer(
-  count: number,
-  size: number,
-  opacity: number,
-  texture: THREE.Texture,
-  sample: (random: () => number) => { position: [number, number, number]; color: string }
-): PointsLayer {
-  const random = createRandom(0x1b873593 + count)
-  const positions = new Float32Array(count * 3)
-  const colors = new Float32Array(count * 3)
-  const color = new THREE.Color()
-  for (let index = 0; index < count; index += 1) {
-    const entry = sample(random)
-    positions[index * 3] = entry.position[0]
-    positions[index * 3 + 1] = entry.position[1]
-    positions[index * 3 + 2] = entry.position[2]
-    color.set(entry.color)
-    colors[index * 3] = color.r
-    colors[index * 3 + 1] = color.g
-    colors[index * 3 + 2] = color.b
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  const material = new THREE.PointsMaterial({
-    map: texture,
-    vertexColors: true,
-    size,
-    sizeAttenuation: false,
+/** Lazily add the outer ring (selection halo / snapshot orbit). */
+function ensureNodeRing(visual: NodeVisual): void {
+  if (visual.ring !== null) return
+  const material = new THREE.LineBasicMaterial({
+    color: new THREE.Color(HUD.cyan),
     transparent: true,
-    opacity,
+    opacity: 0,
     depthWrite: false,
     blending: THREE.AdditiveBlending
   })
-  const points = new THREE.Points(geometry, material)
-  points.frustumCulled = false
-  return { points, geometry, material }
+  const ring = new THREE.LineLoop(haloRingGeometry(), material)
+  ring.scale.setScalar(visual.radius * (visual.nodeType === 'snapshot' ? 1.35 : 1.55))
+  // Tilt the circle so it reads as an orbit around the node, not a flat outline.
+  ring.rotation.x = 1.15
+  ring.renderOrder = 6
+  ring.visible = false
+  visual.group.add(ring)
+  visual.ring = ring
+  visual.ringMaterial = material
 }
 
-function createSceneDecor(): SceneDecor {
-  // ---- nebula backdrop: equirectangular skybox (visible on every side) ------
-  const skyboxTexture = createNebulaSkyboxTexture()
+/* ---------------------------------------------------------------- link art -- */
 
-  // ---- natural star field: mostly white/blue, a few warm, then bright stars --
-  const starTexture = createGlowTexture('#ffffff')
-  const starLayer = createPointsLayer(
-    STARFIELD_FAR_COUNT,
-    STARFIELD_FAR_SIZE,
-    STARFIELD_FAR_OPACITY,
-    starTexture,
-    (random) => {
-      const radius =
-        STARFIELD_FAR_MIN_RADIUS +
-        random() * (STARFIELD_FAR_MAX_RADIUS - STARFIELD_FAR_MIN_RADIUS)
-      const theta = random() * Math.PI * 2
-      const phi = Math.acos(2 * random() - 1)
-      return {
-        position: [
-          radius * Math.sin(phi) * Math.cos(theta),
-          radius * Math.sin(phi) * Math.sin(theta),
-          radius * Math.cos(phi)
-        ],
-        color: STAR_COLORS[Math.floor(random() * STAR_COLORS.length)]
-      }
-    }
-  )
-  starLayer.points.renderOrder = -2
+/**
+ * All links in one additive `LineSegments` draw call.
+ *
+ * The old implementation created a `THREE.Line` + material per edge (hundreds of
+ * draw calls); the HUD only needs hairlines, so positions live in one buffer and
+ * per-edge brightness is encoded in the vertex-colour buffer (pre-blended on the
+ * canvas colour, see `blendOnCanvas`). Hover/selection tinting rewrites colours
+ * once per state change, never per frame.
+ */
+interface LinkBatch {
+  object: THREE.LineSegments
+  geometry: THREE.BufferGeometry
+  material: THREE.LineBasicMaterial
+  positionAttribute: THREE.BufferAttribute
+  colorAttribute: THREE.BufferAttribute
+  positions: Float32Array
+  colors: Float32Array
+  baseColors: THREE.Color[]
+  highlightColors: THREE.Color[]
+  dimColors: THREE.Color[]
+}
 
-  const brightTexture = createGlowTexture('#fef3c7')
-  const brightLayer = createPointsLayer(
-    STARFIELD_BRIGHT_COUNT,
-    STARFIELD_BRIGHT_SIZE,
-    STARFIELD_BRIGHT_OPACITY,
-    brightTexture,
-    (random) => {
-      const radius = 900 + random() * 1_200
-      const theta = random() * Math.PI * 2
-      const phi = Math.acos(2 * random() - 1)
-      return {
-        position: [
-          radius * Math.sin(phi) * Math.cos(theta),
-          radius * Math.sin(phi) * Math.sin(theta),
-          radius * Math.cos(phi)
-        ],
-        color: random() > 0.5 ? '#ffffff' : '#fde68a'
-      }
-    }
-  )
-  brightLayer.points.renderOrder = -1
+/** Pre-blend one HUD link colour at the given alpha (+ deterministic variation). */
+function linkTint(link: GraphLink, alpha: number, variation: number): THREE.Color {
+  return new THREE.Color(blendOnCanvas(LINK_COLORS[link.relation], Math.min(1, alpha * variation)))
+}
 
-  // ---- dust motes: mostly along a few filament-like clusters ----------------
-  const dustTexture = createGlowTexture('#ffffff')
-  const clusterCenters: Array<[number, number, number]> = []
-  const clusterRandom = createRandom(0x9e3779b9 * 3)
-  for (let index = 0; index < STARFIELD_DUST_CLUSTERS; index += 1) {
-    const radius = 240 + clusterRandom() * 520
-    const theta = clusterRandom() * Math.PI * 2
-    const phi = Math.acos(2 * clusterRandom() - 1)
-    clusterCenters.push([
-      radius * Math.sin(phi) * Math.cos(theta),
-      radius * Math.sin(phi) * Math.sin(theta) * 0.8,
-      radius * Math.cos(phi)
-    ])
+function buildLinkBatch(links: readonly GraphLink[]): LinkBatch {
+  const count = links.length
+  const positions = new Float32Array(count * 6)
+  const colors = new Float32Array(count * 6)
+  const baseColors: THREE.Color[] = []
+  const highlightColors: THREE.Color[] = []
+  const dimColors: THREE.Color[] = []
+
+  for (let index = 0; index < count; index += 1) {
+    const link = links[index]
+    const derived = link.derived === true
+    // Slight per-link brightness variation keeps the web organic instead of a
+    // uniform wireframe; deterministic so the look is stable across reloads.
+    const variation = 0.82 + hashUnit(`${linkKey(link)}|brightness`) * 0.36
+    const base = linkTint(link, linkOpacity(link.relation, derived), variation)
+    baseColors.push(base)
+    highlightColors.push(linkTint(link, LINK_HIGHLIGHT_OPACITY, variation))
+    dimColors.push(linkTint(link, LINK_DIM_OPACITY, variation))
+    const offset = index * 6
+    colors[offset] = base.r
+    colors[offset + 1] = base.g
+    colors[offset + 2] = base.b
+    colors[offset + 3] = base.r
+    colors[offset + 4] = base.g
+    colors[offset + 5] = base.b
   }
-  const dustLayer = createPointsLayer(
-    STARFIELD_DUST_COUNT,
-    STARFIELD_DUST_SIZE,
-    STARFIELD_DUST_OPACITY,
-    dustTexture,
-    (random) => {
-      const cluster = random() < 0.72
-      if (cluster) {
-        const center = clusterCenters[Math.floor(random() * clusterCenters.length)]
-        const spread = 90 + random() * 240
-        return {
-          position: [
-            center[0] + (random() - 0.5) * spread * 2,
-            center[1] + (random() - 0.5) * spread * 1.4,
-            center[2] + (random() - 0.5) * spread * 2
-          ],
-          color: DUST_COLORS[Math.floor(random() * DUST_COLORS.length)]
-        }
-      }
-      const radius = 380 + random() * 900
-      const theta = random() * Math.PI * 2
-      const phi = Math.acos(2 * random() - 1)
-      return {
-        position: [
-          radius * Math.sin(phi) * Math.cos(theta),
-          radius * Math.sin(phi) * Math.sin(theta),
-          radius * Math.cos(phi)
-        ],
-        color: DUST_COLORS[Math.floor(random() * DUST_COLORS.length)]
-      }
-    }
-  )
-  dustLayer.points.renderOrder = -1
 
-  const driftObjects: THREE.Object3D[] = [
-    starLayer.points,
-    brightLayer.points,
-    dustLayer.points
-  ]
-  let attachedScene: THREE.Scene | null = null
+  const geometry = new THREE.BufferGeometry()
+  const positionAttribute = new THREE.BufferAttribute(positions, 3)
+  const colorAttribute = new THREE.BufferAttribute(colors, 3)
+  geometry.setAttribute('position', positionAttribute)
+  geometry.setAttribute('color', colorAttribute)
+
+  const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 1,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  })
+  const object = new THREE.LineSegments(geometry, material)
+  object.frustumCulled = false
+  object.renderOrder = 2
 
   return {
-    attach(scene: THREE.Scene): void {
-      attachedScene = scene
-      scene.background = skyboxTexture
-      for (const object of driftObjects) scene.add(object)
-    },
-    rotate(deltaSeconds: number): void {
-      const step = STARFIELD_ROTATE_SPEED * deltaSeconds
-      for (const object of driftObjects) object.rotation.y += step
-    },
-    dispose(): void {
-      for (const object of driftObjects) object.removeFromParent()
-      if (attachedScene !== null && attachedScene.background === skyboxTexture) {
-        attachedScene.background = null
-      }
-      attachedScene = null
-      skyboxTexture.dispose()
-      starTexture.dispose()
-      starLayer.geometry.dispose()
-      starLayer.material.dispose()
-      brightTexture.dispose()
-      brightLayer.geometry.dispose()
-      brightLayer.material.dispose()
-      dustTexture.dispose()
-      dustLayer.geometry.dispose()
-      dustLayer.material.dispose()
-    }
+    object,
+    geometry,
+    material,
+    positionAttribute,
+    colorAttribute,
+    positions,
+    colors,
+    baseColors,
+    highlightColors,
+    dimColors
   }
 }
 
 /* ------------------------------------------------------------------ component -- */
 
 export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(function NebulaGraph(
-  { nodes, links, selectedId, highlightIds, focusIds, performanceMode, autoRotate, onSelect, className },
+  {
+    nodes,
+    links,
+    selectedId,
+    highlightIds,
+    focusIds,
+    performanceMode,
+    autoRotate,
+    onSelect,
+    onLabelStats,
+    className
+  },
   ref
 ) {
   const { t } = useI18n()
+  const reducedMotion = usePrefersReducedMotion()
+
   const containerRef = useRef<HTMLDivElement | null>(null)
   const graphRef = useRef<GraphController | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [webglSupported] = useState(detectWebGl)
   const [contextLost, setContextLost] = useState(false)
   const [hoverFocusId, setHoverFocusId] = useState<string | null>(null)
-  const [lodLevel, setLodLevel] = useState(0)
 
+  /* ---------------------------------------------------------- live refs -- */
+  const sceneRef = useRef<THREE.Scene | null>(null)
+  const labelLayerRef = useRef<NebulaLabelLayer | null>(null)
   const visualsRef = useRef<Map<string, NodeVisual>>(new Map())
-  const glowCacheRef = useRef<Map<string, THREE.Texture>>(new Map())
   const nodeByIdRef = useRef<Map<string, GraphNode>>(new Map())
+  const radiusByIdRef = useRef<Map<string, number>>(new Map())
+  const linksRef = useRef<GraphLink[]>([])
+  const graphDataRef = useRef<{ nodes: GraphNode[]; links: GraphLink[] }>({ nodes: [], links: [] })
+  const linkBatchRef = useRef<LinkBatch | null>(null)
+  const gridRef = useRef<GridFloor | null>(null)
+  const starfieldRef = useRef<Starfield | null>(null)
+  const flowRef = useRef<FlowParticles | null>(null)
+
   const hoveredIdRef = useRef<string | null>(null)
   const selectedIdRef = useRef<string | null>(selectedId)
-  const highlightRef = useRef<string[] | null>(highlightIds)
-  const focusRef = useRef<string[] | null>(focusIds)
-  /** Derived Sets for the per-node visual pass; rebuilt when props change. */
-  const highlightSetRef = useRef<Set<string> | null>(null)
-  const focusSetRef = useRef<Set<string> | null>(null)
+  const highlightSetRef = useRef<ReadonlySet<string> | null>(null)
+  const focusSetRef = useRef<ReadonlySet<string> | null>(null)
   const performanceModeRef = useRef(performanceMode)
   const autoRotateRef = useRef(autoRotate)
-  /** Hovered node + its direct neighbours ("focus + context"); null = none. */
+  const reducedMotionRef = useRef(reducedMotion)
   const hoverFocusIdRef = useRef<string | null>(null)
   const neighborMapRef = useRef<Map<string, Set<string>>>(new Map())
   /** 0 = normal, 1 = far (leaf labels hidden), 2 = very far (leaves dimmed). */
-  const lodRef = useRef(0)
+  const lodRef = useRef<0 | 1 | 2>(0)
+  const sizeRef = useRef({ width: 0, height: 0 })
   const onSelectRef = useRef(onSelect)
-  const autoFitTimerRef = useRef<number | undefined>(undefined)
-  /** Decorative space background (stars + dust); not graph data. */
-  const sceneDecorRef = useRef<SceneDecor | null>(null)
+  const onLabelStatsRef = useRef<NebulaGraphProps['onLabelStats']>(onLabelStats)
+  /** Forwarders so the label layer survives callback identity changes. */
+  const labelSelectRef = useRef<(nodeId: string) => void>(() => undefined)
+  const labelHoverRef = useRef<(nodeId: string | null) => void>(() => undefined)
+  const applyVisualStateRef = useRef<() => void>(() => undefined)
   /** Fit exactly once per data change, after the layout has actually settled. */
   const fittedRef = useRef(false)
   /** Any pan/zoom/focus/click opts the user out of the automatic re-frame. */
   const interactedRef = useRef(false)
+  const autoFitTimerRef = useRef<number | undefined>(undefined)
   /** Bumped on mount so StrictMode's throwaway cleanup cannot free live caches. */
   const mountGenerationRef = useRef(0)
+  const lastVisibleLabelsRef = useRef(-1)
 
   selectedIdRef.current = selectedId
-  highlightRef.current = highlightIds
-  focusRef.current = focusIds
-  highlightSetRef.current = highlightIds === null ? null : new Set(highlightIds)
-  focusSetRef.current = focusIds === null ? null : new Set(focusIds)
   performanceModeRef.current = performanceMode
   autoRotateRef.current = autoRotate
+  reducedMotionRef.current = reducedMotion
+  hoverFocusIdRef.current = hoverFocusId
+  sizeRef.current = size
   onSelectRef.current = onSelect
+  onLabelStatsRef.current = onLabelStats
 
-  // Cloned payload: the force engine rewrites link source/target into node refs,
-  // and the page's own link objects must stay strings.
+  /**
+   * Cloned payload: the force engine rewrites link source/target into node refs,
+   * and the page's own graph objects must stay strings. Cloned *nodes* stay the
+   * live objects the sim mutates, which is exactly what the DOM labels project.
+   */
   const graphData = useMemo(
     () => ({
       nodes: nodes.map((node) => ({ ...node })) as GraphNode[],
@@ -884,121 +596,114 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     [nodes, links]
   )
 
-  useEffect(() => {
-    nodeByIdRef.current = new Map(graphData.nodes.map((node) => [node.id, node] as const))
-  }, [graphData])
+  const nodeById = useMemo(
+    () => new Map(graphData.nodes.map((node) => [node.id, node] as const)),
+    [graphData]
+  )
+  const radiusById = useMemo(
+    () => new Map(graphData.nodes.map((node) => [node.id, nodeRadius(node)] as const)),
+    [graphData]
+  )
+  const neighborMap = useMemo(() => buildNeighborMap(graphData.links), [graphData])
 
-  /** Direct-neighbour adjacency used by the hover "focus + context" pass. */
-  useEffect(() => {
-    const map = new Map<string, Set<string>>()
-    for (const link of graphData.links) {
-      const source = linkEndpointId(link.source)
-      const target = linkEndpointId(link.target)
-      if (source === target) continue
-      if (!map.has(source)) map.set(source, new Set())
-      if (!map.has(target)) map.set(target, new Set())
-      map.get(source)?.add(target)
-      map.get(target)?.add(source)
-    }
-    neighborMapRef.current = map
-  }, [graphData])
+  const highlightSet = useMemo(
+    () => (highlightIds === null ? null : new Set(highlightIds)),
+    [highlightIds]
+  )
+  const focusSet = useMemo(() => (focusIds === null ? null : new Set(focusIds)), [focusIds])
+  /** Hovered node + direct neighbours; `null` when nothing is hovered. */
+  const hoverIds = useMemo(() => {
+    if (hoverFocusId === null) return null
+    const ids = new Set<string>([hoverFocusId])
+    const neighbours = neighborMap.get(hoverFocusId)
+    if (neighbours !== undefined) for (const id of neighbours) ids.add(id)
+    return ids
+  }, [hoverFocusId, neighborMap])
 
-  // The canvas sits inside a flex shell, so it must track its own box instead of
-  // the window (the library defaults to full-window sizing).
-  useEffect(() => {
-    const element = containerRef.current
-    if (!element) return
-    const apply = (rect: DOMRectReadOnly): void => {
-      const width = Math.max(0, Math.round(rect.width))
-      const height = Math.max(0, Math.round(rect.height))
-      setSize((current) => (current.width === width && current.height === height ? current : { width, height }))
-    }
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (entry) apply(entry.contentRect)
-    })
-    observer.observe(element)
-    apply(element.getBoundingClientRect())
-    return () => observer.disconnect()
-  }, [])
+  nodeByIdRef.current = nodeById
+  radiusByIdRef.current = radiusById
+  neighborMapRef.current = neighborMap
+  linksRef.current = graphData.links
+  graphDataRef.current = graphData
+  highlightSetRef.current = highlightSet
+  focusSetRef.current = focusSet
 
-  /* ------------------------------------------------------- visual state sync -- */
+  /* ------------------------------------------------------- visual state -- */
 
   /**
-   * Apply search/focus/selection/performance state to one node visual.
+   * Apply search/focus/selection/hover/performance state to one node visual.
    *
    * Called for the whole map whenever a prop changes AND immediately for each
    * node object the force engine creates: on data updates the engine builds its
    * objects after the first React paint, so a map-only pass would leave the
-   * freshly created labels/halos in their default (visible) state.
+   * freshly created objects in their default (bright) state.
    */
   const applyStateToVisual = useCallback((nodeId: string, visual: NodeVisual) => {
-    const highlightSet = highlightSetRef.current
-    const focusSet = focusSetRef.current
-    const performance = performanceModeRef.current
-    const lod = lodRef.current
-    const hoverFocus = hoverFocusIdRef.current
-    const labelRatio = LABEL_TEXTURE_HEIGHT / LABEL_TEXTURE_WIDTH
-    const leaf = visual.nodeType === 'vuln' || visual.nodeType === 'leak'
-
     const selected = nodeId === selectedIdRef.current
     const hovered = nodeId === hoveredIdRef.current
+    const hoverFocus = hoverFocusIdRef.current
+    const performance = performanceModeRef.current
+    const lod = lodRef.current
+    const highlightSet = highlightSetRef.current
+    const focusSet = focusSetRef.current
+
     const matched = highlightSet === null || highlightSet.has(nodeId)
     const inFocus = focusSet === null || focusSet.has(nodeId) || selected
     const emphasized = selected || hovered
-    const visible = matched && inFocus
-
+    const leaf = visual.nodeType === 'vuln' || visual.nodeType === 'leak'
     // Hover: keep the hovered node and its direct neighbours bright, fade the
     // rest hard so the local structure reads immediately.
     const hoverLinked =
       hoverFocus === null ||
       nodeId === hoverFocus ||
       neighborMapRef.current.get(hoverFocus)?.has(nodeId) === true
-    const hoverDimmed = hoverFocus !== null && !hoverLinked && !hovered
 
-    let coreOpacity = visible ? 1 : focusSet !== null ? FOCUS_DIM_OPACITY : DIM_OPACITY
+    // One 0..1 "how alive is this node" level drives every material below.
+    let level = 1
+    if (!matched) level = DIM_OPACITY
+    if (!inFocus) level = Math.min(level, FOCUS_DIM_OPACITY)
     if (hoverFocus !== null) {
-      coreOpacity = hoverDimmed ? HOVER_CONTEXT_DIM_OPACITY : Math.max(coreOpacity, 0.95)
+      level = hoverLinked || hovered ? Math.max(level, EMPHASIS_OPACITY) : Math.min(level, HOVER_CONTEXT_DIM_OPACITY)
     }
-    // LOD level 2: far away, leaves are only faint dust around the large hubs.
-    if (lod >= 2 && leaf) coreOpacity = Math.min(coreOpacity, 0.22)
-    visual.coreMaterial.opacity = coreOpacity
+    // LOD level 2: far away, evidence fades to faint dust around the hubs.
+    if (lod >= 2 && leaf) level = Math.min(level, 0.22)
+    if (emphasized) level = 1
 
-    // Performance mode keeps a halo only for the selected node.
-    let haloOpacity = performance
-      ? selected
-        ? PERFORMANCE_SELECTED_HALO_OPACITY
-        : 0
-      : selected
-        ? 0.9
-        : hovered
-          ? 0.45
-          : 0
-    if (!performance && hoverFocus !== null && hoverLinked && !hovered && !selected) {
-      haloOpacity = Math.max(haloOpacity, 0.16)
+    // Holographic wireframe shell: brighter when selected/hovered.
+    visual.shellMaterial.opacity = (emphasized ? 0.95 : 0.55) * level
+    visual.shellMaterial.color.copy(visual.baseColor)
+    if (emphasized) visual.shellMaterial.color.lerp(EMPHASIS_COLOR, 0.4)
+
+    // White-hot core follows the same dimming curve.
+    visual.coreMaterial.opacity = level < 0.05 ? 0 : level
+
+    // Additive halo: performance mode only keeps the selected node's glow.
+    let glowOpacity: number
+    if (performance) glowOpacity = selected ? PERFORMANCE_SELECTED_HALO_OPACITY : 0
+    else if (emphasized) glowOpacity = 0.85
+    else if (hoverFocus !== null) glowOpacity = hoverLinked ? 0.3 : 0
+    else glowOpacity = 0.5
+    if (lod >= 2 && leaf) glowOpacity = Math.min(glowOpacity, 0.2)
+    glowOpacity *= level
+    visual.glowMaterial.opacity = glowOpacity
+    visual.glow.visible = glowOpacity > 0.01
+
+    // Selection / snapshot ring (lazy: only nodes that need one allocate it).
+    const snapshot = visual.nodeType === 'snapshot'
+    if (selected || hovered || snapshot) ensureNodeRing(visual)
+    if (visual.ring !== null && visual.ringMaterial !== null) {
+      let ringOpacity = 0
+      if (selected) ringOpacity = 0.95
+      else if (hovered) ringOpacity = 0.7
+      else if (snapshot && matched && inFocus) ringOpacity = 0.4 * level
+      visual.ringMaterial.opacity = ringOpacity
+      visual.ringMaterial.color.copy(selected || hovered ? EMPHASIS_COLOR : visual.baseColor)
+      visual.ring.visible = ringOpacity > 0.01
     }
-    visual.haloMaterial.opacity = haloOpacity
-    visual.halo.visible = haloOpacity > 0
 
-    // LOD level 1 hides leaf labels; hovering a node hides unrelated labels.
-    const hideLabel = (lod >= 1 && leaf) || hoverDimmed
-
-    if (performance) {
-      // Large graphs: labels only while hovered/selected, never at rest.
-      visual.label.visible = emphasized && visible && !hideLabel
-      visual.labelMaterial.opacity = emphasized && visible && !hideLabel ? LABEL_EMPHASIS_OPACITY : 0
-      visual.label.scale.set(LABEL_SPRITE_SCALE, LABEL_SPRITE_SCALE * labelRatio, 1)
-      visual.label.position.y = visual.radius + LABEL_SPRITE_SCALE * 0.12
-      return
-    }
-
-    visual.label.visible = visible && !hideLabel
-    const labelOpacity = emphasized ? LABEL_EMPHASIS_OPACITY : LABEL_IDLE_OPACITY
-    visual.labelMaterial.opacity =
-      visible && !hideLabel ? labelOpacity : hideLabel ? 0 : LABEL_IDLE_OPACITY * LABEL_DIM_FACTOR
-    const scale = emphasized ? LABEL_SPRITE_SCALE : LABEL_IDLE_SCALE
-    visual.label.scale.set(scale, scale * labelRatio, 1)
-    visual.label.position.y = visual.radius + scale * 0.12
+    // Hover growth is the only scale change here; breathing multiplies it in
+    // the animation loop (so prop changes never fight the frame loop).
+    visual.baseScale = hovered ? NODE_HOVER_SCALE : selected ? 1.04 : 1
   }, [])
 
   const applyVisualState = useCallback(() => {
@@ -1007,387 +712,386 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     }
   }, [applyStateToVisual])
 
-  useEffect(() => {
-    applyVisualState()
-  }, [applyVisualState, nodes, selectedId, highlightIds, focusIds, performanceMode, hoverFocusId, lodLevel])
+  applyVisualStateRef.current = applyVisualState
 
-  /**
-   * Hover "focus + context" for edges: links touching the hovered node are
-   * boosted (additive brightness reads as a thicker fibre), everything else
-   * drops to a near-invisible thread. Restores the base tint on leave.
-   */
-  const applyLinkHoverState = useCallback(() => {
-    const scene = graphRef.current?.scene()
-    if (!scene) return
-    const hoverId = hoverFocusIdRef.current
-    const connected = new Set<string>()
-    if (hoverId !== null) {
-      for (const link of links) {
-        if (linkEndpointId(link.source) === hoverId || linkEndpointId(link.target) === hoverId) {
-          connected.add(`${linkKey(link)}|${link.relation}`)
-        }
-      }
-    }
-    scene.traverse((object: THREE.Object3D) => {
-      if (!(object instanceof THREE.Line)) return
-      const data = object.userData as {
-        key?: string
-        baseColor?: THREE.Color
-        fadeProfile?: Float32Array
-      }
-      const base = data.baseColor
-      const profile = data.fadeProfile
-      if (!base || !profile || data.key === undefined) return
-      const factor = hoverId === null ? 1 : connected.has(data.key) ? 2.8 : 0.08
-      const geometry = object.geometry as THREE.BufferGeometry
-      const colorAttribute = geometry.getAttribute('color') as THREE.BufferAttribute
-      const array = colorAttribute.array as Float32Array
-      for (let index = 0; index < profile.length; index += 1) {
-        const value = profile[index] * factor
-        array[index * 3] = base.r * value
-        array[index * 3 + 1] = base.g * value
-        array[index * 3 + 2] = base.b * value
-      }
-      colorAttribute.needsUpdate = true
-    })
-  }, [links])
+  /* ------------------------------------------------------------ hovering -- */
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => applyLinkHoverState())
-    const timer = window.setTimeout(applyLinkHoverState, 360)
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.clearTimeout(timer)
-    }
-  }, [applyLinkHoverState, hoverFocusId, nodes, links, graphData])
-
-  /** Camera-distance LOD: hide leaf labels first, then dim leaves entirely. */
-  useEffect(() => {
-    let frame = 0
-    let last = 0
-    const tick = (time: number): void => {
-      if (time - last >= 240) {
-        last = time
-        const controller = graphRef.current
-        if (controller) {
-          const camera = controller.cameraPosition()
-          const target = controller.controls().target ?? { x: 0, y: 0, z: 0 }
-          const distance = Math.hypot(
-            camera.x - target.x,
-            camera.y - target.y,
-            camera.z - target.z
-          )
-          const next =
-            distance > DEFAULT_CAMERA_DISTANCE * 2.8
-              ? 2
-              : distance > DEFAULT_CAMERA_DISTANCE * 1.8
-                ? 1
-                : 0
-          if (next !== lodRef.current) {
-            lodRef.current = next
-            setLodLevel(next)
-          }
-        }
-      }
-      frame = window.requestAnimationFrame(tick)
-    }
-    frame = window.requestAnimationFrame(tick)
-    return () => window.cancelAnimationFrame(frame)
-  }, [webglSupported])
-
-  /* --------------------------------------------------------------- node art -- */
-
-  const buildNodeObject = useCallback((node: GraphNode): THREE.Object3D => {
-    const color = nodeColor(node)
-    const radius = nodeRadius(node)
-    let glowTexture = glowCacheRef.current.get(color)
-    if (!glowTexture) {
-      glowTexture = createGlowTexture(color)
-      glowCacheRef.current.set(color, glowTexture)
-    }
-
-    // Scope switches and data refreshes recreate objects for the same id: free
-    // the previous visual before replacing it so nothing leaks.
-    const previous = visualsRef.current.get(node.id)
-    if (previous) disposeVisual(previous)
-
-    const group = new THREE.Group()
-
-    const coreMaterial = new THREE.SpriteMaterial({
-      map: glowTexture,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    })
-    const core = new THREE.Sprite(coreMaterial)
-    core.scale.setScalar(radius * 2)
-    group.add(core)
-
-    const haloMaterial = new THREE.SpriteMaterial({
-      map: glowTexture,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      opacity: 0
-    })
-    const halo = new THREE.Sprite(haloMaterial)
-    halo.scale.setScalar(radius * 2 * HALO_SCALE[node.type])
-    halo.visible = false
-    group.add(halo)
-
-    const labelTexture = createLabelTexture(node.name)
-    const labelMaterial = new THREE.SpriteMaterial({
-      map: labelTexture,
-      transparent: true,
-      depthWrite: false,
-      depthTest: false,
-      opacity: LABEL_IDLE_OPACITY
-    })
-    const label = new THREE.Sprite(labelMaterial)
-    const idleWidth = LABEL_IDLE_SCALE
-    label.scale.set(idleWidth, idleWidth * (LABEL_TEXTURE_HEIGHT / LABEL_TEXTURE_WIDTH), 1)
-    label.position.set(0, radius + idleWidth * 0.12, 0)
-    label.renderOrder = 20
-    group.add(label)
-
-    const visual: NodeVisual = {
-      core,
-      halo,
-      label,
-      coreMaterial,
-      haloMaterial,
-      labelMaterial,
-      labelTexture,
-      radius,
-      nodeType: node.type
-    }
-    visualsRef.current.set(node.id, visual)
-    // The engine creates objects after the first paint; apply the current
-    // selection/search/focus state immediately so nothing flashes at rest.
-    applyStateToVisual(node.id, visual)
-
-    return group
-  }, [applyStateToVisual])
-
-  /* --------------------------------------------------------- interaction -- */
-
-  const handleNodeHover = useCallback(
+  const setHoveredNode = useCallback(
     (node: GraphNode | null) => {
-      const nextId = node ? node.id : null
+      const nextId = node?.id ?? null
       if (hoveredIdRef.current === nextId) return
       hoveredIdRef.current = nextId
       hoverFocusIdRef.current = nextId
       setHoverFocusId(nextId)
       applyVisualState()
       const element = containerRef.current
-      if (element) element.style.cursor = nextId ? 'pointer' : 'grab'
+      if (element !== null) element.style.cursor = nextId !== null ? 'pointer' : 'grab'
     },
     [applyVisualState]
   )
+
+  const handleNodeHover = useCallback(
+    (node: GraphNode | null, _previousNode: GraphNode | null) => {
+      setHoveredNode(node)
+    },
+    [setHoveredNode]
+  )
+
+  /** DOM label hover shares the exact same focus + context state. */
+  const handleLabelHover = useCallback(
+    (nodeId: string | null) => {
+      setHoveredNode(nodeId === null ? null : nodeByIdRef.current.get(nodeId) ?? null)
+    },
+    [setHoveredNode]
+  )
+
+  /* -------------------------------------------------------------- camera -- */
 
   /**
    * Re-target the orbit center without changing the zoom level: the camera keeps
    * its distance but looks at `center`, so auto-rotation afterwards orbits the
    * clicked node instead of the graph origin (P3 feedback).
    */
-  const centerView = useCallback(
-    (center: { x: number; y: number; z: number }, durationMs = 600): void => {
-      const controller = graphRef.current
-      if (!controller) return
-      const camera = controller.cameraPosition()
-      const target = controller.controls().target ?? { x: 0, y: 0, z: 0 }
-      const distance = new THREE.Vector3(
-        camera.x - target.x,
-        camera.y - target.y,
-        camera.z - target.z
-      ).length()
-      const offset = new THREE.Vector3(
-        camera.x - center.x,
-        camera.y - center.y,
-        camera.z - center.z
-      )
-      if (offset.lengthSq() < 1e-4) offset.set(0, 0, 1)
-      offset.normalize().multiplyScalar(Math.max(70, distance))
-      controller.cameraPosition(
-        { x: center.x + offset.x, y: center.y + offset.y, z: center.z + offset.z },
-        center,
-        durationMs
-      )
+  const centerView = useCallback((center: Coords, durationMs = 600): void => {
+    const controller = graphRef.current
+    if (controller === null) return
+    const camera = controller.cameraPosition()
+    const target = controller.controls().target ?? ORIGIN
+    const distance = new THREE.Vector3(
+      camera.x - target.x,
+      camera.y - target.y,
+      camera.z - target.z
+    ).length()
+    const offset = new THREE.Vector3(camera.x - center.x, camera.y - center.y, camera.z - center.z)
+    if (offset.lengthSq() < 1e-4) offset.set(0, 0, 1)
+    offset.normalize().multiplyScalar(Math.max(70, distance))
+    controller.cameraPosition(
+      { x: center.x + offset.x, y: center.y + offset.y, z: center.z + offset.z },
+      center,
+      durationMs
+    )
+  }, [])
+
+  /** Node click / label click: select + re-target the orbit center. */
+  const selectAndCenter = useCallback(
+    (nodeId: string) => {
+      const node = nodeByIdRef.current.get(nodeId)
+      if (node === undefined) return
+      interactedRef.current = true
+      onSelectRef.current(nodeId)
+      centerView({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 })
     },
-    []
+    [centerView]
   )
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
-      interactedRef.current = true
-      onSelectRef.current(node.id)
-      // Any node click becomes the new orbit center (keeps current zoom).
-      centerView({ x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 })
+      selectAndCenter(node.id)
     },
-    [centerView]
+    [selectAndCenter]
   )
 
   const handleBackgroundClick = useCallback(() => {
     interactedRef.current = true
     onSelectRef.current(null)
     // Empty canvas restores the constellation's own center as the orbit target.
-    const nodes = [...nodeByIdRef.current.values()]
-    if (nodes.length === 0) return
     const box = new THREE.Box3()
     const point = new THREE.Vector3()
-    for (const node of nodes) {
-      box.expandByPoint(point.set(node.x ?? 0, node.y ?? 0, node.z ?? 0))
+    let hasNode = false
+    for (const node of nodeByIdRef.current.values()) {
+      if (typeof node.x !== 'number' || typeof node.y !== 'number' || typeof node.z !== 'number') {
+        continue
+      }
+      box.expandByPoint(point.set(node.x, node.y, node.z))
+      hasNode = true
     }
+    if (!hasNode) return
     const center = box.getCenter(new THREE.Vector3())
     centerView({ x: center.x, y: center.y, z: center.z })
   }, [centerView])
 
-  const nodeValue = useCallback((node: GraphNode): number => node.val, [])
-  const emptyNodeLabel = useCallback((): string => '', [])
+  /* --------------------------------------------------------------- links -- */
 
-  /* ------------------------------------------------------------ scene setup -- */
+  /** Rewrite link endpoints into the batched buffer from the live node objects. */
+  const updateLinkBatchPositions = useCallback(() => {
+    const batch = linkBatchRef.current
+    if (batch === null) return
+    const links = linksRef.current
+    const nodeById = nodeByIdRef.current
+    const radiusById = radiusByIdRef.current
+    const positions = batch.positions
 
-  // Force tuning + initial camera only need configuring once the renderer
-  // exists; the retry loop copes with the async mount of the canvas.
-  useEffect(() => {
-    let frame = 0
-    let attempts = 0
-    const tick = (): void => {
-      const controller = graphRef.current
-      if (controller) {
-        const charge = controller.d3Force('charge')
-        charge?.strength(-70)
-        const linkForce = controller.d3Force('link')
-        linkForce?.distance?.((link: unknown) => linkDistance(link as GraphLink))
-        controller.d3ReheatSimulation()
-        controller.cameraPosition(
-          { x: 0, y: 0, z: DEFAULT_CAMERA_DISTANCE },
-          { x: 0, y: 0, z: 0 },
-          0
+    for (let index = 0; index < links.length; index += 1) {
+      const link = links[index]
+      const sourceId = linkEndpointId(link.source)
+      const targetId = linkEndpointId(link.target)
+      const start = nodeById.get(sourceId)
+      const end = nodeById.get(targetId)
+      const offset = index * 6
+      if (start === undefined || end === undefined) {
+        positions[offset] = 0
+        positions[offset + 1] = 0
+        positions[offset + 2] = 0
+        positions[offset + 3] = 0
+        positions[offset + 4] = 0
+        positions[offset + 5] = 0
+        continue
+      }
+      const startX = start.x ?? 0
+      const startY = start.y ?? 0
+      const startZ = start.z ?? 0
+      const endX = end.x ?? 0
+      const endY = end.y ?? 0
+      const endZ = end.z ?? 0
+      const dx = endX - startX
+      const dy = endY - startY
+      const dz = endZ - startZ
+      const length = Math.sqrt(dx * dx + dy * dy + dz * dz)
+      if (length < 1e-3) {
+        positions.fill(0, offset, offset + 6)
+        continue
+      }
+      // Trim both ends to the shell surface so hairlines never pierce the nodes.
+      const startTrim = Math.min(
+        0.45,
+        ((radiusById.get(sourceId) ?? 1.5) + 1.2) / length
+      )
+      const endTrim = Math.min(0.45, ((radiusById.get(targetId) ?? 1.5) + 1.2) / length)
+      positions[offset] = startX + dx * startTrim
+      positions[offset + 1] = startY + dy * startTrim
+      positions[offset + 2] = startZ + dz * startTrim
+      positions[offset + 3] = endX - dx * endTrim
+      positions[offset + 4] = endY - dy * endTrim
+      positions[offset + 5] = endZ - dz * endTrim
+    }
+    batch.positionAttribute.needsUpdate = true
+  }, [])
+
+  /**
+   * Hover/selection edge emphasis: connected edges brighten to
+   * `LINK_HIGHLIGHT_OPACITY`, everything else fades to `LINK_DIM_OPACITY`.
+   */
+  const applyLinkTint = useCallback(() => {
+    const batch = linkBatchRef.current
+    if (batch === null) return
+    const links = linksRef.current
+    const focusId = hoveredIdRef.current ?? selectedIdRef.current
+    const colors = batch.colors
+    for (let index = 0; index < links.length; index += 1) {
+      const link = links[index]
+      let color = batch.baseColors[index]
+      if (focusId !== null) {
+        const connected =
+          linkEndpointId(link.source) === focusId || linkEndpointId(link.target) === focusId
+        color = connected ? batch.highlightColors[index] : batch.dimColors[index]
+      }
+      const offset = index * 6
+      colors[offset] = color.r
+      colors[offset + 1] = color.g
+      colors[offset + 2] = color.b
+      colors[offset + 3] = color.r
+      colors[offset + 4] = color.g
+      colors[offset + 5] = color.b
+    }
+    batch.colorAttribute.needsUpdate = true
+  }, [])
+
+  const rebuildLinkBatch = useCallback(() => {
+    const scene = sceneRef.current
+    if (scene === null) return
+    const previous = linkBatchRef.current
+    if (previous !== null) {
+      scene.remove(previous.object)
+      previous.geometry.dispose()
+      previous.material.dispose()
+    }
+    const batch = buildLinkBatch(linksRef.current)
+    linkBatchRef.current = batch
+    scene.add(batch.object)
+    updateLinkBatchPositions()
+    applyLinkTint()
+  }, [applyLinkTint, updateLinkBatchPositions])
+
+  const syncGrid = useCallback(() => {
+    const grid = gridRef.current
+    if (grid === null) return
+    const box = new THREE.Box3()
+    const point = new THREE.Vector3()
+    let hasNode = false
+    for (const node of nodeByIdRef.current.values()) {
+      if (typeof node.x !== 'number' || typeof node.y !== 'number' || typeof node.z !== 'number') {
+        continue
+      }
+      box.expandByPoint(point.set(node.x, node.y, node.z))
+      hasNode = true
+    }
+    grid.sync(hasNode ? box : null)
+  }, [])
+
+  /* --------------------------------------------------------------- labels -- */
+
+  /** Push the live node objects into the projected DOM label layer. */
+  const pushLabelData = useCallback(() => {
+    const layer = labelLayerRef.current
+    if (layer === null) return
+    const selected = selectedIdRef.current
+    const hovered = hoverFocusIdRef.current
+    layer.setData(
+      graphDataRef.current.nodes.map((node) => buildLabelDatum(node, selected, hovered, t))
+    )
+    // `t` is a dependency: switching zh/en rebuilds the localized summaries.
+  }, [t])
+
+  /* --------------------------------------------------------------- nodes -- */
+
+  const buildNodeObject = useCallback(
+    (node: GraphNode): THREE.Object3D => {
+      // Scope switches and data refreshes recreate objects for the same id: free
+      // the previous visual before replacing it so nothing leaks.
+      const previous = visualsRef.current.get(node.id)
+      if (previous !== undefined) disposeVisual(previous)
+
+      const detail: GeometryDetail = performanceModeRef.current ? 0 : 1
+      const colorHex = nodeColor(node)
+      const radius = nodeRadius(node)
+      const baseColor = new THREE.Color(colorHex)
+      const group = new THREE.Group()
+      group.userData = { nodeId: node.id, nodeType: node.type }
+
+      // 1) Holographic wireframe shell (shared unit geometry, scaled per node).
+      const shellMaterial = new THREE.LineBasicMaterial({
+        color: baseColor.clone(),
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+      const shell = new THREE.LineSegments(shellLineGeometry(node.type, detail), shellMaterial)
+      shell.scale.setScalar(radius)
+      shell.renderOrder = 4
+      group.add(shell)
+
+      // 2) White-hot emissive core so the node never disappears against the fog.
+      const coreMaterial = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(HUD.white),
+        transparent: true,
+        opacity: 1,
+        depthWrite: false
+      })
+      const core = new THREE.Mesh(coreSphereGeometry(detail), coreMaterial)
+      core.scale.setScalar(nodeCoreRadius(node))
+      core.renderOrder = 5
+      group.add(core)
+
+      // 3) Additive radial halo from the cached per-colour glow texture.
+      const glowMaterial = new THREE.SpriteMaterial({
+        map: glowTexture(colorHex),
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+      const glow = new THREE.Sprite(glowMaterial)
+      glow.scale.setScalar(nodeGlowScale(node))
+      glow.renderOrder = 3
+      group.add(glow)
+
+      const visual: NodeVisual = {
+        group,
+        shell,
+        shellMaterial,
+        core,
+        coreMaterial,
+        glow,
+        glowMaterial,
+        ring: null,
+        ringMaterial: null,
+        nodeType: node.type,
+        baseColor,
+        radius,
+        spinDirection: hashUnit(`${node.id}|spin-direction`) > 0.5 ? 1 : -1,
+        spinSeed: hashUnit(`${node.id}|spin-phase`) * Math.PI * 2,
+        breatheSeed: hashUnit(`${node.id}|breathe-phase`) * Math.PI * 2,
+        baseScale: 1
+      }
+      visualsRef.current.set(node.id, visual)
+      // Snapshot evidence permanently carries an outer orbit ring.
+      if (node.type === 'snapshot') ensureNodeRing(visual)
+      // The engine creates objects after the first paint; apply the current
+      // selection/search/focus state immediately so nothing flashes bright.
+      applyStateToVisual(node.id, visual)
+      return group
+    },
+    [applyStateToVisual]
+  )
+
+  /* ------------------------------------------------------------- animation -- */
+
+  /** Wireframe spin + breathing scale for every live node visual. */
+  const animateNodeVisuals = useCallback((nowMs: number, deltaSeconds: number) => {
+    const reduced = reducedMotionRef.current
+    const performance = performanceModeRef.current
+    for (const visual of visualsRef.current.values()) {
+      let scale = visual.baseScale
+      if (!reduced && !performance) {
+        scale *= 1 + NODE_BREATHE_AMPLITUDE * Math.sin(
+          nowMs * 0.001 * NODE_BREATHE_SPEED + visual.breatheSeed
         )
-        return
       }
-      attempts += 1
-      if (attempts > 300) return
-      frame = window.requestAnimationFrame(tick)
-    }
-    tick()
-    return () => window.cancelAnimationFrame(frame)
-  }, [])
-
-  /* ------------------------------------------------- background starfield -- */
-
-  // Attach the decorative star/dust layers once the scene exists, then drift
-  // them slowly on their own frame loop (paused for reduced-motion users).
-  useEffect(() => {
-    if (!webglSupported) return
-    let disposed = false
-    let attachFrame = 0
-    let animateFrame = 0
-    let lastTime = 0
-    let attempts = 0
-
-    const animate = (time: number): void => {
-      if (disposed) return
-      const delta = lastTime === 0 ? 0 : Math.min(0.1, (time - lastTime) / 1000)
-      lastTime = time
-      if (autoRotateRef.current) sceneDecorRef.current?.rotate(delta)
-      animateFrame = window.requestAnimationFrame(animate)
-    }
-
-    const attach = (): void => {
-      const controller = graphRef.current
-      if (controller) {
-        const decor = createSceneDecor()
-        sceneDecorRef.current = decor
-        decor.attach(controller.scene())
-        animateFrame = window.requestAnimationFrame(animate)
-        return
+      visual.group.scale.setScalar(scale)
+      if (reduced) continue
+      visual.shell.rotation.y += NODE_SPIN_SPEED * deltaSeconds * visual.spinDirection
+      visual.shell.rotation.x += NODE_SPIN_SPEED * 0.35 * deltaSeconds * visual.spinDirection
+      if (visual.ring !== null) {
+        visual.ring.rotation.y = nowMs * 0.001 * 1.2 + visual.spinSeed
       }
-      attempts += 1
-      if (attempts > 300) return
-      attachFrame = window.requestAnimationFrame(attach)
-    }
-    attachFrame = window.requestAnimationFrame(attach)
-
-    return () => {
-      disposed = true
-      window.cancelAnimationFrame(attachFrame)
-      window.cancelAnimationFrame(animateFrame)
-      sceneDecorRef.current?.dispose()
-      sceneDecorRef.current = null
-    }
-  }, [webglSupported])
-
-  /* ------------------------------------------------------------ auto-rotate -- */
-
-  useEffect(() => {
-    let frame = 0
-    let attempts = 0
-    const tick = (): void => {
-      const controls = graphRef.current?.controls()
-      if (controls) {
-        controls.autoRotate = autoRotateRef.current
-        controls.autoRotateSpeed = AUTO_ROTATE_SPEED
-        controls.enableDamping = true
-        return
-      }
-      attempts += 1
-      if (attempts > 300) return
-      frame = window.requestAnimationFrame(tick)
-    }
-    tick()
-    return () => window.cancelAnimationFrame(frame)
-  }, [autoRotate])
-
-  // Any direct interaction pauses rotation; it resumes after a short idle gap.
-  useEffect(() => {
-    const element = containerRef.current
-    if (!element) return
-    let idleTimer: number | undefined
-    const pause = (): void => {
-      interactedRef.current = true
-      const controls = graphRef.current?.controls()
-      if (controls) controls.autoRotate = false
-      window.clearTimeout(idleTimer)
-      idleTimer = window.setTimeout(() => {
-        const nextControls = graphRef.current?.controls()
-        if (nextControls) nextControls.autoRotate = autoRotateRef.current
-      }, AUTO_ROTATE_RESUME_MS)
-    }
-    const events = ['pointerdown', 'wheel', 'touchstart'] as const
-    for (const event of events) element.addEventListener(event, pause, { passive: true })
-    return () => {
-      for (const event of events) element.removeEventListener(event, pause)
-      window.clearTimeout(idleTimer)
     }
   }, [])
 
-  /* ------------------------------------------------------------------ framing -- */
+  /** Camera-distance LOD (0 near / 1 far / 2 very far) for leaves + labels. */
+  const updateLod = useCallback((controller: GraphController) => {
+    const camera = controller.camera()
+    const target = controller.controls().target ?? ORIGIN
+    const distance = Math.hypot(
+      camera.position.x - target.x,
+      camera.position.y - target.y,
+      camera.position.z - target.z
+    )
+    const next: 0 | 1 | 2 =
+      distance > LOD_FAR_DISTANCE ? 2 : distance > LOD_NEAR_DISTANCE ? 1 : 0
+    if (next === lodRef.current) return
+    lodRef.current = next
+    applyVisualStateRef.current()
+  }, [])
+
+  /* ------------------------------------------------------------- framing -- */
 
   /**
    * Frame every rendered node deterministically.
    *
    * The library's `zoomToFit` fits the bounding *sphere*, which leaves a lot of
-   * dead space with a spread-out 3D layout; computing the distance from the
-   * box + camera FOV keeps the constellation filling the canvas.
+   * dead space with a spread-out 3D layout; computing the distance from the box
+   * + the HUD camera FOV keeps the constellation filling the canvas.
    */
   const fitView = useCallback(
     (durationMs = CAMERA_RESET_MS) => {
       const controller = graphRef.current
-      if (!controller) return
-      const nodes = [...nodeByIdRef.current.values()]
-      if (nodes.length === 0) return
+      if (controller === null) return
       const box = new THREE.Box3()
       const point = new THREE.Vector3()
-      for (const node of nodes) {
-        box.expandByPoint(point.set(node.x ?? 0, node.y ?? 0, node.z ?? 0))
+      let hasNode = false
+      for (const node of nodeByIdRef.current.values()) {
+        if (typeof node.x !== 'number' || typeof node.y !== 'number' || typeof node.z !== 'number') {
+          continue
+        }
+        box.expandByPoint(point.set(node.x, node.y, node.z))
+        hasNode = true
       }
+      if (!hasNode) return
       const center = box.getCenter(new THREE.Vector3())
       const extent = box.getSize(new THREE.Vector3())
-      const viewportAspect =
-        size.width > 0 && size.height > 0 ? size.width / size.height : 1.6
-      const halfTanFov = Math.tan((75 * Math.PI) / 180 / 2)
+      const viewportAspect = size.width > 0 && size.height > 0 ? size.width / size.height : 1.6
+      const halfTanFov = Math.tan((CAMERA_FOV * Math.PI) / 180 / 2)
       const spanHeight = Math.max(extent.y, 48)
       // Auto-rotation sweeps the horizontal axis, so the worst-case horizontal
       // extent is the XZ-plane diameter, not just the current X span.
@@ -1397,8 +1101,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
           spanHeight / 2 / halfTanFov,
           spanHorizontal / 2 / (halfTanFov * viewportAspect)
         ) *
-          1.18 +
-        20
+          1.15 +
+        18
       const current = controller.cameraPosition()
       const direction = new THREE.Vector3(
         current.x - center.x,
@@ -1416,38 +1120,21 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     [size.width, size.height]
   )
 
-  /* ---------------------------------------------------------------- auto-fit -- */
-
-  // Re-frame whenever the visible set changes (scope switch / filter toggle) so
-  // the constellation always fills the canvas instead of floating off-centre.
-  // `onEngineStop` is the accurate signal (the simulation has settled); the timer
-  // is only a fallback for the rare case where the engine never reports stopping.
-  useEffect(() => {
-    if (nodes.length === 0) return
-    fittedRef.current = false
-    interactedRef.current = false
-    window.clearTimeout(autoFitTimerRef.current)
-    autoFitTimerRef.current = window.setTimeout(() => {
-      if (fittedRef.current || interactedRef.current) return
-      fittedRef.current = true
-      fitView()
-    }, 3200)
-    return () => window.clearTimeout(autoFitTimerRef.current)
-  }, [nodes, fitView])
-
   const handleEngineStop = useCallback(() => {
+    // The simulation settled: this is the reliable moment to re-place the floor.
+    syncGrid()
     if (fittedRef.current || interactedRef.current) return
     fittedRef.current = true
     window.clearTimeout(autoFitTimerRef.current)
     fitView()
-  }, [fitView])
+  }, [fitView, syncGrid])
 
-  /* ------------------------------------------------------------ imperative -- */
+  /* ------------------------------------------------------------- imperative -- */
 
   const focusNode = useCallback((nodeId: string) => {
     const controller = graphRef.current
     const node = nodeByIdRef.current.get(nodeId)
-    if (!controller || !node) return
+    if (controller === null || node === undefined) return
     // A deliberate focus must win over a pending automatic re-frame.
     interactedRef.current = true
     fittedRef.current = true
@@ -1494,7 +1181,362 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     captureImage
   ])
 
-  /* ---------------------------------------------------------------- cleanup -- */
+  /* -------------------------------------------------------- resize observer -- */
+
+  // The canvas sits inside a flex shell, so it must track its own box instead of
+  // the window (the library defaults to full-window sizing).
+  useEffect(() => {
+    const element = containerRef.current
+    if (element === null) return
+    const apply = (rect: DOMRectReadOnly): void => {
+      const width = Math.max(0, Math.round(rect.width))
+      const height = Math.max(0, Math.round(rect.height))
+      setSize((current) =>
+        current.width === width && current.height === height ? current : { width, height }
+      )
+    }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry !== undefined) apply(entry.contentRect)
+    })
+    observer.observe(element)
+    apply(element.getBoundingClientRect())
+    return () => observer.disconnect()
+  }, [])
+
+  /* ----------------------------------------------------------- label layer -- */
+
+  // Own the single DOM label layer for this canvas. Callbacks are forwarded
+  // through refs so their identity never forces a teardown of the DOM buttons.
+  useEffect(() => {
+    if (!webglSupported) return
+    const container = containerRef.current
+    if (container === null) return
+    const layer = new NebulaLabelLayer({
+      container,
+      onSelect: (nodeId) => labelSelectRef.current(nodeId),
+      onHover: (nodeId) => labelHoverRef.current(nodeId)
+    })
+    labelLayerRef.current = layer
+    return () => {
+      layer.dispose()
+      if (labelLayerRef.current === layer) labelLayerRef.current = null
+    }
+  }, [webglSupported])
+
+  useEffect(() => {
+    labelSelectRef.current = selectAndCenter
+  }, [selectAndCenter])
+
+  useEffect(() => {
+    labelHoverRef.current = handleLabelHover
+  }, [handleLabelHover])
+
+  // Data (live node objects) changes with the graph payload / selection (priority).
+  useEffect(() => {
+    pushLabelData()
+  }, [pushLabelData, graphData, selectedId, hoverFocusId])
+
+  // Filter/focus/performance state changes.
+  useEffect(() => {
+    const layer = labelLayerRef.current
+    if (layer === null) return
+    layer.setState({
+      selectedId,
+      hoveredId: hoverFocusId,
+      hoverIds,
+      highlightIds: highlightSet,
+      focusIds: focusSet,
+      performanceMode
+    })
+  }, [selectedId, hoverFocusId, hoverIds, highlightSet, focusSet, performanceMode])
+
+  /* ------------------------------------------------------------- divestment -- */
+
+  // Drop visuals for nodes the current filter/scope removed instead of keeping
+  // their materials alive until unmount.
+  useEffect(() => {
+    for (const [id, visual] of visualsRef.current) {
+      if (nodeById.has(id)) continue
+      disposeVisual(visual)
+      visualsRef.current.delete(id)
+    }
+  }, [nodeById])
+
+  /* ------------------------------------------------------------- link state -- */
+
+  useEffect(() => {
+    rebuildLinkBatch()
+  }, [rebuildLinkBatch, graphData])
+
+  useEffect(() => {
+    applyLinkTint()
+  }, [applyLinkTint, graphData, selectedId, hoverFocusId])
+
+  useEffect(() => {
+    flowRef.current?.setRoutes(toFlowRoutes(linksRef.current))
+  }, [graphData])
+
+  /* ---------------------------------------------------- selection / search -- */
+
+  useEffect(() => {
+    applyVisualState()
+  }, [
+    applyVisualState,
+    graphData,
+    selectedId,
+    highlightIds,
+    focusIds,
+    performanceMode,
+    hoverFocusId
+  ])
+
+  // Performance mode: swap to the coarse shared geometries (no object rebuild)
+  // and thin the flow particles. Breathing is skipped by the frame loop itself.
+  useEffect(() => {
+    const detail: GeometryDetail = performanceMode ? 0 : 1
+    for (const visual of visualsRef.current.values()) {
+      visual.shell.geometry = shellLineGeometry(visual.nodeType, detail)
+      visual.core.geometry = coreSphereGeometry(detail)
+    }
+    flowRef.current?.setBudget(performanceMode)
+    applyVisualState()
+  }, [performanceMode, applyVisualState])
+
+  useEffect(() => {
+    flowRef.current?.setEnabled(!reducedMotion)
+  }, [reducedMotion])
+
+  /* --------------------------------------------------------------- auto-fit -- */
+
+  // Re-frame whenever the visible set changes (scope switch / filter toggle) so
+  // the constellation always fills the canvas instead of floating off-centre.
+  // `onEngineStop` is the accurate signal (the simulation has settled); the timer
+  // is only a fallback for the rare case where the engine never reports stopping.
+  useEffect(() => {
+    if (nodes.length === 0) return
+    fittedRef.current = false
+    interactedRef.current = false
+    window.clearTimeout(autoFitTimerRef.current)
+    autoFitTimerRef.current = window.setTimeout(() => {
+      if (fittedRef.current || interactedRef.current) return
+      fittedRef.current = true
+      syncGrid()
+      fitView()
+    }, AUTO_FIT_FALLBACK_MS)
+    return () => window.clearTimeout(autoFitTimerRef.current)
+  }, [nodes, fitView, syncGrid])
+
+  /* -------------------------------------------------------------- scene fx -- */
+
+  // Attach the atmospheric layer (fog, starfield, holo-grid, batched links, flow
+  // particles) once the force-graph controller exists, then tune camera + forces.
+  useEffect(() => {
+    if (!webglSupported) return
+    let disposed = false
+    let frame = 0
+    let attempts = 0
+
+    const start = (): void => {
+      if (disposed) return
+      const controller = graphRef.current
+      if (controller === null) {
+        attempts += 1
+        if (attempts <= 300) frame = window.requestAnimationFrame(start)
+        return
+      }
+
+      const scene = controller.scene()
+      sceneRef.current = scene
+      scene.background = new THREE.Color(NEBULA_BACKGROUND)
+      scene.fog = new THREE.FogExp2(new THREE.Color(NEBULA_BACKGROUND), FOG_DENSITY)
+
+      // HUD lens: tighter field of view than the library default, far plane wide
+      // enough for the decorative star shell.
+      const camera = controller.camera()
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.fov = CAMERA_FOV
+        camera.far = Math.max(camera.far, STARFIELD_RADIUS * 2)
+        camera.updateProjectionMatrix()
+      }
+
+      // Force tuning: a gentle charge + relation-aware distances keep hubs dense
+      // and evidence rings readable.
+      controller.d3Force('charge')?.strength(-70)
+      controller.d3Force('link')?.distance?.((link: unknown) => linkDistance(link as GraphLink))
+      controller.d3ReheatSimulation()
+      // Only seed the default framing if a fit has not already happened (a tiny
+      // graph can settle before this bootstrap frame runs).
+      if (!fittedRef.current) {
+        const elevation = DEFAULT_CAMERA_DISTANCE * DEFAULT_CAMERA_ELEVATION
+        const planar = DEFAULT_CAMERA_DISTANCE * Math.sqrt(1 - DEFAULT_CAMERA_ELEVATION ** 2)
+        controller.cameraPosition(
+          { x: 0, y: elevation, z: planar },
+          { x: 0, y: 0, z: 0 },
+          0
+        )
+      }
+
+      const controls = controller.controls()
+      controls.enableDamping = true
+      controls.autoRotate = autoRotateRef.current
+      controls.autoRotateSpeed = AUTO_ROTATE_SPEED
+
+      const starfield = new Starfield()
+      starfield.attach(scene)
+      starfieldRef.current = starfield
+
+      const grid = new GridFloor()
+      grid.attach(scene)
+      gridRef.current = grid
+
+      const flow = new FlowParticles(glowTexture(FLOW_PARTICLE_COLOR))
+      flow.setBudget(performanceModeRef.current)
+      flow.setEnabled(!reducedMotionRef.current)
+      flow.setRoutes(toFlowRoutes(linksRef.current))
+      scene.add(flow.object)
+      flowRef.current = flow
+
+      rebuildLinkBatch()
+      syncGrid()
+      // Labels may have been pushed before the controller existed; re-sync now.
+      pushLabelData()
+    }
+
+    frame = window.requestAnimationFrame(start)
+    return () => {
+      disposed = true
+      window.cancelAnimationFrame(frame)
+      const scene = sceneRef.current
+      if (scene !== null) {
+        scene.fog = null
+        scene.background = null
+      }
+      const batch = linkBatchRef.current
+      if (batch !== null) {
+        batch.object.removeFromParent()
+        batch.geometry.dispose()
+        batch.material.dispose()
+        linkBatchRef.current = null
+      }
+      flowRef.current?.dispose()
+      flowRef.current = null
+      gridRef.current?.dispose()
+      gridRef.current = null
+      starfieldRef.current?.dispose()
+      starfieldRef.current = null
+      sceneRef.current = null
+    }
+  }, [webglSupported, pushLabelData, rebuildLinkBatch, syncGrid])
+
+  /* --------------------------------------------------------- HUD frame loop -- */
+
+  // Own requestAnimationFrame loop (labels must follow the camera every frame;
+  // `onRenderFramePost` is not reliable across graph impl versions). Order per
+  // frame: spin/breathing → link positions → flow particles → LOD → labels.
+  useEffect(() => {
+    if (!webglSupported) return
+    let disposed = false
+    let frame = 0
+    let lastTime = 0
+    let lastLodCheck = 0
+
+    const tick = (time: number): void => {
+      if (disposed) return
+      const deltaSeconds = lastTime === 0 ? 0 : Math.min(0.1, (time - lastTime) / 1000)
+      lastTime = time
+
+      const controller = graphRef.current
+      if (controller !== null) {
+        const nowMs = performance.now()
+        animateNodeVisuals(nowMs, deltaSeconds)
+        updateLinkBatchPositions()
+
+        const flow = flowRef.current
+        if (flow !== null) {
+          flow.update((nodeId) => nodeByIdRef.current.get(nodeId), deltaSeconds)
+        }
+        if (autoRotateRef.current && !reducedMotionRef.current) {
+          starfieldRef.current?.rotate(deltaSeconds)
+        }
+
+        if (nowMs - lastLodCheck >= LOD_CHECK_INTERVAL_MS) {
+          lastLodCheck = nowMs
+          updateLod(controller)
+        }
+
+        const layer = labelLayerRef.current
+        const { width, height } = sizeRef.current
+        if (layer !== null && width > 0 && height > 0) {
+          const visible = layer.update(
+            controller.camera(),
+            width,
+            height,
+            lodRef.current,
+            nowMs
+          )
+          if (visible !== lastVisibleLabelsRef.current) {
+            lastVisibleLabelsRef.current = visible
+            onLabelStatsRef.current?.(visible, layer.count)
+          }
+        }
+      }
+
+      frame = window.requestAnimationFrame(tick)
+    }
+
+    frame = window.requestAnimationFrame(tick)
+    return () => {
+      disposed = true
+      window.cancelAnimationFrame(frame)
+    }
+  }, [animateNodeVisuals, updateLinkBatchPositions, updateLod, webglSupported])
+
+  /* ------------------------------------------------------------ auto-rotate -- */
+
+  useEffect(() => {
+    let frame = 0
+    let attempts = 0
+    const tick = (): void => {
+      const controls = graphRef.current?.controls()
+      if (controls !== undefined) {
+        controls.autoRotate = autoRotateRef.current
+        controls.autoRotateSpeed = AUTO_ROTATE_SPEED
+        controls.enableDamping = true
+        return
+      }
+      attempts += 1
+      if (attempts > 300) return
+      frame = window.requestAnimationFrame(tick)
+    }
+    tick()
+    return () => window.cancelAnimationFrame(frame)
+  }, [autoRotate])
+
+  // Any direct interaction pauses rotation; it resumes after a short idle gap.
+  useEffect(() => {
+    const element = containerRef.current
+    if (element === null) return
+    let idleTimer: number | undefined
+    const pause = (): void => {
+      interactedRef.current = true
+      const controls = graphRef.current?.controls()
+      if (controls !== undefined) controls.autoRotate = false
+      window.clearTimeout(idleTimer)
+      idleTimer = window.setTimeout(() => {
+        const nextControls = graphRef.current?.controls()
+        if (nextControls !== undefined) nextControls.autoRotate = autoRotateRef.current
+      }, AUTO_ROTATE_RESUME_MS)
+    }
+    const events = ['pointerdown', 'wheel', 'touchstart'] as const
+    for (const event of events) element.addEventListener(event, pause, { passive: true })
+    return () => {
+      for (const event of events) element.removeEventListener(event, pause)
+      window.clearTimeout(idleTimer)
+    }
+  }, [])
+
+  /* --------------------------------------------------------- context loss -- */
 
   // A lost WebGL context (GPU reset, memory pressure, long background tab) must
   // not leave a frozen black canvas without an explanation.
@@ -1515,6 +1557,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     }
   }, [webglSupported])
 
+  /* --------------------------------------------------------------- cleanup -- */
+
   useEffect(() => {
     mountGenerationRef.current += 1
     const generation = mountGenerationRef.current
@@ -1523,19 +1567,22 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       // caches back before the real unmount frees them.
       window.setTimeout(() => {
         if (mountGenerationRef.current !== generation) return
-        const visuals = visualsRef.current
-        for (const visual of visuals.values()) disposeVisual(visual)
-        visuals.clear()
-        for (const texture of glowCacheRef.current.values()) texture.dispose()
-        glowCacheRef.current.clear()
+        for (const visual of visualsRef.current.values()) disposeVisual(visual)
+        visualsRef.current.clear()
         window.clearTimeout(autoFitTimerRef.current)
       }, 0)
     }
   }, [])
 
-  /* ----------------------------------------------------------------- render -- */
+  /* ---------------------------------------------------------------- render -- */
 
-  const heavyGraph = nodes.length + links.length > PERFORMANCE_ELEMENT_LIMIT
+  const nodeValue = useCallback((node: GraphNode): number => node.val, [])
+  const emptyNodeLabel = useCallback((): string => '', [])
+  // The library would otherwise build a `THREE.Line` + geometry per edge; the
+  // batched HUD link layer renders them all in one additive draw call.
+  const hideLinks = useCallback((): boolean => false, [])
+
+  const heavyGraph = nodes.length + links.length > HEAVY_GRAPH_ELEMENT_LIMIT
 
   if (!webglSupported) {
     // P3 2D fallback: keep search/filter/selection usable without a GPU.
@@ -1556,11 +1603,16 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   return (
     <div
       ref={containerRef}
-      role="img"
+      // `group` (not `img`): the container now holds real, focusable label
+      // buttons, so it must not be exposed to assistive tech as a single image.
+      role="group"
       aria-label={t('nebula.canvas.ariaLabel')}
+      data-nebula-canvas="3d"
       className={cn('relative h-full w-full touch-none overflow-hidden', className)}
       style={{ backgroundColor: NEBULA_BACKGROUND }}
     >
+      <style>{LABEL_INTERACTION_CSS}</style>
+
       {size.width > 0 && size.height > 0 ? (
         <ForceGraph3D
           ref={graphRef}
@@ -1573,13 +1625,13 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
           nodeVal={nodeValue}
           nodeLabel={emptyNodeLabel}
           rendererConfig={{ preserveDrawingBuffer: true, antialias: true }}
+          controlType="orbit"
           enableNodeDrag
           warmupTicks={20}
           cooldownTicks={140}
           d3AlphaDecay={0.022}
           nodeThreeObject={buildNodeObject}
-          linkThreeObject={createLinkObject}
-          linkPositionUpdate={updateLinkPosition}
+          linkVisibility={hideLinks}
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onBackgroundClick={handleBackgroundClick}
@@ -1588,35 +1640,37 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
       ) : null}
 
       {contextLost ? (
-        <div className="absolute inset-0 z-10 grid place-items-center bg-[#050505]/75 px-6 backdrop-blur-sm">
-          <div className="max-w-[380px] rounded-xl border border-amber-400/25 bg-[#0b0c10]/[0.9] px-6 py-5 text-center">
-            <p className="text-[13px] font-medium text-amber-200/90">
+        <div className="absolute inset-0 z-20 grid place-items-center bg-[#02040a]/80 px-6 backdrop-blur-sm">
+          <div
+            className={cn(
+              NEBULA_UI.glass,
+              NEBULA_UI.panelRadius,
+              'max-w-[380px] px-6 py-5 text-center'
+            )}
+          >
+            <p className="font-mono text-[12px] uppercase tracking-[0.06em] text-[#FFAA00]">
               {t('nebula.webglLost.title')}
             </p>
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-white/45">
+            <p className={cn(NEBULA_UI.muted, 'mt-2 text-[12px] leading-relaxed')}>
               {t('nebula.webglLost.description')}
             </p>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="mt-4 inline-flex h-8 items-center rounded-md border border-white/[0.12] bg-white/[0.06] px-3 text-[12px] text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505]"
-            >
+            <HudButton className="mt-4" size="sm" onClick={() => window.location.reload()}>
               {t('nebula.webglLost.restore')}
-            </button>
+            </HudButton>
           </div>
         </div>
       ) : null}
 
       {heavyGraph ? (
-        <div className="pointer-events-none absolute left-1/2 top-3 z-10 w-[min(22rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-amber-400/25 bg-[#0b0c10]/[0.82] px-3 py-2 text-center backdrop-blur-xl">
-          <p className="text-[11.5px] font-medium text-amber-200/90">
+        <div className="pointer-events-none absolute left-1/2 top-3 z-20 w-[min(22rem,calc(100%-2rem))] -translate-x-1/2 border border-[#FFAA00]/30 bg-[#020A14]/85 px-3 py-2 text-center backdrop-blur-md">
+          <p className="font-mono text-[11.5px] uppercase tracking-[0.06em] text-[#FFAA00]">
             {t('nebula.performance.title')}
           </p>
-          <p className="mt-0.5 text-[10.5px] leading-relaxed text-white/40">
+          <p className={cn(NEBULA_UI.muted, 'mt-1 text-[11.5px] leading-relaxed')}>
             {t('nebula.performance.description', {
               nodes: nodes.length,
               links: links.length,
-              limit: PERFORMANCE_ELEMENT_LIMIT
+              limit: HEAVY_GRAPH_ELEMENT_LIMIT
             })}
           </p>
         </div>

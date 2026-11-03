@@ -18,23 +18,44 @@ import {
   type GraphScopeTargetOption
 } from '@renderer/components/nebula/GraphControlPanel'
 import { GraphLegend } from '@renderer/components/nebula/GraphLegend'
+import {
+  HudBackdrop,
+  HudButton,
+  HudDivider,
+  HudKbd,
+  HudPanel,
+  HudSectionTitle,
+  HudStat,
+  HudStatusDot
+} from '@renderer/components/nebula/HudChrome'
 import { NebulaGraph, type NebulaGraphHandle } from '@renderer/components/nebula/NebulaGraph'
 import { NodeInspector } from '@renderer/components/nebula/NodeInspector'
 import { useDebouncedValue } from '@renderer/hooks/useDebouncedValue'
 import { apiUnavailableMessage, getApi, toErrorMessage } from '@renderer/lib/api'
-import { NEBULA_BACKGROUND, PERFORMANCE_MODE_ELEMENT_LIMIT } from '@renderer/lib/graphTheme'
+import {
+  NEBULA_BACKGROUND,
+  NEBULA_UI,
+  PERFORMANCE_MODE_ELEMENT_LIMIT
+} from '@renderer/lib/graphTheme'
 import type { AppDetailTarget } from '@renderer/lib/navigation'
 import { cn } from '@renderer/lib/utils'
 import { useI18n } from '@renderer/i18n'
 
 /**
- * Memory Nebula — one full-screen 3D canvas, three scopes (P2 live data).
+ * Memory Nebula — full-bleed J.A.R.V.I.S. tactical HUD over one 3D canvas
+ * (three scopes, P2 live data).
  *
- * The page owns scope/search/filter/selection state and reads the read-only
- * projection through `getApi().getMemoryGraph(scope)` (Electron IPC or the
- * `ctx web` HTTP transport, same `CortexApi` contract). The all-scope graph is
- * cached so the asset/task pickers can list real hosts and snapshot sessions
- * without a second endpoint.
+ * The page still owns scope/search/filter/selection state and reads the
+ * read-only projection through `getApi().getMemoryGraph(scope)` (Electron IPC
+ * or the `ctx web` HTTP transport, same `CortexApi` contract). The all-scope
+ * graph is cached so the asset/task pickers can list real hosts and snapshot
+ * sessions without a second endpoint.
+ *
+ * Layout contract (reference `1.html`):
+ *   canvas (z-0) → <HudBackdrop /> (z-10, pointer-events-none) → HUD chrome
+ *   (z-20) → status card / inspector (z-30). The left command column is a
+ *   pointer-events-none wrapper so the brand panel never steals canvas drags;
+ *   only the interactive console opts back into pointer events.
  */
 
 export interface NebulaPageProps {
@@ -56,6 +77,49 @@ function truncateLabel(value: string): string {
     : `${trimmed.slice(0, TARGET_LABEL_MAX_LENGTH - 1)}…`
 }
 
+/** `HH:MM:SS` HUD clock for `graph.meta.generatedAt`; invalid input → em dash. */
+function formatClockTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  const pad = (value: number): string => value.toString().padStart(2, '0')
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+/**
+ * The expanded legend only has room between the control column and the
+ * inspector on ≥1280px viewports; narrower windows fall back to the collapsed
+ * pill while the drawer is open so the two panels never overlap.
+ */
+function useNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 1279px)')
+    const sync = (): void => setNarrow(media.matches)
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
+  return narrow
+}
+
+/** One `KEY label` hint in the bottom HUD status bar. */
+function HudShortcut({
+  kbd,
+  label,
+  className
+}: {
+  kbd: string
+  label: string
+  className?: string
+}) {
+  return (
+    <span className={cn('flex items-center gap-1', className)}>
+      <HudKbd className="text-[10.5px]">{kbd}</HudKbd>
+      <span className="text-[#7FA9BE]">{label}</span>
+    </span>
+  )
+}
+
 interface StatusCard {
   title: string
   description: string
@@ -70,6 +134,14 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   const sectionRef = useRef<HTMLElement | null>(null)
   /** Last loaded all-scope graph: powers the asset/task pickers. */
   const allGraphRef = useRef<MemoryGraphData | null>(null)
+  /**
+   * Translator ref for the data effect: the graph payload must NOT be refetched
+   * when the UI language switches (that re-ran the force simulation and reset
+   * the camera). `t` is only used for error copy, so read it through a ref.
+   */
+  const tRef = useRef(t)
+  tRef.current = t
+  const narrowViewport = useNarrowViewport()
 
   const [scopeKind, setScopeKind] = useState<ScopeKind>('all')
   const [activeHostPort, setActiveHostPort] = useState<string | null>(null)
@@ -122,7 +194,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     const client = getApi()
     if (client === null) {
       setLoading(false)
-      setError(apiUnavailableMessage(t))
+      setError(apiUnavailableMessage(tRef.current))
       return
     }
     if (pendingTarget) {
@@ -149,7 +221,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
           setAllGraph(all)
         }
       } catch (cause) {
-        if (!cancelled) setError(toErrorMessage(cause, t))
+        if (!cancelled) setError(toErrorMessage(cause, tRef.current))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -157,7 +229,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     return () => {
       cancelled = true
     }
-  }, [scope, pendingTarget, dataVersion, refreshSeq, t])
+  }, [scope, pendingTarget, dataVersion, refreshSeq])
 
   const hostOptions = useMemo<GraphScopeTargetOption[]>(() => {
     const nodes = allGraph?.nodes ?? []
@@ -248,6 +320,56 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     return [...collectNeighborhoodIds(visibleGraph, selectedNode.id, focusDepth)]
   }, [focusMode, visibleGraph, selectedNode, focusDepth])
   const focusCount = focusIds === null ? null : focusIds.length
+
+  /* ------------------------------------------------------- tactical HUD data -- */
+
+  /**
+   * Critical count comes from the loaded graph, never from a hardcoded number:
+   * a `+N` aggregate node carries the highest severity of its bucket, so both
+   * granular and aggregated vulnerability nodes count exactly once.
+   */
+  const criticalCount = useMemo(() => {
+    if (graph === null) return 0
+    let total = 0
+    for (const node of graph.nodes) {
+      if (node.type !== 'vuln') continue
+      const severity = node.data.aggregate?.severity ?? node.severity
+      if (severity === 'Critical') total += 1
+    }
+    return total
+  }, [graph])
+
+  const metaCounts = graph?.meta.counts ?? null
+  const statValue = (value: number | null): string | number => (value === null ? '—' : value)
+  const statHosts = statValue(metaCounts === null ? null : metaCounts.host)
+  const statVulns = statValue(metaCounts === null ? null : metaCounts.vuln)
+  const statLeaks = statValue(metaCounts === null ? null : metaCounts.leak)
+  const statSnapshots = statValue(metaCounts === null ? null : metaCounts.snapshot)
+  const statCritical = statValue(graph === null ? null : criticalCount)
+
+  // Status dot: offline (error) → syncing (loading) → degraded (truncated) →
+  // online. A refresh keeps the previous graph on screen, so loading wins.
+  const hudStatusTone: 'cyan' | 'warning' | 'danger' =
+    error !== null
+      ? 'danger'
+      : loading
+        ? 'warning'
+        : graph?.meta.truncated === true
+          ? 'warning'
+          : 'cyan'
+  const hudStatusLabel =
+    error !== null
+      ? t('nebula.hud.subtitleError')
+      : loading
+        ? t('nebula.hud.subtitleLoading')
+        : graph?.meta.truncated === true
+          ? t('nebula.hud.subtitleDegraded')
+          : t('nebula.hud.subtitleOnline')
+
+  const updatedLabel =
+    graph === null
+      ? t('nebula.hud.updatedNone')
+      : t('nebula.hud.updated', { time: formatClockTime(graph.meta.generatedAt) })
 
   // Cross-page "view full details" link for the selected node. Leaks have no
   // dedicated page, so they keep the drawer-only summary.
@@ -483,6 +605,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   /* ----------------------------------------------------------------- render -- */
 
   const showGraph = visibleGraph !== null && !pendingTarget
+  const legendExpanded = legendOpen && !(selectedNode !== null && narrowViewport)
 
   return (
     <section
@@ -491,6 +614,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
       className="relative h-full w-full overflow-hidden"
       style={{ backgroundColor: NEBULA_BACKGROUND }}
     >
+      {/* ------------------------------------------------------------- scene -- */}
       {showGraph ? (
         <NebulaGraph
           ref={graphRef}
@@ -506,135 +630,275 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
         />
       ) : null}
 
-      {/* P3 canvas toolbar: fullscreen + PNG export. */}
-      <div
-        className={cn(
-          'absolute top-4 z-20 flex items-center gap-1.5',
-          selectedNode !== null ? 'right-[416px]' : 'right-4'
-        )}
-      >
-        <button
-          type="button"
-          onClick={handleToggleFullscreen}
-          aria-label={
-            isFullscreen ? t('nebula.fullscreen.exit') : t('nebula.fullscreen.enter')
-          }
-          title={isFullscreen ? t('nebula.fullscreen.exit') : t('nebula.fullscreen.enter')}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-[#0b0c10]/[0.72] text-white/60 backdrop-blur-xl transition-colors hover:bg-white/[0.08] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505]"
-        >
-          {isFullscreen ? (
-            <Minimize2 aria-hidden="true" className="h-3.5 w-3.5" />
-          ) : (
-            <Maximize2 aria-hidden="true" className="h-3.5 w-3.5" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={handleExportPng}
-          disabled={!showGraph}
-          aria-label={t('nebula.export.png')}
-          title={t('nebula.export.png')}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-[#0b0c10]/[0.72] text-white/60 backdrop-blur-xl transition-colors hover:bg-white/[0.08] hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Camera aria-hidden="true" className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      {/* Decorative grid / scanline / corners sit above the canvas (never below
+          the HUD chrome) and never intercept orbit gestures. */}
+      <HudBackdrop />
 
+      {/* ------------------------------------------------------- loading pill -- */}
+      {/* Centred on the *canvas* area (left/right padding match the command
+          column and the drawer), so it never slides under either panel; with
+          the drawer open the gap is too narrow below 1280px, so the pill only
+          appears there on wide windows. */}
       {loading && graph !== null ? (
-        <div className="pointer-events-none absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-[#0b0c10]/[0.82] px-3 py-1.5 text-[11px] text-white/60 backdrop-blur-xl">
-          <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
-          {t('nebula.loading.graph')}
-        </div>
-      ) : null}
-
-      {statusCard !== null ? (
-        <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center px-6">
-          <div className="pointer-events-auto max-w-[380px] rounded-xl border border-white/10 bg-[#0b0c10]/[0.82] px-6 py-5 text-center shadow-[0_24px_60px_-24px_rgba(0,0,0,0.85)] backdrop-blur-xl">
-            {statusCard.tone === 'danger' ? (
-              <AlertTriangle
-                aria-hidden="true"
-                className="mx-auto mb-2 h-4 w-4 text-amber-300/80"
-              />
-            ) : null}
-            <p className="text-[13px] font-medium text-white/85">{statusCard.title}</p>
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-white/45">
-              {statusCard.description}
-            </p>
-            {statusCard.actionLabel !== undefined && statusCard.onAction !== undefined ? (
-              <button
-                type="button"
-                onClick={statusCard.onAction}
-                className="mt-4 inline-flex h-8 items-center rounded-md border border-white/[0.12] bg-white/[0.06] px-3 text-[12px] text-white/75 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505]"
-              >
-                {statusCard.actionLabel}
-              </button>
-            ) : null}
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center pl-[320px]',
+            selectedNode === null ? 'flex' : 'hidden pr-[416px] xl:flex'
+          )}
+        >
+          <div
+            className={cn(
+              'flex items-center gap-2 rounded-[2px] border border-[#00E5FF]/30 bg-[#020A14]/85 px-3 py-1',
+              'font-mono text-[11px] uppercase tracking-[0.04em] text-[#00E5FF] backdrop-blur-md'
+            )}
+          >
+            <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />
+            {t('nebula.loading.graph')}
           </div>
         </div>
       ) : null}
 
-      <div className="absolute left-4 top-4 z-20 w-[304px] max-w-[calc(100%-2rem)]">
-        <GraphControlPanel
-          scopes={scopeOptions}
-          activeScopeKind={scopeKind}
-          onScopeChange={handleScopeChange}
-          hostOptions={hostOptions}
-          sessionOptions={sessionOptions}
-          activeHostPort={activeHostPort}
-          activeSessionId={activeSessionId}
-          onSelectHost={handleSelectHost}
-          onSelectSession={handleSelectSession}
-          includeChildren={includeChildren}
-          onToggleIncludeChildren={handleToggleIncludeChildren}
-          search={search}
-          onSearchChange={setSearch}
-          onSearchClear={handleClearSearch}
-          filters={filters}
-          onToggleFilter={handleToggleFilter}
-          counts={
-            visibleGraph?.meta.counts ?? {
-              project: 0,
-              target: 0,
-              host: 0,
-              vuln: 0,
-              leak: 0,
-              snapshot: 0
-            }
-          }
-          visibleNodes={visibleGraph?.nodes.length ?? 0}
-          visibleLinks={visibleGraph?.links.length ?? 0}
-          matchCount={matchCount}
-          onResetView={handleResetView}
-          onRefresh={handleRefresh}
-          loading={loading}
-          truncated={graph?.meta.truncated ?? false}
-          limits={graph?.meta.limits ?? MEMORY_GRAPH_DEFAULT_LIMITS}
-          focusMode={focusMode}
-          focusDepth={focusDepth}
-          focusCount={focusCount}
-          onToggleFocusMode={handleToggleFocusMode}
-          onChangeFocusDepth={handleChangeFocusDepth}
-          performanceMode={performanceMode}
-        />
-      </div>
-
+      {/* ------------------------------------------------- top-right toolbar -- */}
+      {/* With the drawer open the toolbar becomes a vertical rail hugging the
+          400px inspector edge; that keeps it clear of the command column even
+          at 1024px, where the horizontal layout would overhang the panel. */}
       <div
         className={cn(
-          'absolute bottom-4 z-20 hidden max-w-[calc(100%-2rem)] md:block',
-          legendOpen ? 'left-[332px]' : 'left-4'
+          'absolute top-4 z-20 flex',
+          selectedNode !== null ? 'right-[416px]' : 'right-4'
+        )}
+      >
+        <div
+          className={cn(
+            'flex gap-1 rounded-[2px] border border-[#00E5FF]/25 bg-[#020A14]/80 p-1 backdrop-blur-md',
+            'shadow-[0_0_20px_-8px_rgba(0,229,255,0.5)]',
+            selectedNode !== null ? 'flex-col' : 'flex-row'
+          )}
+        >
+          <HudButton
+            size="icon"
+            onClick={handleToggleFullscreen}
+            aria-label={isFullscreen ? t('nebula.fullscreen.exit') : t('nebula.fullscreen.enter')}
+            title={isFullscreen ? t('nebula.fullscreen.exit') : t('nebula.fullscreen.enter')}
+            data-testid="fullscreen"
+          >
+            {isFullscreen ? (
+              <Minimize2 aria-hidden="true" className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 aria-hidden="true" className="h-3.5 w-3.5" />
+            )}
+          </HudButton>
+          <HudButton
+            size="icon"
+            onClick={handleExportPng}
+            disabled={!showGraph}
+            aria-label={t('nebula.export.png')}
+            title={t('nebula.export.png')}
+            data-testid="export"
+          >
+            <Camera aria-hidden="true" className="h-3.5 w-3.5" />
+          </HudButton>
+        </div>
+      </div>
+
+      {/* --------------------------------------------------- left command column -- */}
+      {/* pointer-events-none wrapper: the tactical header must not swallow canvas
+          drags; the console below opts back in with pointer-events-auto. */}
+      <div className="pointer-events-none absolute bottom-[52px] left-4 top-4 z-20 flex w-[304px] max-w-[calc(100%_-_2rem)] flex-col gap-2">
+        <HudPanel className="pointer-events-none shrink-0 px-3 py-2.5">
+          <h1
+            className="truncate font-mono text-[24px] font-semibold uppercase leading-none tracking-[0.06em] text-[#00E5FF]"
+            style={{ textShadow: '0 0 10px rgba(0, 229, 255, 0.5)' }}
+          >
+            {t('nebula.hud.brand')}
+          </h1>
+          <div className="mt-2 flex min-w-0 items-center gap-1.5">
+            <HudStatusDot tone={hudStatusTone} />
+            <p
+              className={cn(
+                NEBULA_UI.muted,
+                'min-w-0 truncate text-[11.5px] uppercase tracking-[0.03em]'
+              )}
+            >
+              {hudStatusLabel}
+            </p>
+          </div>
+
+          <HudDivider className="my-2" />
+          <HudSectionTitle trailing={<span className="text-[#7FA9BE]">{t('nebula.hud.liveFeed')}</span>}>
+            {t('nebula.hud.system')}
+          </HudSectionTitle>
+
+          {/* Live stats: every number is derived from graph.meta.counts + the
+              Critical severity of the loaded vuln nodes. */}
+          <div data-testid="hud-stats" className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+            <HudStat label={t('nebula.hud.statHosts')} value={statHosts} tone="cyan" />
+            <HudStat label={t('nebula.hud.statVulns')} value={statVulns} />
+            <HudStat label={t('nebula.hud.statLeaks')} value={statLeaks} tone="white" />
+            <HudStat label={t('nebula.hud.statSnapshots')} value={statSnapshots} tone="success" />
+          </div>
+          <HudDivider className="my-1.5" />
+          <HudStat
+            label={
+              <span className="flex items-center gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-1.5 w-1.5 rounded-full bg-[#FF3366] shadow-[0_0_8px_rgba(255,51,102,0.8)]"
+                />
+                {t('nebula.hud.statCritical')}
+              </span>
+            }
+            value={statCritical}
+            tone="danger"
+          />
+        </HudPanel>
+
+        <div className="pointer-events-none flex min-h-0 flex-1">
+          <GraphControlPanel
+            scopes={scopeOptions}
+            activeScopeKind={scopeKind}
+            onScopeChange={handleScopeChange}
+            hostOptions={hostOptions}
+            sessionOptions={sessionOptions}
+            activeHostPort={activeHostPort}
+            activeSessionId={activeSessionId}
+            onSelectHost={handleSelectHost}
+            onSelectSession={handleSelectSession}
+            includeChildren={includeChildren}
+            onToggleIncludeChildren={handleToggleIncludeChildren}
+            search={search}
+            onSearchChange={setSearch}
+            onSearchClear={handleClearSearch}
+            filters={filters}
+            onToggleFilter={handleToggleFilter}
+            counts={
+              visibleGraph?.meta.counts ?? {
+                project: 0,
+                target: 0,
+                host: 0,
+                vuln: 0,
+                leak: 0,
+                snapshot: 0
+              }
+            }
+            visibleNodes={visibleGraph?.nodes.length ?? 0}
+            visibleLinks={visibleGraph?.links.length ?? 0}
+            matchCount={matchCount}
+            onResetView={handleResetView}
+            onRefresh={handleRefresh}
+            loading={loading}
+            truncated={graph?.meta.truncated ?? false}
+            limits={graph?.meta.limits ?? MEMORY_GRAPH_DEFAULT_LIMITS}
+            focusMode={focusMode}
+            focusDepth={focusDepth}
+            focusCount={focusCount}
+            onToggleFocusMode={handleToggleFocusMode}
+            onChangeFocusDepth={handleChangeFocusDepth}
+            performanceMode={performanceMode}
+          />
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------ status card -- */}
+      {/* Same canvas-area centring as the loading pill, so the empty/error card
+          never sits on top of the command column or the inspector. */}
+      {statusCard !== null ? (
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-x-0 top-1/2 z-30 flex -translate-y-1/2 justify-center pl-[320px] pr-4',
+            selectedNode === null ? '' : 'pr-[416px]'
+          )}
+        >
+          <HudPanel
+            className={cn(
+              'pointer-events-auto w-full px-5 py-4 text-center',
+              selectedNode === null ? 'max-w-[380px]' : 'max-w-[280px]'
+            )}
+          >
+            {statusCard.tone === 'danger' ? (
+              <AlertTriangle
+                aria-hidden="true"
+                className="mx-auto mb-2 h-4 w-4 text-[#FFAA00]"
+              />
+            ) : null}
+            <p className={cn(NEBULA_UI.heading, 'text-[12.5px] font-semibold tracking-[0.04em]')}>
+              {statusCard.title}
+            </p>
+            <p className={cn(NEBULA_UI.muted, 'mt-1.5 text-[12px] leading-relaxed')}>
+              {statusCard.description}
+            </p>
+            {statusCard.actionLabel !== undefined && statusCard.onAction !== undefined ? (
+              <HudButton
+                variant="primary"
+                size="sm"
+                onClick={statusCard.onAction}
+                className="mt-3 text-[11px]"
+              >
+                {statusCard.actionLabel}
+              </HudButton>
+            ) : null}
+          </HudPanel>
+        </div>
+      ) : null}
+
+      {/* ---------------------------------------------------------------- legend -- */}
+      {/* Anchored to the bottom-left of the canvas area (right of the command
+          column) so the pill and the expanded card never sit on the console.
+          While the inspector is open below 1280px the gap is too narrow, so the
+          legend stays hidden there instead of overlapping the drawer. */}
+      <div
+        className={cn(
+          'absolute bottom-[52px] left-[324px] z-20 max-w-[calc(100%_-_2rem)]',
+          legendExpanded ? 'w-[300px]' : 'w-auto',
+          selectedNode !== null ? 'hidden xl:block' : 'block'
         )}
       >
         <GraphLegend
-          expanded={legendOpen}
+          expanded={legendExpanded}
           onToggle={() => setLegendOpen((value) => !value)}
           hasAggregates={visibleGraph !== null && graphHasAggregates(visibleGraph.nodes)}
+          className={legendExpanded ? 'max-w-full' : undefined}
         />
       </div>
 
-      <p className="pointer-events-none absolute bottom-5 right-4 z-20 hidden font-mono text-[10.5px] text-white/25 lg:block">
-        {t('nebula.helper.hint')}
-      </p>
+      {/* ------------------------------------------------------ bottom HUD bar -- */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex h-9 items-center gap-3 border-t border-[#00E5FF]/15 bg-[#02040A]/85 px-3 font-mono text-[11px] uppercase tracking-[0.04em] text-[#7FA9BE] backdrop-blur-md">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <HudStatusDot tone={hudStatusTone} pulse={false} />
+          <span className="shrink-0 text-[#00E5FF]/80">{t('nebula.hud.scopeLabel')}</span>
+          <span className="truncate text-[#C7E9F5]">{t(`nebula.scope.${scopeKind}`)}</span>
+          {scopeKind === 'asset' && activeHostPort !== null ? (
+            <span className="hidden min-w-0 truncate normal-case text-[#00E5FF]/70 2xl:inline">
+              {activeHostPort}
+            </span>
+          ) : null}
+        </div>
 
+        <span aria-hidden="true" className="h-3 w-px shrink-0 bg-[#00E5FF]/15" />
+        <span className="hidden shrink-0 sm:inline">{updatedLabel}</span>
+
+        <div className="ml-auto flex min-w-0 items-center gap-3">
+          {performanceMode ? (
+            <span className="hidden items-center text-[#FFC766] xl:flex">
+              {t('nebula.hud.modePerformance')}
+            </span>
+          ) : null}
+          {reducedMotion ? (
+            <span className="hidden items-center text-[#7FA9BE] 2xl:flex">
+              {t('nebula.hud.reducedMotion')}
+            </span>
+          ) : null}
+          {/* Secondary hints drop out first as the window narrows. */}
+          <div className="hidden items-center gap-2.5 lg:flex">
+            <HudShortcut kbd="DRAG" label={t('nebula.hud.drag')} />
+            <HudShortcut kbd="WHEEL" label={t('nebula.hud.wheel')} />
+            <HudShortcut kbd="CLICK" label={t('nebula.hud.click')} className="hidden xl:flex" />
+            <HudShortcut kbd="ESC" label={t('nebula.inspector.close')} className="hidden xl:flex" />
+          </div>
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------- inspector -- */}
       {selectedNode ? (
         <div className="absolute inset-y-0 right-0 z-30 w-[400px] max-w-[92vw]">
           <NodeInspector
