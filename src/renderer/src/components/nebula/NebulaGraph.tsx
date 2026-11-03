@@ -11,9 +11,6 @@ import {
 } from 'react'
 import ForceGraph3DImport from 'react-force-graph-3d'
 import * as THREE from 'three'
-import { Line2 } from 'three/examples/jsm/lines/Line2.js'
-import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
-import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import type { GraphRelation, NebulaLink, NebulaNode } from '@shared/graph'
 import { NebulaGraph2D } from '@renderer/components/nebula/NebulaGraph2D'
 import { useI18n } from '@renderer/i18n'
@@ -38,7 +35,6 @@ import {
   LABEL_TEXT_COLOR,
   LABEL_TEXTURE_HEIGHT,
   LABEL_TEXTURE_WIDTH,
-  LINK_COLORS,
   NEBULA_BACKGROUND,
   NEBULA_SKYBOX_HEIGHT,
   NEBULA_SKYBOX_WIDTH,
@@ -57,7 +53,6 @@ import {
   STARFIELD_FAR_OPACITY,
   STARFIELD_FAR_SIZE,
   STARFIELD_ROTATE_SPEED,
-  linkOpacity,
   nodeColor,
   nodeRadius,
   rgba
@@ -182,123 +177,16 @@ function createRandomNodePosition(): { x: number; y: number; z: number } {
   }
 }
 
-/* ------------------------------------------------------------- link art -- */
+/* --------------------------------------------------------------- links -- */
 
 /**
- * Edges are drawn with Line2 (screen-space width, anti-aliased) as a gentle
- * curved polyline whose colours fade at both ends. Compared with the previous
- * 1px hairline the web reads as soft glowing filaments instead of a wireframe.
+ * Flow particles carry the eye: the links themselves stay almost invisible,
+ * while small additive cyan photons travel along them like fibre optics.
+ * The library renders directional particles as nested objects, so one shared
+ * sprite template keeps the per-photon clones cheap and glowing.
  */
-const LINK_SEGMENT_COUNT = 24
-const LINK_FADE_FRACTION = 0.24
-const LINK_TRIM_RATIO = 0.04
-const LINK_TRIM_MIN = 1.5
-const LINK_TRIM_MAX = 6
-const LINK_COLOR_GAIN = 2.2
-const LINK_BASE_WIDTH = 1.5
-const LINK_CURVE_RATIO = 0.045
-/** Shared uniform reference: updating this Vector2 resizes every LineMaterial. */
-const LINK_RESOLUTION = new THREE.Vector2(1600, 1000)
-
-function linkBaseColor(link: GraphLink): THREE.Color {
-  const opacity = linkOpacity(link.relation, link.derived === true)
-  // Slight per-link brightness variation keeps the web organic instead of a
-  // uniform wireframe; deterministic so the look is stable across reloads.
-  const variation = 0.82 + hashUnit(`${linkKey(link)}|brightness`) * 0.36
-  return new THREE.Color(LINK_COLORS[link.relation]).multiplyScalar(
-    Math.min(1, opacity * LINK_COLOR_GAIN * variation)
-  )
-}
-
-function createLinkObject(link: GraphLink): THREE.Object3D {
-  const geometry = new LineGeometry()
-  geometry.setPositions(new Array(LINK_SEGMENT_COUNT * 3).fill(0))
-  const base = linkBaseColor(link)
-  const colors = new Float32Array(LINK_SEGMENT_COUNT * 3)
-  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
-    const t = index / (LINK_SEGMENT_COUNT - 1)
-    const fadeIn = Math.min(1, t / LINK_FADE_FRACTION)
-    const fadeOut = Math.min(1, (1 - t) / LINK_FADE_FRACTION)
-    const fade = Math.min(fadeIn, fadeOut) ** 1.25
-    colors[index * 3] = base.r * fade
-    colors[index * 3 + 1] = base.g * fade
-    colors[index * 3 + 2] = base.b * fade
-  }
-  geometry.setColors(colors)
-
-  const material = new LineMaterial({
-    color: 0xffffff,
-    vertexColors: true,
-    transparent: true,
-    opacity: 1,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    resolution: LINK_RESOLUTION
-  })
-  const linewidth = link.derived === true ? 1.1 : LINK_BASE_WIDTH
-  ;(material as LineMaterial & { linewidth: number }).linewidth = linewidth
-
-  const line = new Line2(geometry, material)
-  line.frustumCulled = false
-  line.renderOrder = 2
-  line.userData = {
-    kind: 'line2',
-    key: `${linkKey(link)}|${link.relation}`,
-    baseWidth: linewidth,
-    curveSeed: hashUnit(`${linkKey(link)}|curve`),
-    positions: new Float32Array(LINK_SEGMENT_COUNT * 3)
-  }
-  return line
-}
-
-function updateLinkPosition(
-  object: THREE.Object3D,
-  coords: { start: Coords; end: Coords }
-): void {
-  if (!(object instanceof Line2)) return
-  const geometry = object.geometry as LineGeometry
-  const dx = coords.end.x - coords.start.x
-  const dy = coords.end.y - coords.start.y
-  const dz = coords.end.z - coords.start.z
-  const length = Math.sqrt(dx * dx + dy * dy + dz * dz)
-  if (length < 1e-4) return
-
-  // Gentle deterministic bow so links are not ruler-straight.
-  const curveSeed = (object.userData.curveSeed as number | undefined) ?? 0.5
-  const dirX = dx / length
-  const dirY = dy / length
-  const dirZ = dz / length
-  const axisX = Math.abs(dirY) < 0.9 ? 1 : 0
-  const axisY = Math.abs(dirY) < 0.9 ? 0 : 1
-  let perpX = dirY * 0 - dirZ * axisY
-  let perpY = dirZ * axisX - dirX * 0
-  let perpZ = dirX * axisY - dirY * axisX
-  const perpLength = Math.sqrt(perpX * perpX + perpY * perpY + perpZ * perpZ)
-  if (perpLength < 1e-4) {
-    perpX = 0
-    perpY = 1
-    perpZ = 0
-  } else {
-    perpX /= perpLength
-    perpY /= perpLength
-    perpZ /= perpLength
-  }
-  const bow = length * LINK_CURVE_RATIO * (curveSeed * 2 - 1)
-
-  const trim = Math.min(LINK_TRIM_MAX, Math.max(LINK_TRIM_MIN, length * LINK_TRIM_RATIO))
-  const t0 = Math.min(0.45, trim / length)
-  const t1 = 1 - t0
-  const positions = (object.userData.positions as Float32Array | undefined) ??
-    new Float32Array(LINK_SEGMENT_COUNT * 3)
-  object.userData.positions = positions
-  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
-    const t = t0 + (t1 - t0) * (index / (LINK_SEGMENT_COUNT - 1))
-    const bulge = Math.sin(Math.PI * t) * bow
-    positions[index * 3] = coords.start.x + dx * t + perpX * bulge
-    positions[index * 3 + 1] = coords.start.y + dy * t + perpY * bulge
-    positions[index * 3 + 2] = coords.start.z + dz * t + perpZ * bulge
-  }
-  geometry.setPositions(positions)
+function faintLinkWidth(link: GraphLink): number {
+  return link.derived === true ? 0.5 : 0.85
 }
 
 /**
@@ -334,8 +222,13 @@ interface ForceGraphProps {
   cooldownTicks: number
   d3AlphaDecay: number
   nodeThreeObject: (node: GraphNode) => THREE.Object3D
-  linkThreeObject: (link: GraphLink) => THREE.Object3D
-  linkPositionUpdate: (object: THREE.Object3D, coords: { start: Coords; end: Coords }, link: GraphLink) => void
+  linkColor: (link: GraphLink) => string
+  linkWidth: (link: GraphLink) => number
+  linkOpacity: number
+  linkDirectionalParticles: number
+  linkDirectionalParticleSpeed: number
+  linkDirectionalParticleWidth: number
+  linkDirectionalParticleColor: (link: GraphLink) => string
   onNodeClick: (node: GraphNode, event: MouseEvent) => void
   onNodeHover: (node: GraphNode | null, previousNode: GraphNode | null) => void
   onBackgroundClick: () => void
@@ -528,133 +421,31 @@ function createNebulaSkyboxTexture(): THREE.Texture {
   canvas.height = height
   const context = canvas.getContext('2d')
   if (!context) throw new Error('2D canvas unavailable')
-  const random = createRandom((Math.random() * 0x7fffffff) | 0)
+  const random = createRandom(0x5f356495)
+  const palettes: ReadonlyArray<readonly string[]> = [
+    ['#1e3a8a', '#1d4ed8'],
+    ['#0e7490', '#22d3ee'],
+    ['#4c1d95', '#7c3aed'],
+    ['#831843', '#db2777']
+  ]
 
-  // 1) Deep-space base: near-black top, deep blue/teal towards the horizon.
-  const base = context.createLinearGradient(0, 0, 0, height)
-  base.addColorStop(0, '#010106')
-  base.addColorStop(0.35, '#01040f')
-  base.addColorStop(0.7, '#030b18')
-  base.addColorStop(1, '#06121f')
-  context.fillStyle = base
-  context.fillRect(0, 0, width, height)
-
-  // 2) Half-resolution fBm clouds: periodic in X, smooth in Y.
-  const noiseWidth = Math.floor(width / 2)
-  const noiseHeight = Math.floor(height / 2)
-  const noiseCanvas = document.createElement('canvas')
-  noiseCanvas.width = noiseWidth
-  noiseCanvas.height = noiseHeight
-  const noiseContext = noiseCanvas.getContext('2d')
-  if (!noiseContext) throw new Error('2D canvas unavailable')
-
-  const makeNoise = (gridX: number, gridY: number): ((u: number, v: number) => number) => {
-    const grid = new Float32Array(gridX * gridY)
-    for (let index = 0; index < grid.length; index += 1) grid[index] = random()
-    const at = (x: number, y: number): number => {
-      // Wrap both axes: the dust field samples at higher frequency and clamping
-      // Y turned those samples into 1px vertical stripes.
-      const wrappedX = ((x % gridX) + gridX) % gridX
-      const wrappedY = ((y % gridY) + gridY) % gridY
-      return grid[wrappedY * gridX + wrappedX] ?? 0
-    }
-    const smooth = (t: number): number => t * t * (3 - 2 * t)
-    return (u: number, v: number): number => {
-      const x = u * gridX
-      const y = v * gridY
-      const x0 = Math.floor(x)
-      const y0 = Math.floor(y)
-      const tx = smooth(x - x0)
-      const ty = smooth(y - y0)
-      const top = at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx
-      const bottom = at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx
-      return top * (1 - ty) + bottom * ty
-    }
-  }
-  const coarse = makeNoise(24, 12)
-  const medium = makeNoise(72, 36)
-  const fine = makeNoise(180, 90)
-  // The noise grids already encode the 2:1 equirectangular aspect (24x12,
-  // 72x36, 180x90); sampling u/v directly keeps features round instead of
-  // turning into vertical curtains.
-  const fbm = (u: number, v: number): number =>
-    coarse(u, v) * 0.55 + medium(u, v) * 0.3 + fine(u, v) * 0.15
-
-  const image = noiseContext.createImageData(noiseWidth, noiseHeight)
-  const pixels = image.data
-  const wrapDelta = (value: number): number => {
-    const wrapped = Math.abs(value) % 1
-    return Math.min(wrapped, 1 - wrapped)
-  }
-  const gaussian = (u: number, v: number, cu: number, cv: number, su: number, sv: number): number => {
-    const du = wrapDelta(u - cu) / su
-    const dv = (v - cv) / sv
-    return Math.exp(-(du * du + dv * dv) * 0.5)
-  }
-  const clamp255 = (value: number): number => Math.max(0, Math.min(255, value))
-
-  // Wavy band path: a broad diagonal milky way with brighter knots.
-  const bandCenter = (u: number): number =>
-    0.54 + Math.sin(u * Math.PI * 2 + 1.1) * 0.14 + Math.sin(u * Math.PI * 6 + 0.4) * 0.045
-
-  for (let y = 0; y < noiseHeight; y += 1) {
-    const v = y / noiseHeight
-    for (let x = 0; x < noiseWidth; x += 1) {
-      const u = x / noiseWidth
-      const center = bandCenter(u)
-      const delta = v - center
-      const band = Math.exp(-(delta * delta) / (2 * 0.085 * 0.085))
-      const core = Math.exp(-(delta * delta) / (2 * 0.032 * 0.032))
-
-      const clouds = fbm(u, v)
-      const density = Math.max(0, clouds - 0.32)
-      const knots = Math.pow(Math.max(0, fbm(u * 1.7 + 0.31, v * 1.7 + 0.17) - 0.4), 1.4)
-
-      // Soft blue/white band + lavender outer haze.
-      const bandLight = band * (0.025 + density * 0.42 + knots * 0.62)
-      const coreLight = core * (0.02 + density * 0.22 + knots * 0.85)
-      const haze = band * Math.pow(Math.max(0, 1 - density), 2) * 0.14
-
-      let r = 1 + bandLight * 34 + coreLight * 68 + haze * 15
-      let g = 3 + bandLight * 46 + coreLight * 92 + haze * 19
-      let b = 9 + bandLight * 76 + coreLight * 145 + haze * 38
-
-      // Dust lanes: the fine field darkens the bright band in thin streaks.
-      const dust = Math.max(0, fine(u * 9 + 0.2, v * 9) - 0.48) * band * 3.4
-      const dustFactor = 1 - Math.min(0.82, dust)
-      r *= dustFactor
-      g *= dustFactor
-      b *= dustFactor
-
-      // Ground-level glow: teal bottom-left, pale warm bottom-right.
-      const teal = gaussian(u, v, 0.16, 0.96, 0.2, 0.13)
-      const warm = gaussian(u, v, 0.82, 0.98, 0.28, 0.16)
-      r += teal * 6 + warm * 34
-      g += teal * 34 + warm * 30
-      b += teal * 48 + warm * 26
-
-      const index = (y * noiseWidth + x) * 4
-      pixels[index] = clamp255(r)
-      pixels[index + 1] = clamp255(g)
-      pixels[index + 2] = clamp255(b)
-      pixels[index + 3] = 255
-    }
-  }
-  noiseContext.putImageData(image, 0, 0)
-
-  context.imageSmoothingEnabled = true
-  context.imageSmoothingQuality = 'high'
-  context.drawImage(noiseCanvas, 0, 0, width, height)
-
-  // 3) Full-resolution soft glows to keep the band smooth after upscaling.
-  context.globalCompositeOperation = 'lighter'
-  const paintGlow = (x: number, y: number, radiusX: number, radiusY: number, color: string): void => {
+  /** Soft elongated gas puff: a radial gradient painted under an ellipse transform. */
+  const paintPuff = (
+    x: number,
+    y: number,
+    radiusX: number,
+    radiusY: number,
+    rotation: number,
+    color: string,
+    alpha: number
+  ): void => {
     context.save()
     context.translate(x, y)
+    context.rotate(rotation)
     context.scale(1, radiusY / radiusX)
     const gradient = context.createRadialGradient(0, 0, 0, 0, 0, radiusX)
-    gradient.addColorStop(0, rgba(color, 0.09))
-    gradient.addColorStop(0.4, rgba(color, 0.028))
+    gradient.addColorStop(0, rgba(color, alpha))
+    gradient.addColorStop(0.55, rgba(color, alpha * 0.45))
     gradient.addColorStop(1, rgba(color, 0))
     context.fillStyle = gradient
     context.beginPath()
@@ -662,66 +453,123 @@ function createNebulaSkyboxTexture(): THREE.Texture {
     context.fill()
     context.restore()
   }
-  for (let index = 0; index < 18; index += 1) {
-    const u = random()
-    const v = bandCenter(u) + (random() - 0.5) * 0.16
-    paintGlow(
-      u * width,
-      v * height,
-      width * (0.04 + random() * 0.09),
-      height * (0.03 + random() * 0.08),
-      random() > 0.45 ? '#dbe7ff' : '#c4b5fd'
-    )
-  }
-  paintGlow(width * 0.16, height * 0.97, width * 0.24, height * 0.16, '#2dd4bf')
-  paintGlow(width * 0.84, height * 0.98, width * 0.28, height * 0.18, '#94a3b8')
 
-  // 4) Stars: mostly cool white, a few warm; brighter ones get a tiny halo.
-  for (let index = 0; index < 5200; index += 1) {
-    const u = random()
-    const v = random()
-    const bandBoost = Math.exp(-Math.pow((v - bandCenter(u)) / 0.12, 2)) * 0.45
-    const brightness = Math.min(1, Math.pow(random(), 2.2) + bandBoost * random() * 0.35)
-    const radius = brightness > 0.82 ? 1.05 + random() * 0.7 : 0.4 + random() * 0.42
-    const warm = random() > 0.88
-    context.fillStyle = `rgba(${warm ? '255, 224, 189' : '225, 235, 255'}, ${0.09 + brightness * 0.46})`
-    context.beginPath()
-    context.arc(u * width, v * height, radius, 0, Math.PI * 2)
-    context.fill()
-    if (brightness > 0.9) {
-      const gradient = context.createRadialGradient(
-        u * width,
-        v * height,
-        0,
-        u * width,
-        v * height,
-        radius * 5
-      )
-      gradient.addColorStop(0, 'rgba(255, 255, 255, 0.12)')
-      gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
-      context.fillStyle = gradient
-      context.beginPath()
-      context.arc(u * width, v * height, radius * 5, 0, Math.PI * 2)
-      context.fill()
+  /** Paint the same puff at x-W, x and x+W so the 2:1 map wraps seamlessly. */
+  const wrappedPuff = (
+    x: number,
+    y: number,
+    radiusX: number,
+    radiusY: number,
+    rotation: number,
+    color: string,
+    alpha: number
+  ): void => {
+    for (const offset of [-width, 0, width]) {
+      paintPuff(x + offset, y, radiusX, radiusY, rotation, color, alpha)
     }
   }
-  context.globalCompositeOperation = 'source-over'
 
-  // 5) Overall exposure: keep the sky subordinate to the glowing nodes.
-  context.globalCompositeOperation = 'source-over'
-  context.fillStyle = 'rgba(1, 3, 8, 0.26)'
+  // 1) deep-space base
+  const base = context.createLinearGradient(0, 0, 0, height)
+  base.addColorStop(0, '#02030a')
+  base.addColorStop(0.5, '#05070f')
+  base.addColorStop(1, '#02030a')
+  context.fillStyle = base
   context.fillRect(0, 0, width, height)
+  context.globalCompositeOperation = 'lighter'
 
-  // 5) Pole/horizon fades hide the equirectangular pinch.
-  const poleHeight = height * 0.18
+  // 2) cloud complexes spread across the whole sky
+  const clusterCount = 12
+  for (let cluster = 0; cluster < clusterCount; cluster += 1) {
+    const palette = palettes[cluster % palettes.length]
+    const centerX = random() * width
+    const centerY = height * (0.18 + random() * 0.64)
+    const spread = width * (0.02 + random() * 0.06)
+    const puffCount = 18 + Math.floor(random() * 14)
+    for (let index = 0; index < puffCount; index += 1) {
+      const angle = random() * Math.PI * 2
+      const distance = Math.abs(random() + random() - 1) * spread * 2.2
+      const x = centerX + Math.cos(angle) * distance
+      const y = centerY + Math.sin(angle) * distance * 0.55
+      const radiusX = width * (0.008 + random() * 0.03)
+      wrappedPuff(
+        x,
+        y,
+        radiusX,
+        radiusX * (0.5 + random() * 0.6),
+        random() * Math.PI,
+        palette[Math.floor(random() * palette.length)],
+        0.07 + random() * 0.13
+      )
+    }
+  }
+
+  // 3) wispy filament chains (small puffs following a wandering path)
+  for (let tendril = 0; tendril < 22; tendril += 1) {
+    const palette = palettes[Math.floor(random() * palettes.length)]
+    const color = palette[Math.floor(random() * palette.length)]
+    let x = random() * width
+    let y = height * (0.2 + random() * 0.6)
+    const direction = random() * Math.PI * 2
+    const steps = 12 + Math.floor(random() * 12)
+    for (let step = 0; step < steps; step += 1) {
+      const t = step / steps
+      x += Math.cos(direction + Math.sin(t * 4) * 0.8) * width * 0.006
+      y += Math.sin(direction + Math.cos(t * 3) * 0.8) * height * 0.014
+      const radius = width * (0.0025 + random() * 0.006) * (1 - t * 0.5)
+      wrappedPuff(
+        x,
+        y,
+        radius,
+        radius * (0.5 + random() * 0.7),
+        direction + random(),
+        color,
+        (0.06 + random() * 0.09) * (1 - t)
+      )
+    }
+  }
+
+  // 4) bright star-forming knots
+  for (let index = 0; index < 10; index += 1) {
+    const x = random() * width
+    const y = height * (0.2 + random() * 0.6)
+    const radius = width * (0.004 + random() * 0.01)
+    wrappedPuff(
+      x,
+      y,
+      radius,
+      radius * (0.7 + random() * 0.6),
+      random() * Math.PI,
+      random() > 0.5 ? '#f9a8d4' : '#a5f3fc',
+      0.18 + random() * 0.16
+    )
+  }
+
+  // 5) dark dust lanes carved back into the glow
+  context.globalCompositeOperation = 'source-over'
+  for (let index = 0; index < 52; index += 1) {
+    const x = random() * width
+    const y = height * (0.12 + random() * 0.76)
+    const radius = height * (0.03 + random() * 0.12)
+    const gradient = context.createRadialGradient(x, y, 0, x, y, radius)
+    gradient.addColorStop(0, 'rgba(2, 3, 8, 0.34)')
+    gradient.addColorStop(1, 'rgba(2, 3, 8, 0)')
+    context.fillStyle = gradient
+    context.beginPath()
+    context.arc(x, y, radius, 0, Math.PI * 2)
+    context.fill()
+  }
+
+  // 6) darken the poles so the equirectangular stretching is hidden
+  const poleHeight = height * 0.2
   const topFade = context.createLinearGradient(0, 0, 0, poleHeight)
-  topFade.addColorStop(0, 'rgba(1, 2, 8, 0.94)')
-  topFade.addColorStop(1, 'rgba(1, 2, 8, 0)')
+  topFade.addColorStop(0, 'rgba(2, 3, 8, 0.95)')
+  topFade.addColorStop(1, 'rgba(2, 3, 8, 0)')
   context.fillStyle = topFade
   context.fillRect(0, 0, width, poleHeight)
   const bottomFade = context.createLinearGradient(0, height - poleHeight, 0, height)
-  bottomFade.addColorStop(0, 'rgba(2, 6, 14, 0)')
-  bottomFade.addColorStop(1, 'rgba(2, 6, 14, 0.82)')
+  bottomFade.addColorStop(0, 'rgba(2, 3, 8, 0)')
+  bottomFade.addColorStop(1, 'rgba(2, 3, 8, 0.95)')
   context.fillStyle = bottomFade
   context.fillRect(0, height - poleHeight, width, poleHeight)
 
@@ -731,7 +579,6 @@ function createNebulaSkyboxTexture(): THREE.Texture {
   texture.needsUpdate = true
   return texture
 }
-
 const STAR_COLORS = ['#ffffff', '#e0e7ff', '#bfdbfe', '#fde68a', '#fca5a5', '#c4b5fd']
 const DUST_COLORS = ['#3b82f6', '#22d3ee', '#a855f7', '#f472b6', '#93c5fd']
 
@@ -780,101 +627,10 @@ function createPointsLayer(
   return { points, geometry, material }
 }
 
-/* ------------------------------------------------------ volumetric nebula -- */
-
-/**
- * Soft procedural cloud sheet (white alpha, tinted by the sprite material).
- * Several of these are scattered on a large spherical shell around the graph,
- * so the nebula has real parallax and depth instead of being a flat skybox.
- */
-function createCloudTexture(seed: number): THREE.Texture {
-  const size = 512
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('2D canvas unavailable')
-  const random = createRandom(seed)
-  context.clearRect(0, 0, size, size)
-  context.globalCompositeOperation = 'lighter'
-  for (let index = 0; index < 110; index += 1) {
-    const angle = random() * Math.PI * 2
-    const distance = Math.pow(random(), 0.7) * size * 0.36
-    const x = size / 2 + Math.cos(angle) * distance * (0.7 + random() * 0.6)
-    const y = size / 2 + Math.sin(angle) * distance * (0.55 + random() * 0.5)
-    const radius = size * (0.035 + random() * 0.15)
-    const alpha = (0.05 + random() * 0.11) * Math.max(0.15, 1 - distance / (size * 0.46))
-    const gradient = context.createRadialGradient(x, y, 0, x, y, radius)
-    gradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`)
-    gradient.addColorStop(0.45, `rgba(255, 255, 255, ${alpha * 0.42})`)
-    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
-    context.fillStyle = gradient
-    context.beginPath()
-    context.arc(x, y, radius, 0, Math.PI * 2)
-    context.fill()
-  }
-  // Circular falloff so the billboard edges never show.
-  const mask = context.createRadialGradient(size / 2, size / 2, size * 0.06, size / 2, size / 2, size * 0.5)
-  mask.addColorStop(0, 'rgba(255, 255, 255, 0.95)')
-  mask.addColorStop(0.55, 'rgba(255, 255, 255, 0.6)')
-  mask.addColorStop(1, 'rgba(255, 255, 255, 0)')
-  context.globalCompositeOperation = 'destination-in'
-  context.fillStyle = mask
-  context.fillRect(0, 0, size, size)
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.needsUpdate = true
-  return texture
-}
 function createSceneDecor(): SceneDecor {
   // ---- nebula backdrop: equirectangular skybox (visible on every side) ------
   const skyboxTexture = createNebulaSkyboxTexture()
 
-  // ---- volumetric nebula: billboard clouds on a huge shell for parallax ----
-  const cloudTextures = [
-    createCloudTexture(0x51ed270b),
-    createCloudTexture(0x2545f491),
-    createCloudTexture(0x9e3779b9)
-  ]
-  const cloudGroup = new THREE.Group()
-  cloudGroup.name = 'nebula-volume'
-  const cloudPalette = ['#6d8dff', '#8b5cf6', '#22d3ee', '#c4b5fd', '#a5b4fc', '#93c5fd', '#818cf8']
-  const cloudRandom = createRandom(0xbf58476d)
-  const cloudLayers = [
-    { count: 10, radius: 1500, scaleMin: 1100, scaleMax: 1900, opacity: 0.028 },
-    { count: 12, radius: 900, scaleMin: 700, scaleMax: 1250, opacity: 0.02 },
-    { count: 6, radius: 540, scaleMin: 380, scaleMax: 780, opacity: 0.012 }
-  ]
-  const cloudSprites: THREE.Sprite[] = []
-  for (const layer of cloudLayers) {
-    for (let index = 0; index < layer.count; index += 1) {
-      const theta = cloudRandom() * Math.PI * 2
-      const phi = Math.acos(2 * cloudRandom() - 1)
-      const radius = layer.radius * (0.7 + cloudRandom() * 0.6)
-      const scale = layer.scaleMin + cloudRandom() * (layer.scaleMax - layer.scaleMin)
-      const material = new THREE.SpriteMaterial({
-        map: cloudTextures[index % cloudTextures.length],
-        color: cloudPalette[Math.floor(cloudRandom() * cloudPalette.length)],
-        transparent: true,
-        opacity: layer.opacity * (0.55 + cloudRandom() * 0.85),
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        depthTest: true,
-        rotation: cloudRandom() * Math.PI * 2
-      })
-      const sprite = new THREE.Sprite(material)
-      sprite.position.set(
-        Math.sin(phi) * Math.cos(theta) * radius,
-        Math.cos(phi) * radius * 0.55,
-        Math.sin(phi) * Math.sin(theta) * radius
-      )
-      sprite.scale.set(scale, scale * (0.5 + cloudRandom() * 0.55), 1)
-      sprite.renderOrder = -2
-      sprite.raycast = () => {}
-      cloudSprites.push(sprite)
-      cloudGroup.add(sprite)
-    }
-  }
   // ---- natural star field: mostly white/blue, a few warm, then bright stars --
   const starTexture = createGlowTexture('#ffffff')
   const starLayer = createPointsLayer(
@@ -982,21 +738,13 @@ function createSceneDecor(): SceneDecor {
       attachedScene = scene
       scene.background = skyboxTexture
       for (const object of driftObjects) scene.add(object)
-      scene.add(cloudGroup)
     },
     rotate(deltaSeconds: number): void {
       const step = STARFIELD_ROTATE_SPEED * deltaSeconds
       for (const object of driftObjects) object.rotation.y += step
-      // The cloud shell drifts slower than the star layers: parallax without nausea.
-      cloudGroup.rotation.y += deltaSeconds * 0.011
-      cloudGroup.rotation.z += deltaSeconds * 0.003
     },
     dispose(): void {
       for (const object of driftObjects) object.removeFromParent()
-      cloudGroup.removeFromParent()
-      for (const sprite of cloudSprites) sprite.material.dispose()
-      for (const texture of cloudTextures) texture.dispose()
-      cloudSprites.length = 0
       if (attachedScene !== null && attachedScene.background === skyboxTexture) {
         attachedScene.background = null
       }
@@ -1117,19 +865,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     return () => observer.disconnect()
   }, [])
 
-  // LineMaterial uses a resolution uniform for screen-space widths; keep every
-  // link material in sync with the canvas size.
-  useEffect(() => {
-    LINK_RESOLUTION.set(Math.max(1, size.width), Math.max(1, size.height))
-    const scene = graphRef.current?.scene()
-    if (!scene) return
-    scene.traverse((object: THREE.Object3D) => {
-      if (object instanceof Line2) {
-        ;(object.material as LineMaterial).resolution.copy(LINK_RESOLUTION)
-      }
-    })
-  }, [size])
-
   /* ------------------------------------------------------- visual state sync -- */
 
   /**
@@ -1218,56 +953,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   useEffect(() => {
     applyVisualState()
   }, [applyVisualState, nodes, selectedId, highlightIds, focusIds, performanceMode, hoverFocusId, lodLevel])
-
-  /**
-   * Hover "focus + context" for edges: links touching the hovered node get a
-   * real width/brightness boost, everything else drops to a faint thread.
-   */
-  const applyLinkHoverState = useCallback(() => {
-    const scene = graphRef.current?.scene()
-    if (!scene) return
-    const hoverId = hoverFocusIdRef.current
-    const connected = new Set<string>()
-    if (hoverId !== null) {
-      for (const link of links) {
-        if (linkEndpointId(link.source) === hoverId || linkEndpointId(link.target) === hoverId) {
-          connected.add(`${linkKey(link)}|${link.relation}`)
-        }
-      }
-    }
-    scene.traverse((object: THREE.Object3D) => {
-      if (!(object instanceof Line2)) return
-      const data = object.userData as { kind?: string; key?: string; baseWidth?: number }
-      if (data.kind !== 'line2' || data.key === undefined) return
-      const material = object.material as LineMaterial
-      const materialWithWidth = material as LineMaterial & { linewidth: number }
-      const baseWidth = data.baseWidth ?? LINK_BASE_WIDTH
-      if (hoverId === null) {
-        material.color.setScalar(1)
-        materialWithWidth.linewidth = baseWidth
-        material.opacity = 1
-        return
-      }
-      if (connected.has(data.key)) {
-        material.color.setScalar(2.2)
-        materialWithWidth.linewidth = baseWidth * 1.9
-        material.opacity = 1
-      } else {
-        material.color.setScalar(0.3)
-        materialWithWidth.linewidth = baseWidth * 0.8
-        material.opacity = 0.5
-      }
-    })
-  }, [links])
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => applyLinkHoverState())
-    const timer = window.setTimeout(applyLinkHoverState, 360)
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.clearTimeout(timer)
-    }
-  }, [applyLinkHoverState, hoverFocusId, nodes, links, graphData])
 
   /** Camera-distance LOD: hide leaf labels first, then dim leaves entirely. */
   useEffect(() => {
@@ -1597,7 +1282,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
         zoomToFit?: (duration?: number, padding?: number) => unknown
       }).zoomToFit
       if (typeof libraryFit === 'function') {
-        libraryFit.call(controller, durationMs, 56)
+        libraryFit.call(controller, durationMs, 36)
         return
       }
       let nodes: GraphNode[] = []
@@ -1828,8 +1513,13 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
           cooldownTicks={120}
           d3AlphaDecay={0.04}
           nodeThreeObject={buildNodeObject}
-          linkThreeObject={createLinkObject}
-          linkPositionUpdate={updateLinkPosition}
+          linkColor={() => '#151a22'}
+          linkWidth={faintLinkWidth}
+          linkOpacity={0.55}
+          linkDirectionalParticles={2}
+          linkDirectionalParticleSpeed={0.008}
+          linkDirectionalParticleWidth={2}
+          linkDirectionalParticleColor={() => '#67e8f9'}
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onBackgroundClick={handleBackgroundClick}
