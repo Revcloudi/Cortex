@@ -35,6 +35,7 @@ import {
   LABEL_TEXT_COLOR,
   LABEL_TEXTURE_HEIGHT,
   LABEL_TEXTURE_WIDTH,
+  LINK_COLORS,
   NEBULA_BACKGROUND,
   NEBULA_SKYBOX_HEIGHT,
   NEBULA_SKYBOX_WIDTH,
@@ -53,6 +54,7 @@ import {
   STARFIELD_FAR_OPACITY,
   STARFIELD_FAR_SIZE,
   STARFIELD_ROTATE_SPEED,
+  linkOpacity,
   nodeColor,
   nodeRadius,
   rgba
@@ -161,32 +163,103 @@ function linkDistance(link: GraphLink): number {
   return min + hashUnit(`${linkKey(link)}|${link.relation}`) * (max - min)
 }
 
+/* ------------------------------------------------------------- link art -- */
+
 /**
- * Random initial position on a flattened sphere. d3 keeps the coordinates it
- * receives, so every load starts from a different constellation instead of a
- * deterministic layout; the force engine still spreads nodes organically.
+ * Edges are a short polyline whose vertex colours fade to black at both ends.
+ * With additive blending the line dissolves into the node glow instead of
+ * ending in a hard point at the node centre, while the trimmed middle keeps
+ * the web readable. Deterministic per-link colours keep the look stable.
  */
-function createRandomNodePosition(): { x: number; y: number; z: number } {
-  const theta = Math.random() * Math.PI * 2
-  const phi = Math.acos(2 * Math.random() - 1)
-  const radius = 24 + Math.random() * 86
-  return {
-    x: Math.sin(phi) * Math.cos(theta) * radius,
-    y: Math.cos(phi) * radius * 0.55,
-    z: Math.sin(phi) * Math.sin(theta) * radius
-  }
+const LINK_SEGMENT_COUNT = 20
+const LINK_FADE_FRACTION = 0.2
+const LINK_TRIM_RATIO = 0.045
+const LINK_TRIM_MIN = 1.5
+const LINK_TRIM_MAX = 7
+const LINK_COLOR_GAIN = 2.4
+
+function linkBaseColor(link: GraphLink): THREE.Color {
+  const opacity = linkOpacity(link.relation, link.derived === true)
+  // Slight per-link brightness variation keeps the web organic instead of a
+  // uniform wireframe; deterministic so the look is stable across reloads.
+  const variation = 0.82 + hashUnit(`${linkKey(link)}|brightness`) * 0.36
+  return new THREE.Color(LINK_COLORS[link.relation]).multiplyScalar(
+    Math.min(1, opacity * LINK_COLOR_GAIN * variation)
+  )
 }
 
-/* --------------------------------------------------------------- links -- */
+function createLinkObject(link: GraphLink): THREE.Object3D {
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute(
+    'position',
+    new THREE.BufferAttribute(new Float32Array(LINK_SEGMENT_COUNT * 3), 3)
+  )
+  const base = linkBaseColor(link)
+  const colors = new Float32Array(LINK_SEGMENT_COUNT * 3)
+  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
+    const t = index / (LINK_SEGMENT_COUNT - 1)
+    const fadeIn = Math.min(1, t / LINK_FADE_FRACTION)
+    const fadeOut = Math.min(1, (1 - t) / LINK_FADE_FRACTION)
+    const fade = Math.min(fadeIn, fadeOut) ** 1.2
+    colors[index * 3] = base.r * fade
+    colors[index * 3 + 1] = base.g * fade
+    colors[index * 3 + 2] = base.b * fade
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  const line = new THREE.Line(
+    geometry,
+    new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  )
+  line.frustumCulled = false
+  line.renderOrder = 2
+  // Remember the unfaded colour profile so hover focus can re-tint edges
+  // without rebuilding geometry.
+  const fadeProfile = new Float32Array(LINK_SEGMENT_COUNT)
+  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
+    const t = index / (LINK_SEGMENT_COUNT - 1)
+    const fadeIn = Math.min(1, t / LINK_FADE_FRACTION)
+    const fadeOut = Math.min(1, (1 - t) / LINK_FADE_FRACTION)
+    fadeProfile[index] = Math.min(fadeIn, fadeOut) ** 1.2
+  }
+  line.userData = {
+    key: `${linkKey(link)}|${link.relation}`,
+    baseColor: base.clone(),
+    fadeProfile,
+    relation: link.relation
+  }
+  return line
+}
 
-/**
- * Flow particles carry the eye: the links themselves stay almost invisible,
- * while small additive cyan photons travel along them like fibre optics.
- * The library renders directional particles as nested objects, so one shared
- * sprite template keeps the per-photon clones cheap and glowing.
- */
-function faintLinkWidth(link: GraphLink): number {
-  return link.derived === true ? 0.5 : 0.85
+function updateLinkPosition(
+  object: THREE.Object3D,
+  coords: { start: Coords; end: Coords }
+): void {
+  if (!(object instanceof THREE.Line)) return
+  const position = object.geometry.getAttribute('position') as THREE.BufferAttribute
+  const dx = coords.end.x - coords.start.x
+  const dy = coords.end.y - coords.start.y
+  const dz = coords.end.z - coords.start.z
+  const length = Math.sqrt(dx * dx + dy * dy + dz * dz)
+  const trim =
+    length > 0
+      ? Math.min(LINK_TRIM_MAX, Math.max(LINK_TRIM_MIN, length * LINK_TRIM_RATIO))
+      : 0
+  const t0 = length > 0 ? Math.min(0.45, trim / length) : 0
+  const t1 = 1 - t0
+  const array = position.array as Float32Array
+  for (let index = 0; index < LINK_SEGMENT_COUNT; index += 1) {
+    const t = t0 + (t1 - t0) * (index / (LINK_SEGMENT_COUNT - 1))
+    array[index * 3] = coords.start.x + dx * t
+    array[index * 3 + 1] = coords.start.y + dy * t
+    array[index * 3 + 2] = coords.start.z + dz * t
+  }
+  position.needsUpdate = true
 }
 
 /**
@@ -200,8 +273,6 @@ interface GraphController {
   controls(): OrbitControlsLike
   d3ReheatSimulation(): unknown
   d3Force(name: string): ForceLike | undefined
-  /** Live engine graph: nodes carry the settled x/y/z positions. */
-  graphData(): { nodes: GraphNode[]; links: GraphLink[] }
   scene(): THREE.Scene
 }
 
@@ -222,13 +293,8 @@ interface ForceGraphProps {
   cooldownTicks: number
   d3AlphaDecay: number
   nodeThreeObject: (node: GraphNode) => THREE.Object3D
-  linkColor: (link: GraphLink) => string
-  linkWidth: (link: GraphLink) => number
-  linkOpacity: number
-  linkDirectionalParticles: number
-  linkDirectionalParticleSpeed: number
-  linkDirectionalParticleWidth: number
-  linkDirectionalParticleColor: (link: GraphLink) => string
+  linkThreeObject: (link: GraphLink) => THREE.Object3D
+  linkPositionUpdate: (object: THREE.Object3D, coords: { start: Coords; end: Coords }, link: GraphLink) => void
   onNodeClick: (node: GraphNode, event: MouseEvent) => void
   onNodeHover: (node: GraphNode | null, previousNode: GraphNode | null) => void
   onBackgroundClick: () => void
@@ -405,14 +471,6 @@ function createRandom(seed: number): () => number {
  * Horizontal wrap: every puff is painted three times (x-W, x, x+W) so the
  * left/right seams of the equirectangular map join without a visible edge.
  */
-/**
- * Photo-like deep-sky panorama for the 3D scene.
- *
- * Two passes: a half-resolution procedural noise field paints a milky-way band
- * with dust lanes and colour grading close to a real long-exposure photo, then
- * full-resolution glows and stars are layered on top. Noise sampling wraps in X
- * so the equirectangular map joins seamlessly; every mount gets a fresh sky.
- */
 function createNebulaSkyboxTexture(): THREE.Texture {
   const width = NEBULA_SKYBOX_WIDTH
   const height = NEBULA_SKYBOX_HEIGHT
@@ -579,6 +637,7 @@ function createNebulaSkyboxTexture(): THREE.Texture {
   texture.needsUpdate = true
   return texture
 }
+
 const STAR_COLORS = ['#ffffff', '#e0e7ff', '#bfdbfe', '#fde68a', '#fca5a5', '#c4b5fd']
 const DUST_COLORS = ['#3b82f6', '#22d3ee', '#a855f7', '#f472b6', '#93c5fd']
 
@@ -781,8 +840,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   const visualsRef = useRef<Map<string, NodeVisual>>(new Map())
   const glowCacheRef = useRef<Map<string, THREE.Texture>>(new Map())
   const nodeByIdRef = useRef<Map<string, GraphNode>>(new Map())
-  /** Rendered node groups: their .position is the truth the camera must frame. */
-  const nodeGroupRef = useRef<Map<string, THREE.Group>>(new Map())
   const hoveredIdRef = useRef<string | null>(null)
   const selectedIdRef = useRef<string | null>(selectedId)
   const highlightRef = useRef<string[] | null>(highlightIds)
@@ -821,7 +878,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   // and the page's own link objects must stay strings.
   const graphData = useMemo(
     () => ({
-      nodes: nodes.map((node) => ({ ...node, ...createRandomNodePosition() })) as GraphNode[],
+      nodes: nodes.map((node) => ({ ...node })) as GraphNode[],
       links: links.map((link) => ({ ...link })) as GraphLink[]
     }),
     [nodes, links]
@@ -954,6 +1011,56 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     applyVisualState()
   }, [applyVisualState, nodes, selectedId, highlightIds, focusIds, performanceMode, hoverFocusId, lodLevel])
 
+  /**
+   * Hover "focus + context" for edges: links touching the hovered node are
+   * boosted (additive brightness reads as a thicker fibre), everything else
+   * drops to a near-invisible thread. Restores the base tint on leave.
+   */
+  const applyLinkHoverState = useCallback(() => {
+    const scene = graphRef.current?.scene()
+    if (!scene) return
+    const hoverId = hoverFocusIdRef.current
+    const connected = new Set<string>()
+    if (hoverId !== null) {
+      for (const link of links) {
+        if (linkEndpointId(link.source) === hoverId || linkEndpointId(link.target) === hoverId) {
+          connected.add(`${linkKey(link)}|${link.relation}`)
+        }
+      }
+    }
+    scene.traverse((object: THREE.Object3D) => {
+      if (!(object instanceof THREE.Line)) return
+      const data = object.userData as {
+        key?: string
+        baseColor?: THREE.Color
+        fadeProfile?: Float32Array
+      }
+      const base = data.baseColor
+      const profile = data.fadeProfile
+      if (!base || !profile || data.key === undefined) return
+      const factor = hoverId === null ? 1 : connected.has(data.key) ? 2.8 : 0.08
+      const geometry = object.geometry as THREE.BufferGeometry
+      const colorAttribute = geometry.getAttribute('color') as THREE.BufferAttribute
+      const array = colorAttribute.array as Float32Array
+      for (let index = 0; index < profile.length; index += 1) {
+        const value = profile[index] * factor
+        array[index * 3] = base.r * value
+        array[index * 3 + 1] = base.g * value
+        array[index * 3 + 2] = base.b * value
+      }
+      colorAttribute.needsUpdate = true
+    })
+  }, [links])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => applyLinkHoverState())
+    const timer = window.setTimeout(applyLinkHoverState, 360)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+    }
+  }, [applyLinkHoverState, hoverFocusId, nodes, links, graphData])
+
   /** Camera-distance LOD: hide leaf labels first, then dim leaves entirely. */
   useEffect(() => {
     let frame = 0
@@ -1005,7 +1112,6 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     if (previous) disposeVisual(previous)
 
     const group = new THREE.Group()
-    nodeGroupRef.current.set(node.id, group)
 
     const coreMaterial = new THREE.SpriteMaterial({
       map: glowTexture,
@@ -1125,13 +1231,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     interactedRef.current = true
     onSelectRef.current(null)
     // Empty canvas restores the constellation's own center as the orbit target.
-    let nodes: GraphNode[] = []
-    const controller = graphRef.current
-    try {
-      nodes = controller?.graphData().nodes ?? [...nodeByIdRef.current.values()]
-    } catch {
-      nodes = [...nodeByIdRef.current.values()]
-    }
+    const nodes = [...nodeByIdRef.current.values()]
     if (nodes.length === 0) return
     const box = new THREE.Box3()
     const point = new THREE.Vector3()
@@ -1276,33 +1376,12 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     (durationMs = CAMERA_RESET_MS) => {
       const controller = graphRef.current
       if (!controller) return
-      // Prefer the library's own fit: it reads the live engine positions, which
-      // is the only source that stays correct with random initial layouts.
-      const libraryFit = (controller as unknown as {
-        zoomToFit?: (duration?: number, padding?: number) => unknown
-      }).zoomToFit
-      if (typeof libraryFit === 'function') {
-        libraryFit.call(controller, durationMs, 36)
-        return
-      }
-      let nodes: GraphNode[] = []
-      try {
-        nodes = controller.graphData().nodes
-      } catch {
-        nodes = [...nodeByIdRef.current.values()]
-      }
-      const renderedGroups = [...nodeGroupRef.current.values()].filter(
-        (group) => group.parent !== null
-      )
-      if (nodes.length === 0 && renderedGroups.length === 0) return
+      const nodes = [...nodeByIdRef.current.values()]
+      if (nodes.length === 0) return
       const box = new THREE.Box3()
       const point = new THREE.Vector3()
-      if (renderedGroups.length > 0) {
-        for (const group of renderedGroups) box.expandByPoint(group.position)
-      } else {
-        for (const node of nodes) {
-          box.expandByPoint(point.set(node.x ?? 0, node.y ?? 0, node.z ?? 0))
-        }
+      for (const node of nodes) {
+        box.expandByPoint(point.set(node.x ?? 0, node.y ?? 0, node.z ?? 0))
       }
       const center = box.getCenter(new THREE.Vector3())
       const extent = box.getSize(new THREE.Vector3())
@@ -1318,8 +1397,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
           spanHeight / 2 / halfTanFov,
           spanHorizontal / 2 / (halfTanFov * viewportAspect)
         ) *
-          1.42 +
-        28
+          1.18 +
+        20
       const current = controller.cameraPosition()
       const direction = new THREE.Vector3(
         current.x - center.x,
@@ -1341,31 +1420,23 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
 
   // Re-frame whenever the visible set changes (scope switch / filter toggle) so
   // the constellation always fills the canvas instead of floating off-centre.
-  // Random initial positions mean the layout keeps expanding while the engine
-  // settles (slow software renderers can take several seconds), so refit a few
-  // times instead of trusting a single early frame; `onEngineStop` is the final
-  // accurate signal.
+  // `onEngineStop` is the accurate signal (the simulation has settled); the timer
+  // is only a fallback for the rare case where the engine never reports stopping.
   useEffect(() => {
     if (nodes.length === 0) return
     fittedRef.current = false
     interactedRef.current = false
     window.clearTimeout(autoFitTimerRef.current)
-    const schedule = [1300, 3000, 5200, 8000, 11000, 15000, 20000]
-    const timers = schedule.map((delay) =>
-      window.setTimeout(() => {
-        if (interactedRef.current) return
-        fitView(560)
-      }, delay)
-    )
-    return () => {
-      for (const timer of timers) window.clearTimeout(timer)
-    }
+    autoFitTimerRef.current = window.setTimeout(() => {
+      if (fittedRef.current || interactedRef.current) return
+      fittedRef.current = true
+      fitView()
+    }, 3200)
+    return () => window.clearTimeout(autoFitTimerRef.current)
   }, [nodes, fitView])
 
   const handleEngineStop = useCallback(() => {
-    if (interactedRef.current) return
-    // Re-fit on every settled layout: the fallback timer may have framed the
-    // graph mid-flight (random initial positions need the extra correction).
+    if (fittedRef.current || interactedRef.current) return
     fittedRef.current = true
     window.clearTimeout(autoFitTimerRef.current)
     fitView()
@@ -1375,14 +1446,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
 
   const focusNode = useCallback((nodeId: string) => {
     const controller = graphRef.current
-    if (!controller) return
-    let node = nodeByIdRef.current.get(nodeId)
-    try {
-      node = controller.graphData().nodes.find((entry) => entry.id === nodeId) ?? node
-    } catch {
-      /* keep nodeByIdRef fallback */
-    }
-    if (!node) return
+    const node = nodeByIdRef.current.get(nodeId)
+    if (!controller || !node) return
     // A deliberate focus must win over a pending automatic re-frame.
     interactedRef.current = true
     fittedRef.current = true
@@ -1510,16 +1575,11 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
           rendererConfig={{ preserveDrawingBuffer: true, antialias: true }}
           enableNodeDrag
           warmupTicks={20}
-          cooldownTicks={120}
-          d3AlphaDecay={0.04}
+          cooldownTicks={140}
+          d3AlphaDecay={0.022}
           nodeThreeObject={buildNodeObject}
-          linkColor={() => '#151a22'}
-          linkWidth={faintLinkWidth}
-          linkOpacity={0.55}
-          linkDirectionalParticles={2}
-          linkDirectionalParticleSpeed={0.008}
-          linkDirectionalParticleWidth={2}
-          linkDirectionalParticleColor={() => '#67e8f9'}
+          linkThreeObject={createLinkObject}
+          linkPositionUpdate={updateLinkPosition}
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onBackgroundClick={handleBackgroundClick}
