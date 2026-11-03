@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Camera, Loader2, Maximize2, Minimize2 } from 'lucide-react'
+import {
+  Activity,
+  AlertTriangle,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Maximize2,
+  Minimize2
+} from 'lucide-react'
 import { toast } from 'sonner'
 import {
   MEMORY_GRAPH_DEFAULT_LIMITS,
@@ -22,7 +31,6 @@ import {
   HudBackdrop,
   HudButton,
   HudDivider,
-  HudKbd,
   HudPanel,
   HudSectionTitle,
   HudStat,
@@ -77,14 +85,6 @@ function truncateLabel(value: string): string {
     : `${trimmed.slice(0, TARGET_LABEL_MAX_LENGTH - 1)}…`
 }
 
-/** `HH:MM:SS` HUD clock for `graph.meta.generatedAt`; invalid input → em dash. */
-function formatClockTime(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '—'
-  const pad = (value: number): string => value.toString().padStart(2, '0')
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-}
-
 /**
  * The expanded legend only has room between the control column and the
  * inspector on ≥1280px viewports; narrower windows fall back to the collapsed
@@ -100,24 +100,6 @@ function useNarrowViewport(): boolean {
     return () => media.removeEventListener('change', sync)
   }, [])
   return narrow
-}
-
-/** One `KEY label` hint in the bottom HUD status bar. */
-function HudShortcut({
-  kbd,
-  label,
-  className
-}: {
-  kbd: string
-  label: string
-  className?: string
-}) {
-  return (
-    <span className={cn('flex items-center gap-1', className)}>
-      <HudKbd className="text-[10.5px]">{kbd}</HudKbd>
-      <span className="text-[#7FA9BE]">{label}</span>
-    </span>
-  )
 }
 
 interface StatusCard {
@@ -162,6 +144,23 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   /** Legend starts collapsed; when opened the page moves it beside the panel. */
   const [legendOpen, setLegendOpen] = useState(false)
+  /** Left command column can slide fully off-canvas for an unobstructed map. */
+  const [hudCollapsed, setHudCollapsed] = useState(false)
+  /**
+   * Motion switch. `null` follows the OS `prefers-reduced-motion` setting; a
+   * boolean is an explicit user override persisted across reloads. The HUD
+   * toggle is the only way to turn the subtle breathing/rotation back on for
+   * users whose system asks for reduced motion.
+   */
+  const [motionPreference, setMotionPreference] = useState<boolean | null>(() => {
+    try {
+      const stored = window.localStorage.getItem('cortex.nebula.motion')
+      return stored === null ? null : stored === '1'
+    } catch {
+      return null
+    }
+  })
+  const motionEnabled = motionPreference ?? !reducedMotion
 
   // Keep the camera from auto-rotating for users who asked for less motion.
   useEffect(() => {
@@ -171,6 +170,22 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     media.addEventListener('change', sync)
     return () => media.removeEventListener('change', sync)
   }, [])
+
+  const handleToggleHud = useCallback(() => {
+    setHudCollapsed((value) => !value)
+  }, [])
+
+  const handleToggleMotion = useCallback(() => {
+    setMotionPreference((current) => {
+      const next = !(current ?? !reducedMotion)
+      try {
+        window.localStorage.setItem('cortex.nebula.motion', next ? '1' : '0')
+      } catch {
+        /* private mode / storage disabled: the toggle still works for this session */
+      }
+      return next
+    })
+  }, [reducedMotion])
 
   const pendingTarget =
     (scopeKind === 'asset' && activeHostPort === null) ||
@@ -365,11 +380,6 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
         : graph?.meta.truncated === true
           ? t('nebula.hud.subtitleDegraded')
           : t('nebula.hud.subtitleOnline')
-
-  const updatedLabel =
-    graph === null
-      ? t('nebula.hud.updatedNone')
-      : t('nebula.hud.updated', { time: formatClockTime(graph.meta.generatedAt) })
 
   // Cross-page "view full details" link for the selected node. Leaks have no
   // dedicated page, so they keep the drawer-only summary.
@@ -624,7 +634,8 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
           highlightIds={highlightIds}
           focusIds={focusIds}
           performanceMode={performanceMode}
-          autoRotate={!reducedMotion}
+          autoRotate={motionEnabled}
+          reducedMotion={!motionEnabled}
           onSelect={handleSelectNode}
           className="absolute inset-0"
         />
@@ -642,7 +653,8 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
       {loading && graph !== null ? (
         <div
           className={cn(
-            'pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center pl-[320px]',
+            'pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center',
+            hudCollapsed ? 'pl-4' : 'pl-[320px]',
             selectedNode === null ? 'flex' : 'hidden pr-[416px] xl:flex'
           )}
         >
@@ -677,6 +689,21 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
         >
           <HudButton
             size="icon"
+            onClick={handleToggleMotion}
+            aria-pressed={motionEnabled}
+            aria-label={motionEnabled ? t('nebula.hud.motionOn') : t('nebula.hud.motionOff')}
+            title={motionEnabled ? t('nebula.hud.motionOn') : t('nebula.hud.motionOff')}
+            data-testid="motion-toggle"
+            className={cn(
+              motionEnabled
+                ? 'text-[#00E5FF]'
+                : 'border-[#FFAA00]/60 text-[#FFAA00] hover:border-[#FFAA00]/80 hover:text-[#FFC766]'
+            )}
+          >
+            <Activity aria-hidden="true" className="h-3.5 w-3.5" />
+          </HudButton>
+          <HudButton
+            size="icon"
             onClick={handleToggleFullscreen}
             aria-label={isFullscreen ? t('nebula.fullscreen.exit') : t('nebula.fullscreen.enter')}
             title={isFullscreen ? t('nebula.fullscreen.exit') : t('nebula.fullscreen.enter')}
@@ -703,11 +730,33 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
 
       {/* --------------------------------------------------- left command column -- */}
       {/* pointer-events-none wrapper: the tactical header must not swallow canvas
-          drags; the console below opts back in with pointer-events-auto. */}
-      <div className="pointer-events-none absolute bottom-[52px] left-4 top-4 z-20 flex w-[304px] max-w-[calc(100%_-_2rem)] flex-col gap-2">
-        <HudPanel className="pointer-events-none shrink-0 px-3 py-2.5">
+          drags; the console below opts back in with pointer-events-auto. The
+          whole column can slide off-canvas so the map gets the full viewport. */}
+      <div
+        inert={hudCollapsed}
+        aria-hidden={hudCollapsed}
+        data-testid="hud-column"
+        className={cn(
+          'pointer-events-none absolute bottom-4 left-4 top-4 z-20 flex w-[304px] max-w-[calc(100%_-_2rem)] flex-col gap-2',
+          'transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none',
+          hudCollapsed
+            ? '-translate-x-[calc(100%_+_1.5rem)] opacity-0'
+            : 'translate-x-0 opacity-100'
+        )}
+      >
+        <HudPanel className="pointer-events-none relative shrink-0 px-3 py-2.5">
+          <HudButton
+            size="icon"
+            onClick={handleToggleHud}
+            aria-label={t('nebula.hud.collapsePanel')}
+            title={t('nebula.hud.collapsePanel')}
+            data-testid="hud-collapse"
+            className="pointer-events-auto absolute right-2 top-2 h-6 w-6 text-[#7FA9BE]"
+          >
+            <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
+          </HudButton>
           <h1
-            className="truncate font-mono text-[24px] font-semibold uppercase leading-none tracking-[0.06em] text-[#00E5FF]"
+            className="truncate pr-8 font-mono text-[22px] font-semibold uppercase leading-none tracking-[0.06em] text-[#00E5FF]"
             style={{ textShadow: '0 0 10px rgba(0, 229, 255, 0.5)' }}
           >
             {t('nebula.hud.brand')}
@@ -799,13 +848,33 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
         </div>
       </div>
 
+      {/* Edge tab that brings the command column back after collapsing it. */}
+      {hudCollapsed ? (
+        <button
+          type="button"
+          onClick={handleToggleHud}
+          aria-label={t('nebula.hud.expandPanel')}
+          title={t('nebula.hud.expandPanel')}
+          data-testid="hud-expand"
+          className={cn(
+            'absolute left-0 top-1/2 z-30 -translate-y-1/2',
+            'flex h-16 w-6 items-center justify-center rounded-r-[3px] border border-l-0 border-[#00E5FF]/40',
+            'bg-[#020A14]/85 font-mono text-[#00E5FF] shadow-[0_0_18px_-6px_rgba(0,229,255,0.6)] backdrop-blur-md',
+            'transition-colors hover:bg-[#00E5FF]/[0.12] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#00E5FF]/70'
+          )}
+        >
+          <ChevronRight aria-hidden="true" className="h-4 w-4" />
+        </button>
+      ) : null}
+
       {/* ------------------------------------------------------------ status card -- */}
       {/* Same canvas-area centring as the loading pill, so the empty/error card
           never sits on top of the command column or the inspector. */}
       {statusCard !== null ? (
         <div
           className={cn(
-            'pointer-events-none absolute inset-x-0 top-1/2 z-30 flex -translate-y-1/2 justify-center pl-[320px] pr-4',
+            'pointer-events-none absolute inset-x-0 top-1/2 z-30 flex -translate-y-1/2 justify-center pr-4',
+            hudCollapsed ? 'pl-4' : 'pl-[320px]',
             selectedNode === null ? '' : 'pr-[416px]'
           )}
         >
@@ -848,7 +917,8 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
           legend stays hidden there instead of overlapping the drawer. */}
       <div
         className={cn(
-          'absolute bottom-[52px] left-[324px] z-20 max-w-[calc(100%_-_2rem)]',
+          'absolute bottom-4 z-20 max-w-[calc(100%_-_2rem)]',
+          hudCollapsed ? 'left-4' : 'left-[324px]',
           legendExpanded ? 'w-[300px]' : 'w-auto',
           selectedNode !== null ? 'hidden xl:block' : 'block'
         )}
@@ -859,43 +929,6 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
           hasAggregates={visibleGraph !== null && graphHasAggregates(visibleGraph.nodes)}
           className={legendExpanded ? 'max-w-full' : undefined}
         />
-      </div>
-
-      {/* ------------------------------------------------------ bottom HUD bar -- */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex h-9 items-center gap-3 border-t border-[#00E5FF]/15 bg-[#02040A]/85 px-3 font-mono text-[11px] uppercase tracking-[0.04em] text-[#7FA9BE] backdrop-blur-md">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <HudStatusDot tone={hudStatusTone} pulse={false} />
-          <span className="shrink-0 text-[#00E5FF]/80">{t('nebula.hud.scopeLabel')}</span>
-          <span className="truncate text-[#C7E9F5]">{t(`nebula.scope.${scopeKind}`)}</span>
-          {scopeKind === 'asset' && activeHostPort !== null ? (
-            <span className="hidden min-w-0 truncate normal-case text-[#00E5FF]/70 2xl:inline">
-              {activeHostPort}
-            </span>
-          ) : null}
-        </div>
-
-        <span aria-hidden="true" className="h-3 w-px shrink-0 bg-[#00E5FF]/15" />
-        <span className="hidden shrink-0 sm:inline">{updatedLabel}</span>
-
-        <div className="ml-auto flex min-w-0 items-center gap-3">
-          {performanceMode ? (
-            <span className="hidden items-center text-[#FFC766] xl:flex">
-              {t('nebula.hud.modePerformance')}
-            </span>
-          ) : null}
-          {reducedMotion ? (
-            <span className="hidden items-center text-[#7FA9BE] 2xl:flex">
-              {t('nebula.hud.reducedMotion')}
-            </span>
-          ) : null}
-          {/* Secondary hints drop out first as the window narrows. */}
-          <div className="hidden items-center gap-2.5 lg:flex">
-            <HudShortcut kbd="DRAG" label={t('nebula.hud.drag')} />
-            <HudShortcut kbd="WHEEL" label={t('nebula.hud.wheel')} />
-            <HudShortcut kbd="CLICK" label={t('nebula.hud.click')} className="hidden xl:flex" />
-            <HudShortcut kbd="ESC" label={t('nebula.inspector.close')} className="hidden xl:flex" />
-          </div>
-        </div>
       </div>
 
       {/* ------------------------------------------------------------- inspector -- */}

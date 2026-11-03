@@ -96,6 +96,11 @@ export interface NebulaGraphProps {
   performanceMode: boolean
   /** Auto-rotation is already reduced-motion aware upstream. */
   autoRotate: boolean
+  /**
+   * Page-level motion switch. When provided it overrides the OS
+   * `prefers-reduced-motion` preference so the HUD toggle can opt in/out.
+   */
+  reducedMotion?: boolean
   onSelect: (nodeId: string | null) => void
   /**
    * Optional live label counter for HUD status lines: how many projected DOM
@@ -518,6 +523,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     focusIds,
     performanceMode,
     autoRotate,
+    reducedMotion: reducedMotionOverride,
     onSelect,
     onLabelStats,
     className
@@ -525,7 +531,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   ref
 ) {
   const { t } = useI18n()
-  const reducedMotion = usePrefersReducedMotion()
+  const systemReducedMotion = usePrefersReducedMotion()
+  const reducedMotion = reducedMotionOverride ?? systemReducedMotion
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const graphRef = useRef<GraphController | null>(null)
@@ -1638,6 +1645,23 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
           onEngineStop={handleEngineStop}
         />
       ) : null}
+
+      {/* Weak faux depth of field: keep the focal centre crisp and soften the
+          periphery where nodes fly away. A CSS backdrop blur is used instead of
+          a Three.js BokehPass so the force-graph render loop and PNG capture
+          stay untouched; labels/HUD live above this layer and stay sharp. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[3]"
+        style={{
+          backdropFilter: performanceMode ? 'none' : 'blur(3px)',
+          WebkitBackdropFilter: performanceMode ? 'none' : 'blur(3px)',
+          maskImage:
+            'radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.45) 68%, rgba(0,0,0,1) 100%)',
+          WebkitMaskImage:
+            'radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.45) 68%, rgba(0,0,0,1) 100%)'
+        }}
+      />
 
       {contextLost ? (
         <div className="absolute inset-0 z-20 grid place-items-center bg-[#02040a]/80 px-6 backdrop-blur-sm">

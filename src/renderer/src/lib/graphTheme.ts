@@ -238,8 +238,8 @@ export function linkOpacity(relation: GraphRelation, derived: boolean): number {
 export const CAMERA_FOV = 45
 export const CAMERA_FOCUS_MS = 900
 export const CAMERA_RESET_MS = 800
-/** Slow holo-table auto-rotation (reference: 0.5). */
-export const AUTO_ROTATE_SPEED = 0.5
+/** Slow holo-table auto-rotation (reference: 0.5; deliberately subtler here). */
+export const AUTO_ROTATE_SPEED = 0.28
 /** Idle delay before auto-rotation resumes after a pointer interaction. */
 export const AUTO_ROTATE_RESUME_MS = 4000
 /** Initial camera distance for the default framing of the whole graph. */
@@ -253,9 +253,9 @@ export const DEFAULT_CAMERA_DISTANCE = 420
 export const DEFAULT_CAMERA_ELEVATION = 0.26
 
 /** Wireframe spin + breathing, paused for reduced-motion users. */
-export const NODE_SPIN_SPEED = 0.34
+export const NODE_SPIN_SPEED = 0.24
 export const NODE_BREATHE_SPEED = 1.6
-export const NODE_BREATHE_AMPLITUDE = 0.045
+export const NODE_BREATHE_AMPLITUDE = 0.03
 export const NODE_HOVER_SCALE = 1.14
 
 export const CAMERA_LOD_NEAR = 1.7
