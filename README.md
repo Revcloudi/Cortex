@@ -162,6 +162,11 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 - The main process watches the SQLite files (`data.db`, `-wal`, `-shm`) with chokidar and pushes `data:changed`, so agent writes usually show up in under a second without losing filters or open detail panels.
 - Bilingual skills: `skills/zh/**` and `skills/en/**`; choose per installation.
 
+### Memory Nebula
+
+**Memory Nebula** turns the local SQLite memory into an explorable 3D star map: project/target hubs, host assets, vulnerabilities, leaks and snapshot sessions are connected by derived, read-only relations (no extra tables). It supports all-library / single-asset / single-task scopes, search and type filters, a focus neighbourhood, `+N` performance aggregation, fullscreen view and PNG export, plus a 2D SVG fallback when WebGL is unavailable.
+
+![Memory Nebula: project/target/host/vulnerability graph generated from the local Cortex database](assets/readme-nebula.png)
 ## Requirements
 
 - Node.js **≥ 22.12** for the CLI and source builds. The Windows desktop installer bundles its own Node runtime, so Windows end users do not need Node.

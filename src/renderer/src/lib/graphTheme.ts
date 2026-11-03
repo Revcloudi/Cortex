@@ -161,7 +161,7 @@ export function linkOpacity(relation: GraphRelation, derived: boolean): number {
 
 export const CAMERA_FOCUS_MS = 800
 export const CAMERA_RESET_MS = 700
-export const AUTO_ROTATE_SPEED = 0.5
+export const AUTO_ROTATE_SPEED = 0.32
 /** Idle delay before auto-rotation resumes after a pointer interaction. */
 export const AUTO_ROTATE_RESUME_MS = 4000
 /** Initial camera distance for the default framing of the whole graph. */
@@ -227,6 +227,8 @@ function hexToRgb(hex: string): [number, number, number] {
 
 /** Node dimming factor when a search is active and the node does not match. */
 export const DIM_OPACITY = 0.14
+/** Unrelated nodes while hovering a node ("focus + context" mode). */
+export const HOVER_CONTEXT_DIM_OPACITY = 0.06
 export const SEARCH_MATCH_HIGHLIGHT_OPACITY = 0.95
 
 /* ------------------------------------------------------- P3 performance mode -- */
