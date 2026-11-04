@@ -43,10 +43,11 @@ export const ENFORCEMENT_RULE = `## Cortex 强制入库规则（硬性）
 
 export const ASSET_ENFORCEMENT_RULE = `## 资产上下文同步规则（硬性）
 
-Cortex 通过 MCP 常驻 6 个工具（DSH 前缀为 \`mcp__cortex__\`）：
+Cortex 通过 MCP 常驻 7 个工具（DSH 前缀为 \`mcp__cortex__\`）：
 
 - 漏洞：\`save_vulnerability\` / \`query_vulnerabilities\` / \`update_vulnerability\`
 - 资产：\`sync_asset_info\` / \`query_asset_context\`
+- 内网作战：\`sync_internal_scope\`（登记 foothold → 内网主机/服务 → pivot；内网漏洞用 \`save_vulnerability\` 带 \`realm: "internal"\` 与 \`service_host\` / \`internal_service_id\`）
 - 认知快照：\`manage_snapshot\`
 
 完成 JS 审计、指纹识别、接口抓包、目录扫描等信息收集后，必须把 Web 资产上下文沉淀到 Cortex；未同步（或未在回复中说明为何不适用）= 任务未完成：
@@ -74,7 +75,7 @@ Cortex 通过 MCP 常驻 6 个工具（DSH 前缀为 \`mcp__cortex__\`）：
 7. 细节证据分工：漏洞详情 / HTTP 报文 / 复现步骤 / 修复建议入漏洞库（\`save_vulnerability\`），接口目录 / 完整原始请求 / 技术栈 / 敏感泄露入资产库（\`sync_asset_info\`）；快照只放测试结论（\`tested_interfaces\`）、\`notes\` 备注与 \`related_vuln_ids\` 引用，大段报文/截图不要进快照（\`notes\` 只放路径引用），整体 payload ≤32,000 字符。
 8. MCP 由 Agent 自动拉起（stdio），无需启动 GUI；工具缺失 / \`server is disconnected\` 时运行 \`ctx doctor\` 并重启 Agent（不是重启 GUI），禁止静默跳过。
 
-字段规范以技能 \`asset-context\`、\`snapshot\` 为准；漏洞字段规范以 \`vuln-db\` 为准。`
+字段规范以技能 \`asset-context\`、\`snapshot\`、\`internal-ops\` 为准；漏洞字段规范以 \`vuln-db\` 为准。`
 
 export interface RuleBlockSpec {
   markers: MarkerPair

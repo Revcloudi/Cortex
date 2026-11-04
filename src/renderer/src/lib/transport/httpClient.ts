@@ -1,10 +1,11 @@
 import type { MemoryGraphData, MemoryGraphQuery } from '@shared/graph'
-import type { CortexApi } from '@shared/ipc'
+import type { CortexApi, DashboardStatsQuery } from '@shared/ipc'
 import type {
   AppInfo,
   AssetContext,
   AssetFilters,
   AssetListItem,
+  CredentialTrial,
   DashboardStats,
   DatabaseInfo,
   DeleteAssetResult,
@@ -12,7 +13,13 @@ import type {
   DeleteVulnResult,
   DeleteVulnsResult,
   ExportReportsResult,
+  ImportLootInput,
+  InternalGraphData,
+  InternalOverview,
+  InternalProjectSummary,
+  LootImport,
   PaginatedVulnerabilities,
+  RecordCredentialTrialInput,
   SeedDemoResult,
   SetupInfo,
   SetupRunRequest,
@@ -213,6 +220,7 @@ export function createHttpApi(): CortexApi {
           ['search', filters.search],
           ['severity', filters.severity],
           ['status', filters.status],
+          ['realm', filters.realm],
           ['page', filters.page],
           ['pageSize', filters.pageSize]
         ])
@@ -223,7 +231,10 @@ export function createHttpApi(): CortexApi {
         `${WEB_API_PATHS.vulnerabilities}/${encodeURIComponent(id)}`
       ),
 
-    getStats: () => request<DashboardStats>(WEB_API_PATHS.stats),
+    getStats: (query: DashboardStatsQuery = {}) =>
+      request<DashboardStats>(WEB_API_PATHS.stats, {
+        query: toQuery([['realm', query.realm]])
+      }),
 
     updateVulnerabilityStatus: (input: UpdateVulnStatusRequest) =>
       request<Vulnerability>(`${WEB_API_PATHS.vulnerabilities}/${encodeURIComponent(input.id)}/status`, {
@@ -311,9 +322,48 @@ export function createHttpApi(): CortexApi {
       }),
 
     /**
+     * Internal operations projections (Plan B). Overview / loot list send the
+     * optional `project` filter; the graph always requires one project.
+     */
+    getInternalOverview: (input: { project_name?: string } = {}) =>
+      request<InternalOverview>(WEB_API_PATHS.internalOverview, {
+        query: toQuery([['project', input.project_name]])
+      }),
+
+    getInternalGraph: (input: { project_name: string }) =>
+      request<InternalGraphData>(WEB_API_PATHS.internalGraph, {
+        query: toQuery([['project', input.project_name]])
+      }),
+
+    getInternalProjects: () => request<InternalProjectSummary[]>(WEB_API_PATHS.internalProjects),
+
+    /** Record one observed trial outcome; the server is the write authority. */
+    recordCredentialTrial: (input: RecordCredentialTrialInput) =>
+      request<CredentialTrial>(WEB_API_PATHS.internalCredentialTrial, {
+        method: 'POST',
+        body: input
+      }),
+
+    listLootImports: (input: { project_name?: string } = {}) =>
+      request<LootImport[]>(WEB_API_PATHS.loot, {
+        query: toQuery([['project', input.project_name]])
+      }),
+
+    /**
+     * Local loot import: the Web server parses `file_path` on the server
+     * machine (a browser cannot upload the file content). Supported when the
+     * server owns the local file and the database is writable; a read-only
+     * server answers 403 with a clear message, which the UI surfaces as-is.
+     */
+    importLoot: (input: ImportLootInput) =>
+      request<LootImport>(WEB_API_PATHS.loot, { method: 'POST', body: input }),
+
+    /**
      * Read-only Memory Nebula projection: the discriminated `scope` is flattened
      * into the query names `GET /api/graph` expects, and the existing `toQuery`
      * helper drops every `undefined` field (only the active scope contributes).
+     * `realm` (web default / internal / all) is forwarded for the P2 internal
+     * layer; `internal` toggles that layer inside the `all` scope.
      */
     getMemoryGraph: (query: MemoryGraphQuery) => {
       const { scope, filters, limits } = query
@@ -324,13 +374,18 @@ export function createHttpApi(): CortexApi {
           ['sessionId', scope.kind === 'task' ? scope.sessionId : undefined],
           ['includeChildren', scope.kind === 'task' ? scope.includeChildren : undefined],
           ['depth', query.depth],
+          ['realm', query.realm],
           ['vulnerabilities', filters?.vulnerabilities],
           ['leaks', filters?.leaks],
           ['snapshots', filters?.snapshots],
+          ['internal', filters?.internal],
           ['limitHosts', limits?.hosts],
           ['limitVulnerabilities', limits?.vulnerabilities],
           ['limitLeaks', limits?.leaks],
-          ['limitSnapshots', limits?.snapshots]
+          ['limitSnapshots', limits?.snapshots],
+          ['limitFootholds', limits?.footholds],
+          ['limitInternalHosts', limits?.internalHosts],
+          ['limitInternalServices', limits?.internalServices]
         ])
       })
     },

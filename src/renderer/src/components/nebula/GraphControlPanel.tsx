@@ -1,6 +1,7 @@
 import { useId } from 'react'
 import { AlertTriangle, RefreshCw, RotateCcw, Search, X, Zap } from 'lucide-react'
 import type { AppliedMemoryGraphLimits, GraphFilters, GraphTypeCounts } from '@shared/graph'
+import type { RealmFilter } from '@shared/types'
 import {
   HudButton,
   HudDivider,
@@ -13,6 +14,7 @@ import {
 import { ScopeSelect } from '@renderer/components/nebula/ScopeSelect'
 import { useI18n } from '@renderer/i18n'
 import {
+  ATTACK_PATH_COLOR,
   NEBULA_UI,
   NODE_TYPE_COLORS,
   SEVERITY_NODE_COLORS,
@@ -35,6 +37,12 @@ export interface GraphScopeTargetOption {
   label: string
 }
 
+/** One selectable pivot route in the attack-path section. */
+export interface GraphRouteOption {
+  value: string
+  label: string
+}
+
 export interface GraphControlPanelProps {
   scopes: GraphScopeOption[]
   activeScopeKind: 'all' | 'asset' | 'task'
@@ -49,11 +57,22 @@ export interface GraphControlPanelProps {
   onSelectSession: (sessionId: string) => void
   includeChildren: boolean
   onToggleIncludeChildren: () => void
+  /** Logical realm switch (plan §7.4): Web (default) / internal / all. */
+  realm: RealmFilter
+  onRealmChange: (realm: RealmFilter) => void
   search: string
   onSearchChange: (value: string) => void
   onSearchClear: () => void
   filters: GraphFilters
-  onToggleFilter: (key: 'vulns' | 'leaks' | 'snapshots') => void
+  onToggleFilter: (key: FilterKey) => void
+  /** Attack-path (pivot route) overlay: toggle + route picker (plan §7.3). */
+  attackPathEnabled: boolean
+  onToggleAttackPath: () => void
+  routeCount: number
+  routeOptions: GraphRouteOption[]
+  selectedRouteId: string | null
+  onSelectRoute: (routeId: string) => void
+  onClearRoute: () => void
   /** Node counts after the type filters. */
   counts: GraphTypeCounts
   visibleNodes: number
@@ -79,7 +98,11 @@ export interface GraphControlPanelProps {
   className?: string
 }
 
-type FilterKey = 'vulns' | 'leaks' | 'snapshots'
+/** Web layer filter keys (always present in `GraphFilters`). */
+type WebFilterKey = 'vulns' | 'leaks' | 'snapshots'
+/** Internal layer filter keys (optional in `GraphFilters`; visible = default). */
+type InternalFilterKey = 'footholds' | 'internalHosts' | 'internalServices'
+export type FilterKey = WebFilterKey | InternalFilterKey
 
 interface FilterMeta {
   key: FilterKey
@@ -105,11 +128,87 @@ const FILTER_META: readonly FilterMeta[] = [
   }
 ]
 
-/** Compact HUD micro-label used above the scope target selectors. */
-const FIELD_LABEL_CLASS = cn(NEBULA_UI.label, 'block')
+/** Internal layer chips: hidden in the Web realm, where those nodes never exist. */
+const INTERNAL_FILTER_META: readonly FilterMeta[] = [
+  {
+    key: 'footholds',
+    color: NODE_TYPE_COLORS.foothold,
+    labelKey: 'nebula.filter.footholds',
+    countKey: 'foothold'
+  },
+  {
+    key: 'internalHosts',
+    color: NODE_TYPE_COLORS.internal_host,
+    labelKey: 'nebula.filter.internalHosts',
+    countKey: 'internal_host'
+  },
+  {
+    key: 'internalServices',
+    color: NODE_TYPE_COLORS.internal_service,
+    labelKey: 'nebula.filter.internalServices',
+    countKey: 'internal_service'
+  }
+]
+
+const REALM_OPTIONS: readonly RealmFilter[] = ['web', 'internal', 'all']
 
 /** Shared look for the tiny scope-hint / empty-state notes. */
 const NOTE_CLASS = 'mt-1 font-mono text-[11px] leading-relaxed text-[#7FA9BE]'
+
+/** Compact HUD micro-label used above the scope target selectors. */
+const FIELD_LABEL_CLASS = cn(NEBULA_UI.label, 'block')
+
+/** One type-filter chip (dot + label + count), toggled by the page. */
+function FilterChip({
+  meta,
+  on,
+  count,
+  onToggle
+}: {
+  meta: FilterMeta
+  on: boolean
+  count: number
+  onToggle: () => void
+}) {
+  const { t } = useI18n()
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      data-testid={`filter-${meta.key}`}
+      onClick={onToggle}
+      className={cn(
+        'inline-flex min-w-0 items-center gap-1 rounded-[2px] border px-1.5 py-1',
+        'font-mono text-[11px] uppercase tracking-[0.04em] transition-colors duration-150',
+        on
+          ? 'border-[#00E5FF]/45 bg-[#00E5FF]/[0.1] text-[#C7E9F5]'
+          : 'border-[#00E5FF]/15 bg-[#01060D]/60 text-[#7FA9BE] hover:border-[#00E5FF]/35 hover:text-[#C7E9F5]',
+        NEBULA_UI.focusRing
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'h-1.5 w-1.5 shrink-0 rounded-full transition-opacity duration-150',
+          on ? 'opacity-100' : 'opacity-40'
+        )}
+        style={{
+          backgroundColor: meta.color,
+          boxShadow: on ? `0 0 6px ${rgba(meta.color, 0.55)}` : undefined
+        }}
+      />
+      <span className="min-w-0 truncate">{t(meta.labelKey)}</span>
+      <span
+        className={cn(
+          'shrink-0 text-[12.5px] tabular-nums',
+          on ? 'text-[#00E5FF]' : 'text-[#7FA9BE]'
+        )}
+      >
+        {count}
+      </span>
+    </button>
+  )
+}
 
 /**
  * Left-hand J.A.R.V.I.S. HUD console for the Nebula canvas: scope tabs + real
@@ -130,11 +229,20 @@ export function GraphControlPanel({
   onSelectSession,
   includeChildren,
   onToggleIncludeChildren,
+  realm,
+  onRealmChange,
   search,
   onSearchChange,
   onSearchClear,
   filters,
   onToggleFilter,
+  attackPathEnabled,
+  onToggleAttackPath,
+  routeCount,
+  routeOptions,
+  selectedRouteId,
+  onSelectRoute,
+  onClearRoute,
   counts,
   visibleNodes,
   visibleLinks,
@@ -274,9 +382,43 @@ export function GraphControlPanel({
           </div>
         ) : null}
 
-        <HudDivider className="my-2.5" />
+        {/* ------------------------------------------------------ realm tabs -- */}
+        <div className="mt-2.5">
+          <HudSectionTitle>{t('nebula.realm.label')}</HudSectionTitle>
+          <div
+            role="tablist"
+            aria-label={t('nebula.realm.switchAria')}
+            className="mt-1.5 grid grid-cols-3 gap-px overflow-hidden rounded-[2px] border border-[#00E5FF]/20 bg-[#01060D]/70 p-px"
+          >
+            {REALM_OPTIONS.map((option) => {
+              const active = option === realm
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  data-testid={`realm-${option}`}
+                  onClick={() => onRealmChange(option)}
+                  className={cn(
+                    'min-w-0 px-1 py-1 text-center transition-colors duration-150',
+                    'font-mono text-[11px] uppercase leading-tight tracking-[0.04em]',
+                    active
+                      ? option === 'internal'
+                        ? 'bg-[#FF7A33]/[0.16] text-[#FFB38A]'
+                        : 'bg-[#00E5FF]/[0.14] text-[#00E5FF]'
+                      : 'text-[#7FA9BE] hover:bg-[#00E5FF]/[0.06] hover:text-[#C7E9F5]',
+                    NEBULA_UI.focusRing
+                  )}
+                >
+                  {t(`nebula.realm.${option}`)}
+                </button>
+              )
+            })}
+          </div>
+        </div>
 
-        {/* ----------------------------------------------------------- search -- */}
+        <HudDivider className="my-2.5" />
         <div>
           <label htmlFor={searchId} className="sr-only">
             {t('nebula.search.ariaLabel')}
@@ -336,48 +478,30 @@ export function GraphControlPanel({
         <div>
           <HudSectionTitle>{t('nebula.filter.label')}</HudSectionTitle>
           <div className="mt-1.5 flex flex-wrap gap-1">
-            {FILTER_META.map((meta) => {
-              const on = filters[meta.key]
-              return (
-                <button
-                  key={meta.key}
-                  type="button"
-                  aria-pressed={on}
-                  data-testid={`filter-${meta.key}`}
-                  onClick={() => onToggleFilter(meta.key)}
-                  className={cn(
-                    'inline-flex min-w-0 items-center gap-1 rounded-[2px] border px-1.5 py-1',
-                    'font-mono text-[11px] uppercase tracking-[0.04em] transition-colors duration-150',
-                    on
-                      ? 'border-[#00E5FF]/45 bg-[#00E5FF]/[0.1] text-[#C7E9F5]'
-                      : 'border-[#00E5FF]/15 bg-[#01060D]/60 text-[#7FA9BE] hover:border-[#00E5FF]/35 hover:text-[#C7E9F5]',
-                    NEBULA_UI.focusRing
-                  )}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'h-1.5 w-1.5 shrink-0 rounded-full transition-opacity duration-150',
-                      on ? 'opacity-100' : 'opacity-40'
-                    )}
-                    style={{
-                      backgroundColor: meta.color,
-                      boxShadow: on ? `0 0 6px ${rgba(meta.color, 0.55)}` : undefined
-                    }}
-                  />
-                  <span className="min-w-0 truncate">{t(meta.labelKey)}</span>
-                  <span
-                    className={cn(
-                      'shrink-0 text-[12.5px] tabular-nums',
-                      on ? 'text-[#00E5FF]' : 'text-[#7FA9BE]'
-                    )}
-                  >
-                    {counts[meta.countKey]}
-                  </span>
-                </button>
-              )
-            })}
+            {FILTER_META.map((meta) => (
+              <FilterChip
+                key={meta.key}
+                meta={meta}
+                on={filters[meta.key] !== false}
+                count={counts[meta.countKey]}
+                onToggle={() => onToggleFilter(meta.key)}
+              />
+            ))}
           </div>
+
+          {realm !== 'web' ? (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {INTERNAL_FILTER_META.map((meta) => (
+                <FilterChip
+                  key={meta.key}
+                  meta={meta}
+                  on={filters[meta.key] !== false}
+                  count={counts[meta.countKey]}
+                  onToggle={() => onToggleFilter(meta.key)}
+                />
+              ))}
+            </div>
+          ) : null}
 
           {/* Hosts anchor every scope and can never be filtered out. */}
           <div className="mt-1 flex items-center gap-1.5 px-1.5 py-1">
@@ -396,9 +520,6 @@ export function GraphControlPanel({
               {counts.host}
             </span>
           </div>
-          <p className="px-1.5 font-mono text-[11px] leading-relaxed text-[#7FA9BE]">
-            {t('nebula.filter.hostsAlwaysVisible')}
-          </p>
         </div>
 
         <HudDivider className="my-2.5" />
@@ -460,6 +581,77 @@ export function GraphControlPanel({
           ) : null}
         </div>
 
+        <HudDivider className="my-2.5" />
+
+        {/* ----------------------------------------------------- attack path -- */}
+        <div>
+          <div className="flex items-center gap-2">
+            <HudSectionTitle className="min-w-0 flex-1">
+              {t('nebula.attackPath.label')}
+            </HudSectionTitle>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={attackPathEnabled}
+              aria-label={t('nebula.attackPath.toggle')}
+              title={t('nebula.attackPath.toggle')}
+              data-testid="attack-path-toggle"
+              onClick={onToggleAttackPath}
+              className={cn(
+                'inline-flex h-5 shrink-0 items-center rounded-[2px] border px-1.5',
+                'font-mono text-[11px] uppercase tracking-[0.06em] transition-colors duration-150',
+                attackPathEnabled
+                  ? 'border-[#FF7A33]/60 bg-[#FF7A33]/15 text-[#FFB38A]'
+                  : 'border-[#00E5FF]/20 bg-[#01060D]/60 text-[#7FA9BE] hover:text-[#C7E9F5]',
+                NEBULA_UI.focusRing
+              )}
+            >
+              {attackPathEnabled ? t('nebula.attackPath.on') : t('nebula.attackPath.off')}
+            </button>
+          </div>
+          {routeCount > 0 ? (
+            <p className={NOTE_CLASS}>{t('nebula.attackPath.count', { count: routeCount })}</p>
+          ) : null}
+          {attackPathEnabled && routeCount > 0 ? (
+            <>
+              <div className="mt-1.5">
+                <ScopeSelect
+                  ariaLabel={t('nebula.attackPath.selectLabel')}
+                  value={selectedRouteId}
+                  options={routeOptions}
+                  onChange={onSelectRoute}
+                  disabled={routeOptions.length === 0}
+                />
+              </div>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{
+                    backgroundColor: ATTACK_PATH_COLOR,
+                    boxShadow: `0 0 6px ${rgba(ATTACK_PATH_COLOR, 0.7)}`
+                  }}
+                />
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-relaxed text-[#7FA9BE]">
+                  {t('nebula.attackPath.hint')}
+                </span>
+                {selectedRouteId !== null ? (
+                  <HudButton
+                    size="sm"
+                    variant="ghost"
+                    onClick={onClearRoute}
+                    aria-label={t('nebula.attackPath.clear')}
+                    title={t('nebula.attackPath.clear')}
+                    className="shrink-0 text-[10.5px]"
+                  >
+                    {t('nebula.attackPath.clear')}
+                  </HudButton>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+        </div>
+
         {/* ------------------------------------------------------------ footer -- */}
         <footer className={cn('mt-3 border-t pt-2.5', NEBULA_UI.divider)}>
           <div className="grid grid-cols-2 gap-x-3">
@@ -515,15 +707,6 @@ export function GraphControlPanel({
               <span className="min-w-0">{t('nebula.performance.mode')}</span>
             </p>
           ) : null}
-
-          <p className={cn(NEBULA_UI.faint, 'mt-2 text-[11px] leading-relaxed text-[#7FA9BE]')}>
-            {t('nebula.limits.hint', {
-              hosts: limits.hosts,
-              vulns: limits.vulnerabilities,
-              leaks: limits.leaks,
-              snapshots: limits.snapshots
-            })}
-          </p>
         </footer>
       </div>
     </HudPanel>

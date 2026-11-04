@@ -10,6 +10,8 @@ import {
 } from '@renderer/components/nebula/HudChrome'
 import { useI18n } from '@renderer/i18n'
 import {
+  ATTACK_PATH_COLOR,
+  ATTACK_PATH_OPACITY,
   LINK_COLORS,
   NEBULA_UI,
   NODE_TYPE_COLORS,
@@ -27,15 +29,32 @@ export interface GraphLegendProps {
   className?: string
 }
 
-/** The node kinds, in hierarchy order: project → target → asset → evidence. */
-const NODE_TYPES: readonly GraphNodeType[] = [
-  'project',
-  'target',
-  'host',
-  'vuln',
-  'leak',
-  'snapshot'
+/**
+ * Node kinds in domain groups (plan §7.3): the original Web hierarchy and the
+ * internal operations layer added by the Plan B realm switch.
+ */
+const NODE_GROUPS: readonly { titleKey: string; types: readonly GraphNodeType[] }[] = [
+  {
+    titleKey: 'nebula.legend.groupWeb',
+    types: ['project', 'target', 'host', 'vuln', 'leak', 'snapshot']
+  },
+  {
+    titleKey: 'nebula.legend.groupInternal',
+    types: ['foothold', 'internal_host', 'internal_service']
+  }
 ]
+
+/** Relations introduced by the internal operations domain (plan §7.1). */
+const INTERNAL_RELATIONS: readonly GraphRelation[] = [
+  'FOOTHOLD_FROM',
+  'FOOTHOLD_REACHES',
+  'HOST_HAS_SERVICE',
+  'SERVICE_HAS_VULN'
+]
+
+const WEB_RELATIONS: readonly GraphRelation[] = GRAPH_RELATIONS.filter(
+  (relation) => !INTERNAL_RELATIONS.includes(relation)
+)
 
 /** Tiny severity swatches that hint the vuln sprites are severity-coloured. */
 const VULN_SEVERITIES: readonly Severity[] = ['Critical', 'High', 'Medium', 'Low']
@@ -52,8 +71,8 @@ const SEVERITY_CHIP: Record<Severity, string> = {
 /**
  * Node glyph silhouettes mirror the canvas: project/target are multi-sided
  * shells, host reads as an icosahedron-ish hexagon, vulns are octagons, leaks
- * are diamonds and snapshots are rings. Keeping the legend shapes in sync with
- * the 3D/2D canvases is what makes the legend a true key instead of a list.
+ * are diamonds and snapshots are rings. Internal kinds follow §7.3: foothold =
+ * small diamond bridge, internal host = hexagon "machine", service = small ring.
  */
 const GLYPH_SIDES: Record<GraphNodeType, number | null> = {
   project: 5,
@@ -61,7 +80,10 @@ const GLYPH_SIDES: Record<GraphNodeType, number | null> = {
   host: 6,
   vuln: 8,
   leak: 4,
-  snapshot: null
+  snapshot: null,
+  foothold: 4,
+  internal_host: 6,
+  internal_service: null
 }
 
 function glyphPoints(sides: number, radius: number, rotation = -Math.PI / 2): string {
@@ -115,6 +137,15 @@ function LegendGlyph({ type }: { type: GraphNodeType }) {
               strokeOpacity={0.55}
               strokeWidth={0.6}
             />
+          ) : type === 'internal_host' ? (
+            <polygon
+              points={glyphPoints(3, 2.3)}
+              transform="translate(7 7)"
+              fill="none"
+              stroke={color}
+              strokeOpacity={0.55}
+              strokeWidth={0.6}
+            />
           ) : null}
         </>
       )}
@@ -135,6 +166,76 @@ function RelationSwatch({ relation, derived = false }: { relation: GraphRelation
         opacity: derived ? 0.55 : 0.95
       }}
     />
+  )
+}
+
+/** Hot additive swatch for the pivot route overlay (attack path). */
+function AttackPathSwatch() {
+  return (
+    <span
+      aria-hidden="true"
+      className="h-0 w-5 shrink-0 border-t-2"
+      style={{
+        borderColor: ATTACK_PATH_COLOR,
+        opacity: ATTACK_PATH_OPACITY,
+        filter: `drop-shadow(0 0 3px ${rgba(ATTACK_PATH_COLOR, 0.8)})`
+      }}
+    />
+  )
+}
+
+/** One relation row (shared by the Web and internal relation groups). */
+function LegendRelationRow({ relation }: { relation: GraphRelation }) {
+  const { t } = useI18n()
+  const derived = DERIVED_RELATIONS.includes(relation)
+  return (
+    <li className="flex min-w-0 items-center gap-2 py-0.5">
+      <RelationSwatch relation={relation} derived={derived} />
+      <span
+        className="min-w-0 truncate font-mono text-[11.5px] leading-relaxed text-[#8FB8CC]"
+        title={t(`nebula.legend.relation.${relation}`)}
+      >
+        {t(`nebula.legend.relation.${relation}`)}
+      </span>
+    </li>
+  )
+}
+
+/** One node-type row (glyph + localized name + optional severity chips). */
+function LegendNodeRow({ type }: { type: GraphNodeType }) {
+  const { t } = useI18n()
+  return (
+    <li className="flex min-w-0 items-center gap-2 py-1.5">
+      <LegendGlyph type={type} />
+      <span
+        className="min-w-0 flex-1 truncate font-mono text-[11.5px] leading-relaxed text-[#A9D6E5]"
+        title={t(`nebula.legend.${type}`)}
+      >
+        {t(`nebula.legend.${type}`)}
+      </span>
+      {type === 'vuln' ? (
+        <span className="flex shrink-0 items-center gap-0.5">
+          {VULN_SEVERITIES.map((severity) => {
+            const color = SEVERITY_NODE_COLORS[severity]
+            return (
+              <span
+                key={severity}
+                aria-hidden="true"
+                title={t(`label.severity.${severity}`)}
+                className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-[1px] border px-0.5 font-mono text-[10.5px] leading-none"
+                style={{
+                  borderColor: rgba(color, 0.45),
+                  backgroundColor: rgba(color, 0.12),
+                  color: rgba(color, 0.95)
+                }}
+              >
+                {SEVERITY_CHIP[severity]}
+              </span>
+            )
+          })}
+        </span>
+      ) : null}
+    </li>
   )
 }
 
@@ -200,76 +301,66 @@ export function GraphLegend({
 
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-3 pb-3">
           {/* ---------------------------------------------------- node types -- */}
-          <HudSectionTitle>{t('nebula.hud.legendNodes')}</HudSectionTitle>
-          <ul className="mt-1.5 divide-y divide-[#00E5FF]/[0.07]">
-            {NODE_TYPES.map((type) => {
-              return (
-                <li key={type} className="flex min-w-0 items-center gap-2 py-1.5">
-                  <LegendGlyph type={type} />
-                  <span
-                    className="min-w-0 flex-1 truncate font-mono text-[11.5px] leading-relaxed text-[#A9D6E5]"
-                    title={t(`nebula.legend.${type}`)}
-                  >
-                    {t(`nebula.legend.${type}`)}
-                  </span>
-                  {type === 'vuln' ? (
-                    <span className="flex shrink-0 items-center gap-0.5">
-                      {VULN_SEVERITIES.map((severity) => {
-                        const color = SEVERITY_NODE_COLORS[severity]
-                        return (
-                          <span
-                            key={severity}
-                            aria-hidden="true"
-                            title={t(`label.severity.${severity}`)}
-                            className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-[1px] border px-0.5 font-mono text-[10.5px] leading-none"
-                            style={{
-                              borderColor: rgba(color, 0.45),
-                              backgroundColor: rgba(color, 0.12),
-                              color: rgba(color, 0.95)
-                            }}
-                          >
-                            {SEVERITY_CHIP[severity]}
-                          </span>
-                        )
-                      })}
+          {NODE_GROUPS.map((group, groupIndex) => (
+            <div key={group.titleKey} className={cn(groupIndex > 0 && 'mt-2.5')}>
+              {groupIndex === 0 ? (
+                <HudSectionTitle>{t('nebula.hud.legendNodes')}</HudSectionTitle>
+              ) : (
+                <HudSectionTitle>{t(group.titleKey)}</HudSectionTitle>
+              )}
+              <ul className="mt-1.5 divide-y divide-[#00E5FF]/[0.07]">
+                {group.types.map((type) => (
+                  <LegendNodeRow key={type} type={type} />
+                ))}
+                {groupIndex === 0 && hasAggregates ? (
+                  <li className="flex min-w-0 items-center gap-2 py-1">
+                    <span
+                      aria-hidden="true"
+                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[1px] border border-[#00E5FF]/45 bg-[#00E5FF]/[0.08] font-mono text-[10.5px] leading-none text-[#00E5FF]"
+                    >
+                      +N
                     </span>
-                  ) : null}
-                </li>
-              )
-            })}
-            {hasAggregates ? (
-              <li className="flex min-w-0 items-center gap-2 py-1">
-                <span
-                  aria-hidden="true"
-                  className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[1px] border border-[#00E5FF]/45 bg-[#00E5FF]/[0.08] font-mono text-[10.5px] leading-none text-[#00E5FF]"
-                >
-                  +N
-                </span>
-                <span className="min-w-0 flex-1 font-mono text-[11.5px] leading-relaxed text-[#8FB8CC]">
-                  {t('nebula.legend.aggregate')}
-                </span>
-              </li>
-            ) : null}
-          </ul>
+                    <span className="min-w-0 flex-1 font-mono text-[11.5px] leading-relaxed text-[#8FB8CC]">
+                      {t('nebula.legend.aggregate')}
+                    </span>
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+          ))}
 
           {/* ----------------------------------------------------- relations -- */}
           <HudSectionTitle className="mt-3">{t('nebula.hud.legendRelations')}</HudSectionTitle>
           <ul className="mt-1.5 space-y-1">
-            {GRAPH_RELATIONS.map((relation) => {
-              const derived = DERIVED_RELATIONS.includes(relation)
-              return (
-                <li key={relation} className="flex min-w-0 items-center gap-2 py-0.5">
-                  <RelationSwatch relation={relation} derived={derived} />
-                  <span
-                    className="min-w-0 truncate font-mono text-[11.5px] leading-relaxed text-[#8FB8CC]"
-                    title={t(`nebula.legend.relation.${relation}`)}
-                  >
-                    {t(`nebula.legend.relation.${relation}`)}
-                  </span>
-                </li>
-              )
-            })}
+            {WEB_RELATIONS.map((relation) => (
+              <LegendRelationRow key={relation} relation={relation} />
+            ))}
           </ul>
+
+          <HudSectionTitle className="mt-2.5">
+            {t('nebula.legend.groupInternal')}
+          </HudSectionTitle>
+          <ul className="mt-1.5 space-y-1">
+            {INTERNAL_RELATIONS.map((relation) => (
+              <LegendRelationRow key={relation} relation={relation} />
+            ))}
+          </ul>
+
+          {/* ------------------------------------------------- attack path -- */}
+          <HudSectionTitle className="mt-2.5">
+            {t('nebula.legend.groupAttackPath')}
+          </HudSectionTitle>
+          <ul className="mt-1.5 space-y-1">
+            <li className="flex min-w-0 items-center gap-2 py-0.5">
+              <AttackPathSwatch />
+              <span className="min-w-0 truncate font-mono text-[11.5px] leading-relaxed text-[#FFB38A]">
+                {t('nebula.legend.attackPath')}
+              </span>
+            </li>
+          </ul>
+          <p className="mt-1 font-mono text-[11px] leading-relaxed text-[#7FA9BE]">
+            {t('nebula.attackPath.hint')}
+          </p>
 
           {/* One-line note; the longer explanation stays in the title tooltip. */}
           <p

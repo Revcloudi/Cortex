@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import type {
   AssetContext,
   AssetInterface,
+  InternalOverview,
   LeakedInfo,
   VulnerabilityListItem
 } from '@shared/types'
@@ -28,6 +29,7 @@ import {
 import { CopyButton } from '@renderer/components/common/CopyButton'
 import { EmptyState } from '@renderer/components/common/EmptyState'
 import { useCopy } from '@renderer/hooks/useCopy'
+import { AssetInternalEntry, scopeForEntry } from '@renderer/components/internal/AssetInternalEntry'
 import {
   INTERFACE_METHOD_STYLES,
   buildInterfaceRequest,
@@ -258,6 +260,10 @@ export function AssetDetail({
   const [relatedLoading, setRelatedLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const [internalOverview, setInternalOverview] = useState<InternalOverview | null>(null)
+  const [internalLoading, setInternalLoading] = useState(true)
+  const [internalError, setInternalError] = useState<string | null>(null)
+  const [internalRetryKey, setInternalRetryKey] = useState(0)
   const [activeTab, setActiveTab] = useState('overview')
   const [expandedInterfaceKey, setExpandedInterfaceKey] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -279,6 +285,8 @@ export function AssetDetail({
     setError(null)
     setActiveTab('overview')
     setExpandedInterfaceKey(null)
+    setInternalOverview(null)
+    setInternalError(null)
 
     api.getAssetDetail(hostPort).then(
       (next) => {
@@ -314,11 +322,46 @@ export function AssetDetail({
     }
   }, [hostPort, dataVersion, retryKey])
 
+  // Internal entry context for this asset: the project-level overview is
+  // filtered down to footholds whose entry_host_port matches this asset.
+  const assetProjectName = asset?.project_name ?? null
+  useEffect(() => {
+    if (assetProjectName === null) return
+    const api = getApi()
+    if (!api) {
+      setInternalError(apiUnavailableMessage(t))
+      setInternalLoading(false)
+      return
+    }
+    let alive = true
+    setInternalLoading(true)
+    void (async () => {
+      try {
+        const next = await api.getInternalOverview({ project_name: assetProjectName })
+        if (!alive) return
+        setInternalOverview(next)
+        setInternalError(null)
+      } catch (cause) {
+        if (alive) setInternalError(toErrorMessage(cause, t))
+      } finally {
+        if (alive) setInternalLoading(false)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [assetProjectName, dataVersion, retryKey, internalRetryKey, t])
+
   const interfaces = asset
     ? (asset.interfaces ?? normalizeAssetInterfaces([], asset.interface_dir))
     : []
   const testParameters = asset?.test_parameters ?? []
   const tags = asset ? techStackTags(asset.tech_stack) : []
+  const internalScope =
+    asset === null
+      ? { footholds: [], hosts: [], services: [], pivots: [], vulns: [] }
+      : scopeForEntry(internalOverview, asset.host_port)
+  const internalEntryCount = internalScope.footholds.length + internalScope.vulns.length
 
   const handleDelete = async (): Promise<void> => {
     if (!asset) return
@@ -427,7 +470,7 @@ export function AssetDetail({
 
             <div className="px-6 pt-4">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="h-auto w-full justify-start gap-5 border-b border-border bg-transparent p-0">
+                <TabsList className="h-auto w-full flex-wrap justify-start gap-5 border-b border-border bg-transparent p-0">
                   <TabsTrigger
                     value="overview"
                     data-testid="asset-tab-overview"
@@ -473,6 +516,16 @@ export function AssetDetail({
                     {t('asset.tab.related')}
                     <span className="ml-1 font-mono text-[11px] tabular-nums text-foreground/60">
                       {related?.length ?? asset.related_vuln_ids.length}
+                    </span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="internal"
+                    data-testid="asset-tab-internal"
+                    className="h-8 rounded-none border-b-2 border-transparent px-0 text-[12.5px] data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                  >
+                    {t('asset.tab.internal')}
+                    <span className="ml-1 font-mono text-[11px] tabular-nums text-foreground/60">
+                      {internalEntryCount}
                     </span>
                   </TabsTrigger>
                 </TabsList>
@@ -623,6 +676,17 @@ export function AssetDetail({
                       ))}
                     </ul>
                   )}
+                </TabsContent>
+
+                <TabsContent value="internal" className="pt-4">
+                  <AssetInternalEntry
+                    hostPort={asset.host_port}
+                    overview={internalOverview}
+                    loading={internalLoading}
+                    error={internalError}
+                    onRetry={() => setInternalRetryKey((value) => value + 1)}
+                    onOpenVuln={onOpenVuln}
+                  />
                 </TabsContent>
               </Tabs>
             </div>

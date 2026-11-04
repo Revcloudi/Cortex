@@ -18,13 +18,17 @@ import {
   graphHasAggregates,
   nodeMatchesQuery,
   type GraphFilters,
+  type GraphRouteOverlay,
   type MemoryGraphData,
   type MemoryGraphScope
 } from '@shared/graph'
+import type { RealmFilter } from '@shared/types'
 import {
   GraphControlPanel,
+  type GraphRouteOption,
   type GraphScopeOption,
-  type GraphScopeTargetOption
+  type GraphScopeTargetOption,
+  type FilterKey
 } from '@renderer/components/nebula/GraphControlPanel'
 import { GraphLegend } from '@renderer/components/nebula/GraphLegend'
 import {
@@ -114,8 +118,10 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   const { t } = useI18n()
   const graphRef = useRef<NebulaGraphHandle>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
-  /** Last loaded all-scope graph: powers the asset/task pickers. */
+  /** Last loaded Web all-scope graph: powers the asset/task pickers. */
   const allGraphRef = useRef<MemoryGraphData | null>(null)
+  /** Route-id cache: cleared on realm/scope switch, re-armed by choosing a route. */
+  const routeClearedRef = useRef(false)
   /**
    * Translator ref for the data effect: the graph payload must NOT be refetched
    * when the UI language switches (that re-ran the force simulation and reset
@@ -129,7 +135,12 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   const [activeHostPort, setActiveHostPort] = useState<string | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [includeChildren, setIncludeChildren] = useState(false)
+  /** Logical realm: Web by default (plan §7.2), kept while switching scope. */
+  const [realm, setRealm] = useState<RealmFilter>('web')
   const [filters, setFilters] = useState<GraphFilters>(DEFAULT_FILTERS)
+  /** Pivot route overlay: toggle + selected route (plan §7.3). */
+  const [attackPathEnabled, setAttackPathEnabled] = useState(true)
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [graph, setGraph] = useState<MemoryGraphData | null>(null)
@@ -211,14 +222,16 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     setError(null)
     void (async () => {
       try {
-        const current = await client.getMemoryGraph({ scope })
+        // The displayed graph follows the realm switch; only the Web realm graph
+        // is cached for the asset/task pickers (internal / all add no targets).
+        const current = await client.getMemoryGraph({ scope, realm })
         if (cancelled) return
         setGraph(current)
-        if (scope.kind === 'all') {
+        if (scope.kind === 'all' && realm === 'web') {
           allGraphRef.current = current
           setAllGraph(current)
         } else if (allGraphRef.current === null) {
-          const all = await client.getMemoryGraph({ scope: { kind: 'all' } })
+          const all = await client.getMemoryGraph({ scope: { kind: 'all' }, realm: 'web' })
           if (cancelled) return
           allGraphRef.current = all
           setAllGraph(all)
@@ -232,7 +245,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     return () => {
       cancelled = true
     }
-  }, [scope, pendingTarget, dataVersion, refreshSeq])
+  }, [scope, realm, pendingTarget, dataVersion, refreshSeq])
 
   const hostOptions = useMemo<GraphScopeTargetOption[]>(() => {
     const nodes = allGraph?.nodes ?? []
@@ -323,6 +336,71 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     return [...collectNeighborhoodIds(visibleGraph, selectedNode.id, focusDepth)]
   }, [focusMode, visibleGraph, selectedNode, focusDepth])
   const focusCount = focusIds === null ? null : focusIds.length
+
+  /* ---------------------------------------------------- attack path overlay -- */
+
+  /** Pivot routes carried by the current graph (internal / all realms only). */
+  const routes = useMemo<readonly GraphRouteOverlay[]>(
+    () => visibleGraph?.routes ?? [],
+    [visibleGraph]
+  )
+
+  // Keep the selection valid: a route can disappear on refresh / realm switch.
+  // Clearing the overlay is respected until the realm or scope changes.
+  useEffect(() => {
+    if (routes.length === 0) {
+      if (selectedRouteId !== null) setSelectedRouteId(null)
+      return
+    }
+    if (routeClearedRef.current) return
+    if (selectedRouteId === null || !routes.some((route) => route.id === selectedRouteId)) {
+      setSelectedRouteId(routes[0]?.id ?? null)
+    }
+  }, [routes, selectedRouteId])
+
+  const selectedRoute = useMemo<GraphRouteOverlay | null>(
+    () =>
+      selectedRouteId === null
+        ? null
+        : (routes.find((route) => route.id === selectedRouteId) ?? null),
+    [routes, selectedRouteId]
+  )
+
+  /** Ordered route node ids passed to the canvas (only when the overlay is on). */
+  const routeNodeIds = useMemo<string[] | null>(
+    () => (attackPathEnabled && selectedRoute !== null ? selectedRoute.node_ids : null),
+    [attackPathEnabled, selectedRoute]
+  )
+
+  /**
+   * Link keys (`source|target`, matching the stored link direction) for the
+   * route's consecutive node pairs. Resolving against the real links keeps the
+   * 3D batched tint and the 2D fallback in sync even if a relation is reversed.
+   */
+  const routeLinkKeys = useMemo<string[] | null>(() => {
+    if (visibleGraph === null || routeNodeIds === null || routeNodeIds.length < 2) return null
+    const keys = new Set<string>()
+    for (let index = 0; index < routeNodeIds.length - 1; index += 1) {
+      const from = routeNodeIds[index]
+      const to = routeNodeIds[index + 1]
+      const link = visibleGraph.links.find(
+        (candidate) =>
+          (candidate.source === from && candidate.target === to) ||
+          (candidate.source === to && candidate.target === from)
+      )
+      keys.add(link === undefined ? `${from}|${to}` : `${link.source}|${link.target}`)
+    }
+    return [...keys]
+  }, [visibleGraph, routeNodeIds])
+
+  const routeOptions = useMemo<GraphRouteOption[]>(
+    () =>
+      routes.map((route) => ({
+        value: route.id,
+        label: `${route.label} · ${t(`nebula.footholdStatus.${route.status}`)}`
+      })),
+    [routes, t]
+  )
 
   /* ------------------------------------------------------- tactical HUD data -- */
 
@@ -418,10 +496,46 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
 
   /* --------------------------------------------------------------- actions -- */
 
-  const handleScopeChange = useCallback((kind: ScopeKind) => {
-    setScopeKind(kind)
-    setSelectedId(null)
-    graphRef.current?.resetView()
+  /** A scope/realm change invalidates the selected pivot route. */
+  const resetAttackPathSelection = useCallback(() => {
+    routeClearedRef.current = false
+    setSelectedRouteId(null)
+  }, [])
+
+  const handleScopeChange = useCallback(
+    (kind: ScopeKind) => {
+      setScopeKind(kind)
+      setSelectedId(null)
+      resetAttackPathSelection()
+      graphRef.current?.resetView()
+    },
+    [resetAttackPathSelection]
+  )
+
+  const handleRealmChange = useCallback(
+    (next: RealmFilter) => {
+      if (next === realm) return
+      setRealm(next)
+      setSelectedId(null)
+      resetAttackPathSelection()
+      graphRef.current?.resetView()
+    },
+    [realm, resetAttackPathSelection]
+  )
+
+  const handleToggleAttackPath = useCallback(() => {
+    setAttackPathEnabled((value) => !value)
+  }, [])
+
+  const handleSelectRoute = useCallback((routeId: string) => {
+    routeClearedRef.current = false
+    setSelectedRouteId(routeId)
+  }, [])
+
+  const handleClearRoute = useCallback(() => {
+    // Respect an explicit clear: do not auto-select the first route again.
+    routeClearedRef.current = true
+    setSelectedRouteId(null)
   }, [])
 
   const handleSelectHost = useCallback((hostPort: string) => {
@@ -441,8 +555,13 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     setSelectedId(null)
   }, [])
 
-  const handleToggleFilter = useCallback((key: 'vulns' | 'leaks' | 'snapshots') => {
-    setFilters((current) => ({ ...current, [key]: !current[key] }))
+  const handleToggleFilter = useCallback((key: FilterKey) => {
+    setFilters((current) => {
+      // Optional internal filters are visible by default: a toggle flips that.
+      const next = { ...current }
+      next[key] = current[key] === false
+      return next
+    })
   }, [])
 
   const handleSelectNode = useCallback((nodeId: string | null) => {
@@ -593,7 +712,17 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
 
   const scopeOptions = useMemo<GraphScopeOption[]>(
     () => [
-      { kind: 'all', count: allGraph === null ? null : allGraph.nodes.length },
+      {
+        kind: 'all',
+        // The active tab shows the true node count of the loaded realm graph;
+        // inactive tabs fall back to the cached Web all-scope count.
+        count:
+          scopeKind === 'all'
+            ? totalNodes
+            : allGraph === null
+              ? null
+              : allGraph.nodes.length
+      },
       { kind: 'asset', count: scopeKind === 'asset' ? totalNodes : null },
       { kind: 'task', count: scopeKind === 'task' ? totalNodes : null }
     ],
@@ -622,6 +751,8 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
           highlightIds={highlightIds}
           focusIds={focusIds}
           performanceMode={performanceMode}
+          routeNodeIds={routeNodeIds}
+          routeLinkKeys={routeLinkKeys}
           autoRotate={motionEnabled}
           reducedMotion={!motionEnabled}
           onSelect={handleSelectNode}
@@ -803,11 +934,20 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
             onSelectSession={handleSelectSession}
             includeChildren={includeChildren}
             onToggleIncludeChildren={handleToggleIncludeChildren}
+            realm={realm}
+            onRealmChange={handleRealmChange}
             search={search}
             onSearchChange={setSearch}
             onSearchClear={handleClearSearch}
             filters={filters}
             onToggleFilter={handleToggleFilter}
+            attackPathEnabled={attackPathEnabled}
+            onToggleAttackPath={handleToggleAttackPath}
+            routeCount={routes.length}
+            routeOptions={routeOptions}
+            selectedRouteId={selectedRouteId}
+            onSelectRoute={handleSelectRoute}
+            onClearRoute={handleClearRoute}
             counts={
               visibleGraph?.meta.counts ?? {
                 project: 0,
@@ -815,7 +955,10 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
                 host: 0,
                 vuln: 0,
                 leak: 0,
-                snapshot: 0
+                snapshot: 0,
+                foothold: 0,
+                internal_host: 0,
+                internal_service: 0
               }
             }
             visibleNodes={visibleGraph?.nodes.length ?? 0}

@@ -15,21 +15,33 @@ import { PaginationBar } from '@renderer/components/vuln/PaginationBar'
 import { VulnTable } from '@renderer/components/vuln/VulnTable'
 import { VulnDetail } from '@renderer/components/vuln/VulnDetail'
 import { BulkDeleteDialog } from '@renderer/components/vuln/BulkDeleteDialog'
+import { InternalPage } from '@renderer/pages/InternalPage'
 import { Button } from '@renderer/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import { useI18n } from '@renderer/i18n'
 import { useDebouncedValue } from '@renderer/hooks/useDebouncedValue'
 import { apiUnavailableMessage, getApi, toErrorMessage } from '@renderer/lib/api'
 import { invalidateVulnerabilityCache } from '@renderer/lib/vulnPreload'
 
+type DashboardTab = 'web' | 'internal'
+
 interface DashboardPageProps {
   dataVersion: number
   onOpenMcp: () => void
+  /** Switch to the dedicated internal operations page (sidebar page). */
+  onOpenInternal?: () => void
   /** Deep link from the nebula inspector: open this vulnerability immediately. */
   initialVulnId?: string | null
 }
 
-export function DashboardPage({ dataVersion, onOpenMcp, initialVulnId = null }: DashboardPageProps) {
+export function DashboardPage({
+  dataVersion,
+  onOpenMcp,
+  onOpenInternal,
+  initialVulnId = null
+}: DashboardPageProps) {
   const { t } = useI18n()
+  const [tab, setTab] = useState<DashboardTab>('web')
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 180)
   const [severity, setSeverity] = useState<Severity | 'all'>('all')
@@ -56,9 +68,13 @@ export function DashboardPage({ dataVersion, onOpenMcp, initialVulnId = null }: 
   const hasLoadedList = useRef(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Cross-page deep link (nebula → "view full details"): open the drawer once.
+  // Cross-page deep link (nebula → "view full details"): the vuln drawer only
+  // exists on the Web tab, so switch there and open the record once.
   useEffect(() => {
-    if (initialVulnId !== null) setSelectedId(initialVulnId)
+    if (initialVulnId !== null) {
+      setTab('web')
+      setSelectedId(initialVulnId)
+    }
   }, [initialVulnId])
 
   const clearSelection = useCallback(() => {
@@ -84,6 +100,7 @@ export function DashboardPage({ dataVersion, onOpenMcp, initialVulnId = null }: 
 
     api
       .listVulnerabilities({
+        realm: 'web',
         search: debouncedSearch ? debouncedSearch : undefined,
         severity,
         status,
@@ -133,7 +150,7 @@ export function DashboardPage({ dataVersion, onOpenMcp, initialVulnId = null }: 
       return
     }
     let alive = true
-    api.getStats().then(
+    api.getStats({ realm: 'web' }).then(
       (next) => {
         if (!alive) return
         setStats(next)
@@ -151,9 +168,17 @@ export function DashboardPage({ dataVersion, onOpenMcp, initialVulnId = null }: 
     }
   }, [dataVersion, reloadSeq])
 
+  // Header badge on the internal tab: `stats.internal` is computed across both
+  // realms, so it stays accurate next to the Web-realm metrics.
+  const internalCount = stats === null ? null : stats.internal.total
+
+  // `/` focuses the Web-tab search input. The shortcut is gated to the Web tab
+  // (the internal tab mounts no FilterBar) and to plain keystrokes.
   useEffect(() => {
+    if (tab !== 'web') return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== '/' || event.defaultPrevented) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
       const target = event.target
       if (target instanceof HTMLElement) {
         const tag = target.tagName
@@ -166,9 +191,18 @@ export function DashboardPage({ dataVersion, onOpenMcp, initialVulnId = null }: 
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [tab])
 
   const filtersActive = search.trim() !== '' || severity !== 'all' || status !== 'all'
+
+  const handleTabChange = useCallback((next: string) => {
+    const value: DashboardTab = next === 'internal' ? 'internal' : 'web'
+    setTab(value)
+    if (value === 'internal') {
+      setSelectedId(null)
+      setBulkConfirmOpen(false)
+    }
+  }, [])
 
   const handleSearchChange = useCallback(
     (value: string) => {
@@ -326,102 +360,155 @@ export function DashboardPage({ dataVersion, onOpenMcp, initialVulnId = null }: 
 
   return (
     <>
-      <section className="mx-auto flex h-full w-full max-w-[1440px] flex-col px-8 pt-4 pb-4">
-        <div className="shrink-0">
+      <Tabs
+        value={tab}
+        onValueChange={handleTabChange}
+        className="mx-auto flex h-full min-h-0 w-full max-w-[1440px] flex-col px-8 pt-4 pb-4"
+      >
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+          <TabsList
+            data-testid="dashboard-tabs"
+            aria-label={t('dashboard.tab.groupAria')}
+            className="inline-flex h-8 items-center gap-0.5 rounded-md border border-border bg-muted p-0.5"
+          >
+            <TabsTrigger
+              value="web"
+              data-testid="dashboard-tab-web"
+              className="h-7 rounded-[5px] border border-transparent px-2.5 text-[12px] data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:after:hidden data-[state=active]:shadow-none"
+            >
+              {t('dashboard.tab.web')}
+            </TabsTrigger>
+            <TabsTrigger
+              value="internal"
+              data-testid="dashboard-tab-internal"
+              className="h-7 rounded-[5px] border border-transparent px-2.5 text-[12px] data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:after:hidden data-[state=active]:shadow-none"
+            >
+              {t('dashboard.tab.internal')}
+              {internalCount !== null ? (
+                <span
+                  data-testid="dashboard-internal-count"
+                  aria-label={t('dashboard.tab.internalCountAria', { count: internalCount })}
+                  className="rounded-full border border-border bg-background px-1.5 font-mono text-[9.5px] tabular-nums text-muted-foreground"
+                >
+                  {internalCount}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <div className="mt-3 shrink-0">
           <MetricStrip stats={stats} loading={statsLoading} error={statsError} />
         </div>
 
-        <div className="mt-4 shrink-0">
-          <FilterBar
-            search={search}
-            severity={severity}
-            status={status}
-            stats={stats}
-            total={items === null ? null : total}
-            filtersActive={filtersActive}
-            selectMode={selectMode}
-            searchInputRef={searchInputRef}
-            onSearchChange={handleSearchChange}
-            onSeverityChange={handleSeverityChange}
-            onStatusChange={handleStatusChange}
-            onToggleSelectMode={handleToggleSelectMode}
-            onClear={handleClearFilters}
-            onRefresh={refresh}
-          />
-        </div>
-
-        {showBulkBar ? (
-          <div
-            data-testid="vuln-bulk-bar"
-            role="region"
-            aria-label={t('dashboard.bulk.region')}
-            className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-accent-soft px-3 py-2"
-          >
-            <span
-              className="text-[12px] font-medium tabular-nums text-foreground"
-              aria-live="polite"
-            >
-              {t('dashboard.bulk.selected', { count: selectedCount })}
-            </span>
-            <div className="ml-auto flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void handleExportSelected()}
-                disabled={exporting}
-                className="gap-1.5"
-              >
-                <Download aria-hidden="true" className="h-3.5 w-3.5" />
-                {exporting ? t('dashboard.bulk.exporting') : t('dashboard.bulk.export')}
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setBulkConfirmOpen(true)}
-                disabled={bulkDeleting}
-                className="gap-1.5"
-              >
-                <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                {t('dashboard.bulk.deleteSelected')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={handleCancelSelection}>
-                {t('dashboard.bulk.cancelSelection')}
-              </Button>
-            </div>
+        <TabsContent
+          value="web"
+          className="mt-3 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+        >
+          <div className="shrink-0">
+            <FilterBar
+              search={search}
+              severity={severity}
+              status={status}
+              stats={stats}
+              total={items === null ? null : total}
+              filtersActive={filtersActive}
+              selectMode={selectMode}
+              searchInputRef={searchInputRef}
+              onSearchChange={handleSearchChange}
+              onSeverityChange={handleSeverityChange}
+              onStatusChange={handleStatusChange}
+              onToggleSelectMode={handleToggleSelectMode}
+              onClear={handleClearFilters}
+              onRefresh={refresh}
+            />
           </div>
-        ) : null}
 
-        <div className="mt-2 flex min-h-0 flex-1 flex-col">
-          <VulnTable
-            items={items}
-            loading={listLoading}
-            error={listError}
-            filtersActive={filtersActive}
-            seeding={seeding}
-            selectMode={selectMode}
-            selectedIds={selectedIds}
-            onToggleSelect={handleToggleSelect}
-            onToggleSelectAll={handleToggleSelectAll}
-            onOpen={setSelectedId}
-            onClearFilters={handleClearFilters}
-            onSeedDemo={() => void handleSeedDemo()}
-            onOpenMcp={onOpenMcp}
-            onRetry={refresh}
-            fillHeight={(items?.length ?? 0) >= pageSize}
-            footer={
-              items !== null && total > 0 ? (
-                <PaginationBar
-                  page={page}
-                  pageSize={pageSize}
-                  total={total}
-                  onPageChange={handlePageChange}
-                  onPageSizeChange={handlePageSizeChange}
-                />
-              ) : null
-            }
+          {showBulkBar ? (
+            <div
+              data-testid="vuln-bulk-bar"
+              role="region"
+              aria-label={t('dashboard.bulk.region')}
+              className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-accent-soft px-3 py-2"
+            >
+              <span
+                className="text-[12px] font-medium tabular-nums text-foreground"
+                aria-live="polite"
+              >
+                {t('dashboard.bulk.selected', { count: selectedCount })}
+              </span>
+              <div className="ml-auto flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleExportSelected()}
+                  disabled={exporting}
+                  className="gap-1.5"
+                >
+                  <Download aria-hidden="true" className="h-3.5 w-3.5" />
+                  {exporting ? t('dashboard.bulk.exporting') : t('dashboard.bulk.export')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setBulkConfirmOpen(true)}
+                  disabled={bulkDeleting}
+                  className="gap-1.5"
+                >
+                  <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                  {t('dashboard.bulk.deleteSelected')}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleCancelSelection}>
+                  {t('dashboard.bulk.cancelSelection')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-2 flex min-h-0 flex-1 flex-col">
+            <VulnTable
+              items={items}
+              loading={listLoading}
+              error={listError}
+              filtersActive={filtersActive}
+              seeding={seeding}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+              onToggleSelectAll={handleToggleSelectAll}
+              onOpen={setSelectedId}
+              onClearFilters={handleClearFilters}
+              onSeedDemo={() => void handleSeedDemo()}
+              onOpenMcp={onOpenMcp}
+              onRetry={refresh}
+              fillHeight={(items?.length ?? 0) >= pageSize}
+              footer={
+                items !== null && total > 0 ? (
+                  <PaginationBar
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    onPageChange={handlePageChange}
+                    onPageSizeChange={handlePageSizeChange}
+                  />
+                ) : null
+              }
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent
+          value="internal"
+          data-testid="dashboard-internal-panel"
+          className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1 data-[state=inactive]:hidden"
+        >
+          <InternalPage
+            dataVersion={dataVersion}
+            embedded
+            onOpenPage={onOpenInternal}
           />
-        </div>
-      </section>
+        </TabsContent>
+      </Tabs>
 
       <VulnDetail
         vulnId={selectedId}

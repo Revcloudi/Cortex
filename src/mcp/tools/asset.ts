@@ -7,6 +7,7 @@ import {
   type AssetContext,
   type SyncAssetResult
 } from '../../shared/types'
+import type { InternalScopeSummary } from '../../shared/internal'
 import { formatUnknownError } from '../../shared/validation'
 import type { DatabaseService } from '../../core/db/DatabaseService'
 import { truncateForLog, type HubLogger } from '../../core/logging'
@@ -132,6 +133,11 @@ function registerSyncAssetInfoTool(server: ToolRegistrar, deps: AssetToolDeps): 
  * Unified read tool for the asset library. Exactly one selector chooses the
  * mode: `host_port` returns one full `AssetContext`, `project_name` returns a
  * fuzzy-matched `AssetContext[]` (possibly empty).
+ *
+ * The optional `include_internal` / `include_credentials` flags are additive
+ * (Plan B §5.4): they attach an `InternalScopeSummary` for the entry asset or
+ * project. Internal data stays opt-in so existing agents do not get a larger
+ * context by default; masked credentials imply `include_internal`.
  */
 function registerQueryAssetContextTool(server: ToolRegistrar, deps: AssetToolDeps): void {
   server.registerTool(
@@ -139,7 +145,7 @@ function registerQueryAssetContextTool(server: ToolRegistrar, deps: AssetToolDep
     {
       title: '查询资产上下文',
       description:
-        '只读查询资产上下文，host_port 与 project_name 二选一：host_port 返回该资产的完整 AssetContext（项目名、技术栈、interfaces[]、interface_dir[]、test_parameters[]、敏感泄露、关联漏洞、last_seen）；project_name 模糊查询返回 AssetContext[]（可为空数组）。未找到资产时返回 isError 提示先侦察并 sync_asset_info。',
+        '只读查询资产上下文，host_port 与 project_name 二选一：host_port 返回该资产的完整 AssetContext（项目名、技术栈、interfaces[]、interface_dir[]、test_parameters[]、敏感泄露、关联漏洞、last_seen）；传 include_internal=true 时额外返回 internal: InternalScopeSummary（该入口的 footholds、可达内网主机/服务/pivots 与 counts），include_credentials=true 时额外返回脱敏凭据（隐含 include_internal）。project_name 模糊查询默认返回 AssetContext[]（可为空数组）；传 include_internal / include_credentials 时返回 { project_name, assets, internal }。未找到资产时返回 isError 提示先侦察并 sync_asset_info。',
       inputSchema: QueryAssetContextToolInput,
       annotations: {
         readOnlyHint: true,
@@ -154,7 +160,15 @@ function registerQueryAssetContextTool(server: ToolRegistrar, deps: AssetToolDep
       const parsed = QueryAssetContextInputSchema.safeParse(args)
       if (!parsed.success) return validationError('query_asset_context', parsed.error, args, deps)
 
-      const { host_port: hostPort, project_name: projectName } = parsed.data
+      const {
+        host_port: hostPort,
+        project_name: projectName,
+        include_internal: includeInternalFlag,
+        include_credentials: includeCredentialsFlag
+      } = parsed.data
+      const includeCredentials = includeCredentialsFlag === true
+      // Masked credentials imply the internal summary that carries them.
+      const includeInternal = includeInternalFlag === true || includeCredentials
 
       if (hostPort !== undefined) {
         const asset = deps.db.getAssetDetail(hostPort)
@@ -164,6 +178,18 @@ function registerQueryAssetContextTool(server: ToolRegistrar, deps: AssetToolDep
             `未找到资产 ${hostPort} 的上下文；请先完成侦察并调用 sync_asset_info 写入`
           )
         }
+
+        if (includeInternal) {
+          const internal: InternalScopeSummary = deps.db.getInternalScopeForAsset(
+            asset.host_port,
+            { includeCredentials }
+          )
+          deps.logger.info(
+            `[MCP] query_asset_context 结果: host=${asset.host_port} interfaces=${asset.interfaces.length} leaks=${asset.leaked_infos.length} footholds=${internal.counts.footholds} hosts=${internal.counts.hosts} services=${internal.counts.services}`
+          )
+          return jsonResult({ ...asset, internal })
+        }
+
         deps.logger.info(
           `[MCP] query_asset_context 结果: host=${asset.host_port} interfaces=${asset.interfaces.length} leaks=${asset.leaked_infos.length}`
         )
@@ -175,6 +201,17 @@ function registerQueryAssetContextTool(server: ToolRegistrar, deps: AssetToolDep
       }
 
       const assets = deps.db.queryAssetsByProject(projectName)
+      if (includeInternal) {
+        const internal: InternalScopeSummary = deps.db.getInternalScopeForProject(
+          projectName,
+          { includeCredentials }
+        )
+        deps.logger.info(
+          `[MCP] query_asset_context 结果: project=${projectName} 命中 ${assets.length} 条资产 footholds=${internal.counts.footholds} hosts=${internal.counts.hosts}`
+        )
+        return jsonResult({ project_name: projectName, assets, internal })
+      }
+
       deps.logger.info(
         `[MCP] query_asset_context 结果: project=${projectName} 命中 ${assets.length} 条`
       )

@@ -7,10 +7,16 @@ import {
   AssetHostPortIpcSchema,
   DeleteVulnerabilityIpcSchema,
   GetVulnerabilityIpcSchema,
+  ImportLootIpcSchema,
+  InternalGraphQueryIpcSchema,
+  InternalOverviewIpcSchema,
   ListAssetsIpcSchema,
+  ListLootImportsIpcSchema,
   ListSnapshotsIpcSchema,
+  DashboardStatsIpcSchema,
   ListVulnerabilitiesIpcSchema,
   MemoryGraphQueryIpcSchema,
+  RecordCredentialTrialIpcSchema,
   SetupRunRequestIpcSchema,
   SnapshotArchiveIpcSchema,
   SnapshotSessionIdIpcSchema,
@@ -20,9 +26,14 @@ import {
 } from './schemas'
 import type {
   AppInfo,
+  CredentialTrial,
   DatabaseSwitchResult,
   DeleteSnapshotResult,
   ExportReportsResult,
+  InternalGraphData,
+  InternalOverview,
+  InternalProjectSummary,
+  LootImport,
   SetupInfo,
   SetupRunResult,
   SnapshotListResult,
@@ -69,7 +80,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return db.getById(parsed.data)
   })
 
-  ipcMain.handle(IPC_CHANNELS.getStats, () => db.getStats())
+  ipcMain.handle(IPC_CHANNELS.getStats, (_event, rawQuery: unknown) => {
+    const parsed = DashboardStatsIpcSchema.safeParse(rawQuery)
+    if (!parsed.success) {
+      throw new Error(`Invalid stats query: ${formatZodError(parsed.error)}`)
+    }
+    return db.getStats(parsed.data ?? {})
+  })
 
   ipcMain.handle(IPC_CHANNELS.updateVulnerabilityStatus, (_event, rawInput: unknown) => {
     const parsed = UpdateStatusIpcSchema.safeParse(rawInput)
@@ -256,6 +273,74 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   )
 
   /**
+   * Internal operations projections (Plan B). The four reads never write and
+   * never emit `data:changed`; the two writes (credential trial, loot import)
+   * notify so every window refreshes exactly like the Web runtime's SSE
+   * `changed` event.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.getInternalOverview,
+    (_event, rawInput: unknown): InternalOverview => {
+      const parsed = InternalOverviewIpcSchema.safeParse(rawInput)
+      if (!parsed.success) {
+        throw new Error(`Invalid internal overview filter: ${formatZodError(parsed.error)}`)
+      }
+      return db.getInternalOverview(parsed.data?.project_name)
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.getInternalGraph,
+    (_event, rawInput: unknown): InternalGraphData => {
+      const parsed = InternalGraphQueryIpcSchema.safeParse(rawInput)
+      if (!parsed.success) {
+        throw new Error(`Invalid internal graph query: ${formatZodError(parsed.error)}`)
+      }
+      return db.getInternalGraph(parsed.data.project_name)
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.getInternalProjects,
+    (): InternalProjectSummary[] => db.getInternalProjects()
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.recordCredentialTrial,
+    (_event, rawInput: unknown): CredentialTrial => {
+      const parsed = RecordCredentialTrialIpcSchema.safeParse(rawInput)
+      if (!parsed.success) {
+        throw new Error(`Invalid credential trial payload: ${formatZodError(parsed.error)}`)
+      }
+      const trial = db.recordCredentialTrial(parsed.data)
+      deps.notifyDataChanged()
+      return trial
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.listLootImports,
+    (_event, rawInput: unknown): LootImport[] => {
+      const parsed = ListLootImportsIpcSchema.safeParse(rawInput)
+      if (!parsed.success) {
+        throw new Error(`Invalid loot import filter: ${formatZodError(parsed.error)}`)
+      }
+      return db.listLootImports(parsed.data?.project_name)
+    }
+  )
+
+  /** Local-file import: the database layer parses the path, never executes it. */
+  ipcMain.handle(IPC_CHANNELS.importLoot, (_event, rawInput: unknown): LootImport => {
+    const parsed = ImportLootIpcSchema.safeParse(rawInput)
+    if (!parsed.success) {
+      throw new Error(`Invalid loot import payload: ${formatZodError(parsed.error)}`)
+    }
+    const imported = db.importLoot(parsed.data)
+    deps.notifyDataChanged()
+    return imported
+  })
+
+  /**
    * Read-only Memory Nebula projection (P2): never writes, so it never emits
    * `data:changed`. Validation mirrors `listSnapshots`; the builder clamps the
    * caller limits and reports `meta.truncated` instead of silently dropping.
@@ -382,6 +467,12 @@ export function unregisterIpcHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.restoreSnapshotPrevious)
   ipcMain.removeHandler(IPC_CHANNELS.archiveSnapshot)
   ipcMain.removeHandler(IPC_CHANNELS.deleteSnapshot)
+  ipcMain.removeHandler(IPC_CHANNELS.getInternalOverview)
+  ipcMain.removeHandler(IPC_CHANNELS.getInternalGraph)
+  ipcMain.removeHandler(IPC_CHANNELS.getInternalProjects)
+  ipcMain.removeHandler(IPC_CHANNELS.recordCredentialTrial)
+  ipcMain.removeHandler(IPC_CHANNELS.listLootImports)
+  ipcMain.removeHandler(IPC_CHANNELS.importLoot)
   ipcMain.removeHandler(IPC_CHANNELS.getMemoryGraph)
   ipcMain.removeHandler(IPC_CHANNELS.getDatabaseInfo)
   ipcMain.removeHandler(IPC_CHANNELS.chooseDatabase)

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   ASSET_STATUSES,
+  REALM_FILTERS,
   SEVERITIES,
   VULN_STATUSES,
   isValidAssetIdentifier
@@ -31,10 +32,20 @@ export const ListVulnerabilitiesIpcSchema = z
     search: z.string().max(500).optional(),
     severity: z.enum([...SEVERITIES, 'all']).optional(),
     status: z.enum([...VULN_STATUSES, 'all']).optional(),
+    /** Realm isolation: the Web tab asks for `web`, the internal board for `internal`. */
+    realm: z.enum(REALM_FILTERS).optional(),
     /** 1-based page number; the database clamps it to the last page. */
     page: z.number().int().min(1).max(100_000).optional(),
     /** Rows per page; the UI only offers 10 / 20 / 50, the db caps at 200. */
     pageSize: z.number().int().min(1).max(200).optional()
+  })
+  .strict()
+  .optional()
+
+/** Dashboard counters can be scoped to one realm (Web tab / internal board). */
+export const DashboardStatsIpcSchema = z
+  .object({
+    realm: z.enum(REALM_FILTERS).optional()
   })
   .strict()
   .optional()
@@ -111,6 +122,8 @@ const MemoryGraphScopeIpcSchema = z.discriminatedUnion('kind', [
 export const MemoryGraphQueryIpcSchema = z
   .object({
     scope: MemoryGraphScopeIpcSchema,
+    /** Logical realm filter (plan §7.2): web (default) / internal / all. */
+    realm: z.enum(['web', 'internal', 'all']).optional(),
     /** Neighbourhood depth; the literal union keeps the `1 | 2` inferred type. */
     depth: z.union([z.literal(1), z.literal(2)]).optional(),
     /** Node-type switches forwarded to the builder (all types when omitted). */
@@ -118,7 +131,9 @@ export const MemoryGraphQueryIpcSchema = z
       .object({
         vulnerabilities: z.boolean().optional(),
         leaks: z.boolean().optional(),
-        snapshots: z.boolean().optional()
+        snapshots: z.boolean().optional(),
+        /** Include the internal layer in `all` scope. */
+        internal: z.boolean().optional()
       })
       .strict()
       .optional(),
@@ -128,7 +143,11 @@ export const MemoryGraphQueryIpcSchema = z
         hosts: z.number().int().min(1).max(500).optional(),
         vulnerabilities: z.number().int().min(1).max(2_000).optional(),
         leaks: z.number().int().min(1).max(1_000).optional(),
-        snapshots: z.number().int().min(1).max(200).optional()
+        snapshots: z.number().int().min(1).max(200).optional(),
+        /** Internal operation limits (plan §7.2 / §12). */
+        footholds: z.number().int().min(1).max(300).optional(),
+        internalHosts: z.number().int().min(1).max(1_000).optional(),
+        internalServices: z.number().int().min(1).max(3_000).optional()
       })
       .strict()
       .optional()
@@ -162,4 +181,36 @@ export const SetupRunRequestIpcSchema = z
     uiLanguage: z.enum(['zh', 'en'])
   })
   .strict()
+
+/**
+ * Internal operations (Plan B) IPC inputs.
+ *
+ * The entity payload schemas (credential trial, loot import) live in
+ * `src/shared/internal.ts` and are re-exported here so the desktop IPC bridge
+ * and the Web routes validate exactly the same bodies. Only the renderer-facing
+ * query wrappers are declared locally; every object is strict so a renderer
+ * typo fails loudly instead of being silently ignored.
+ */
+
+/** `getInternalGraph`: the graph projection is always scoped to one project. */
+export const InternalGraphQueryIpcSchema = z
+  .object({ project_name: ProjectNameIpcSchema })
+  .strict()
+
+/** `{ project_name?: string }` filter shared by overview / loot list reads. */
+const OptionalProjectFilterIpcSchema = z
+  .object({ project_name: ProjectNameIpcSchema.optional() })
+  .strict()
+
+/** `getInternalOverview(input?)`: omit the filter to use the active project. */
+export const InternalOverviewIpcSchema = OptionalProjectFilterIpcSchema.optional()
+
+/** `listLootImports(input?)`: newest-first list, optionally scoped to a project. */
+export const ListLootImportsIpcSchema = OptionalProjectFilterIpcSchema.optional()
+
+/** `recordCredentialTrial`: no auto-attempt; the GUI only records a known outcome. */
+export { RecordCredentialTrialInputSchema as RecordCredentialTrialIpcSchema } from '../../shared/internal'
+
+/** `importLoot`: local file path only; the importer never executes the file. */
+export { ImportLootInputSchema as ImportLootIpcSchema } from '../../shared/internal'
 

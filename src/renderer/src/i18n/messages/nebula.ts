@@ -39,7 +39,6 @@ export const nebulaMessages: MessageBundle = {
     'nebula.filter.vulns': '漏洞',
     'nebula.filter.leaks': '敏感泄露',
     'nebula.filter.snapshots': '快照',
-    'nebula.filter.hostsAlwaysVisible': 'Host 始终显示',
 
     // Statistics
     'nebula.stats.nodes': '{count} 节点',
@@ -162,7 +161,6 @@ export const nebulaMessages: MessageBundle = {
 
     // P2 live data: builder limits, refresh, real scope targets
     'nebula.badge.live': '实时数据',
-    'nebula.limits.hint': '上限 {hosts} Host · {vulns} 漏洞 · {leaks} 泄露 · {snapshots} 快照',
     'nebula.refresh': '刷新数据',
     'nebula.refreshAria': '从数据库重新加载星云',
     'nebula.loading.graph': '正在从数据库加载星云…',
@@ -263,7 +261,99 @@ export const nebulaMessages: MessageBundle = {
     'nebula.inspector.metrics': '关键指标',
 
     // Projected HUD label summaries (short node labels, follow zh/en)
-    'nebula.label.leakSummary': '{type}泄露'
+    'nebula.label.leakSummary': '{type}泄露',
+
+    // ------------------------- Plan B: internal operations realm -------------------------
+    // Realm switch
+    'nebula.realm.label': '作战域',
+    'nebula.realm.switchAria': '切换作战域',
+    'nebula.realm.web': 'Web',
+    'nebula.realm.internal': '内网',
+    'nebula.realm.all': '全部',
+
+    // Attack path overlay
+    'nebula.attackPath.label': '攻击路径',
+    'nebula.attackPath.toggle': '显示 / 隐藏选中的 pivot 路由',
+    'nebula.attackPath.on': 'ON',
+    'nebula.attackPath.off': 'OFF',
+    'nebula.attackPath.hint':
+      '沿 pivot 跳点高亮「入口资产 → Foothold → 内网主机 / 服务」的路径，只做高亮、不影响布局。',
+    'nebula.attackPath.count': '{count} 条可用路由',
+    'nebula.attackPath.selectLabel': '选择路由',
+    'nebula.attackPath.clear': '清除',
+
+    // Internal node types + legend groups
+    'nebula.type.foothold': 'Foothold',
+    'nebula.type.internal_host': '内网主机',
+    'nebula.type.internal_service': '内网服务',
+    'nebula.legend.foothold': 'Foothold 入口桥',
+    'nebula.legend.internal_host': '内网主机（按状态着色）',
+    'nebula.legend.internal_service': '内网服务 / 端口',
+    'nebula.legend.groupWeb': 'Web 域',
+    'nebula.legend.groupInternal': '内网域',
+    'nebula.legend.groupAttackPath': '攻击路径',
+    'nebula.legend.attackPath': '选中的 pivot 路由',
+    'nebula.legend.relation.FOOTHOLD_FROM': '入口资产 → Foothold',
+    'nebula.legend.relation.FOOTHOLD_REACHES': 'Foothold → 可达内网主机',
+    'nebula.legend.relation.HOST_HAS_SERVICE': '内网主机 → 服务',
+    'nebula.legend.relation.SERVICE_HAS_VULN': '服务 → 内网漏洞',
+
+    // Internal type filters
+    'nebula.filter.footholds': 'Foothold',
+    'nebula.filter.internalHosts': '内网主机',
+    'nebula.filter.internalServices': '内网服务',
+
+    // Inspector identity / metrics rows
+    'nebula.field.entryHost': '入口资产',
+    'nebula.field.entryVuln': '入口漏洞',
+    'nebula.field.accessType': '访问类型',
+    'nebula.field.privilege': '权限',
+    'nebula.field.establishedAt': '建立时间',
+    'nebula.field.lastVerifiedAt': '最近验证',
+    'nebula.field.evidence': '证据摘要',
+    'nebula.field.reachedHosts': '可达主机数',
+    'nebula.field.ip': 'IP',
+    'nebula.field.hostname': '主机名',
+    'nebula.field.os': '操作系统',
+    'nebula.field.subnet': '网段',
+    'nebula.field.confidence': '置信度',
+    'nebula.field.serviceCount': '服务数',
+    'nebula.field.footholdCount': '可达 Foothold',
+    'nebula.field.serviceEndpoint': '服务端点',
+    'nebula.field.protocol': '协议',
+    'nebula.field.service': '服务',
+    'nebula.field.vulnCount': '内网漏洞数',
+
+    // Enum labels
+    'nebula.accessType.rce': 'RCE',
+    'nebula.accessType.webshell': 'WebShell',
+    'nebula.accessType.ssrf_proxy': 'SSRF 代理',
+    'nebula.accessType.credential': '凭据',
+    'nebula.accessType.vpn': 'VPN',
+    'nebula.accessType.other': '其他',
+    'nebula.privilege.user': '普通用户',
+    'nebula.privilege.admin': '管理员',
+    'nebula.privilege.system': 'SYSTEM',
+    'nebula.privilege.domain_admin': '域管理员',
+    'nebula.privilege.unknown': '未知',
+    'nebula.footholdStatus.planned': '计划中',
+    'nebula.footholdStatus.established': '已建立',
+    'nebula.footholdStatus.degraded': '已降级',
+    'nebula.footholdStatus.lost': '已丢失',
+    'nebula.hostState.unknown': '未知',
+    'nebula.hostState.alive': '存活',
+    'nebula.hostState.compromised': '已失陷',
+    'nebula.hostState.unreachable': '不可达',
+    'nebula.hostState.firewalled': '被防火墙隔离',
+    'nebula.serviceState.open': '开放',
+    'nebula.serviceState.closed': '关闭',
+    'nebula.serviceState.filtered': '过滤',
+    'nebula.serviceState.unknown': '未知',
+    'nebula.confidence.low': '低',
+    'nebula.confidence.medium': '中',
+    'nebula.confidence.high': '高',
+    'nebula.route.kind.chain': '链式',
+    'nebula.route.kind.proxy': '代理'
   },
   en: {
     // Navigation + page metadata
@@ -299,7 +389,6 @@ export const nebulaMessages: MessageBundle = {
     'nebula.filter.vulns': 'Vulnerabilities',
     'nebula.filter.leaks': 'Leaks',
     'nebula.filter.snapshots': 'Snapshots',
-    'nebula.filter.hostsAlwaysVisible': 'Hosts are always shown',
 
     // Statistics
     'nebula.stats.nodes': '{count} nodes',
@@ -424,7 +513,6 @@ export const nebulaMessages: MessageBundle = {
 
     // P2 live data: builder limits, refresh, real scope targets
     'nebula.badge.live': 'Live data',
-    'nebula.limits.hint': 'Limits: {hosts} hosts · {vulns} vulns · {leaks} leaks · {snapshots} snapshots',
     'nebula.refresh': 'Refresh data',
     'nebula.refreshAria': 'Reload the nebula from the database',
     'nebula.loading.graph': 'Loading the nebula from the database…',
@@ -527,6 +615,98 @@ export const nebulaMessages: MessageBundle = {
     'nebula.inspector.metrics': 'KEY METRICS',
 
     // Projected HUD label summaries (short node labels, follow zh/en)
-    'nebula.label.leakSummary': '{type} leak'
+    'nebula.label.leakSummary': '{type} leak',
+
+    // ------------------------- Plan B: internal operations realm -------------------------
+    // Realm switch
+    'nebula.realm.label': 'Realm',
+    'nebula.realm.switchAria': 'Switch operation realm',
+    'nebula.realm.web': 'Web',
+    'nebula.realm.internal': 'Internal',
+    'nebula.realm.all': 'All',
+
+    // Attack path overlay
+    'nebula.attackPath.label': 'Attack path',
+    'nebula.attackPath.toggle': 'Show / hide the selected pivot route',
+    'nebula.attackPath.on': 'ON',
+    'nebula.attackPath.off': 'OFF',
+    'nebula.attackPath.hint':
+      'Highlights «entry asset → foothold → internal host / service» along a pivot route. Highlight only — the layout never changes.',
+    'nebula.attackPath.count': '{count} route(s) available',
+    'nebula.attackPath.selectLabel': 'Select route',
+    'nebula.attackPath.clear': 'Clear',
+
+    // Internal node types + legend groups
+    'nebula.type.foothold': 'Foothold',
+    'nebula.type.internal_host': 'Internal host',
+    'nebula.type.internal_service': 'Internal service',
+    'nebula.legend.foothold': 'Foothold bridge',
+    'nebula.legend.internal_host': 'Internal host (state-coloured)',
+    'nebula.legend.internal_service': 'Internal service / port',
+    'nebula.legend.groupWeb': 'Web domain',
+    'nebula.legend.groupInternal': 'Internal domain',
+    'nebula.legend.groupAttackPath': 'Attack path',
+    'nebula.legend.attackPath': 'Selected pivot route',
+    'nebula.legend.relation.FOOTHOLD_FROM': 'Entry asset → foothold',
+    'nebula.legend.relation.FOOTHOLD_REACHES': 'Foothold → reachable internal host',
+    'nebula.legend.relation.HOST_HAS_SERVICE': 'Internal host → service',
+    'nebula.legend.relation.SERVICE_HAS_VULN': 'Service → internal vulnerability',
+
+    // Internal type filters
+    'nebula.filter.footholds': 'Footholds',
+    'nebula.filter.internalHosts': 'Internal hosts',
+    'nebula.filter.internalServices': 'Internal services',
+
+    // Inspector identity / metrics rows
+    'nebula.field.entryHost': 'Entry asset',
+    'nebula.field.entryVuln': 'Entry vulnerability',
+    'nebula.field.accessType': 'Access type',
+    'nebula.field.privilege': 'Privilege',
+    'nebula.field.establishedAt': 'Established',
+    'nebula.field.lastVerifiedAt': 'Last verified',
+    'nebula.field.evidence': 'Evidence preview',
+    'nebula.field.reachedHosts': 'Reachable hosts',
+    'nebula.field.ip': 'IP',
+    'nebula.field.hostname': 'Hostname',
+    'nebula.field.os': 'OS',
+    'nebula.field.subnet': 'Subnet',
+    'nebula.field.confidence': 'Confidence',
+    'nebula.field.serviceCount': 'Services',
+    'nebula.field.footholdCount': 'Reaching footholds',
+    'nebula.field.serviceEndpoint': 'Endpoint',
+    'nebula.field.protocol': 'Protocol',
+    'nebula.field.service': 'Service',
+    'nebula.field.vulnCount': 'Internal vulnerabilities',
+
+    // Enum labels
+    'nebula.accessType.rce': 'RCE',
+    'nebula.accessType.webshell': 'WebShell',
+    'nebula.accessType.ssrf_proxy': 'SSRF proxy',
+    'nebula.accessType.credential': 'Credential',
+    'nebula.accessType.vpn': 'VPN',
+    'nebula.accessType.other': 'Other',
+    'nebula.privilege.user': 'User',
+    'nebula.privilege.admin': 'Admin',
+    'nebula.privilege.system': 'SYSTEM',
+    'nebula.privilege.domain_admin': 'Domain admin',
+    'nebula.privilege.unknown': 'Unknown',
+    'nebula.footholdStatus.planned': 'Planned',
+    'nebula.footholdStatus.established': 'Established',
+    'nebula.footholdStatus.degraded': 'Degraded',
+    'nebula.footholdStatus.lost': 'Lost',
+    'nebula.hostState.unknown': 'Unknown',
+    'nebula.hostState.alive': 'Alive',
+    'nebula.hostState.compromised': 'Compromised',
+    'nebula.hostState.unreachable': 'Unreachable',
+    'nebula.hostState.firewalled': 'Firewalled',
+    'nebula.serviceState.open': 'Open',
+    'nebula.serviceState.closed': 'Closed',
+    'nebula.serviceState.filtered': 'Filtered',
+    'nebula.serviceState.unknown': 'Unknown',
+    'nebula.confidence.low': 'Low',
+    'nebula.confidence.medium': 'Medium',
+    'nebula.confidence.high': 'High',
+    'nebula.route.kind.chain': 'Chain',
+    'nebula.route.kind.proxy': 'Proxy'
   }
 }

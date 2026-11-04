@@ -16,7 +16,8 @@ export const CORTEX_APP_ID = 'com.cortex.app'
  */
 export const MCP_TRANSPORT = 'stdio'
 export const MCP_SERVER_NAME = 'cortex'
-export const MCP_TOOL_COUNT = 6
+/** 7 tools ship with schema v3 (the internal domain adds `sync_internal_scope`). */
+export const MCP_TOOL_COUNT = 7
 
 export const IPC_CHANNELS = {
   listVulnerabilities: 'vulns:list',
@@ -35,6 +36,13 @@ export const IPC_CHANNELS = {
   restoreSnapshotPrevious: 'snapshots:restore-previous',
   archiveSnapshot: 'snapshots:archive',
   deleteSnapshot: 'snapshots:delete',
+  /** Read-only internal operations projections (Plan B). */
+  getInternalOverview: 'internal:overview',
+  getInternalGraph: 'internal:graph',
+  getInternalProjects: 'internal:projects',
+  recordCredentialTrial: 'internal:credential-trial',
+  listLootImports: 'loot:list',
+  importLoot: 'loot:import',
   /** Read-only Memory Nebula projection (P2). */
   getMemoryGraph: 'graph:get',
   getDatabaseInfo: 'db:info',
@@ -60,6 +68,7 @@ import type {
   AssetContext,
   AssetFilters,
   AssetListItem,
+  CredentialTrial,
   DashboardStats,
   DatabaseInfo,
   DatabaseSwitchResult,
@@ -68,8 +77,15 @@ import type {
   DeleteVulnResult,
   DeleteVulnsResult,
   ExportReportsResult,
+  ImportLootInput,
+  InternalGraphData,
+  InternalOverview,
+  InternalProjectSummary,
   LocalizedText,
+  LootImport,
   PaginatedVulnerabilities,
+  RecordCredentialTrialInput,
+  RealmFilter,
   SeedDemoResult,
   SetupInfo,
   SetupRunRequest,
@@ -86,11 +102,16 @@ import type {
 } from './types'
 import type { MemoryGraphData, MemoryGraphQuery } from './graph'
 
+export interface DashboardStatsQuery {
+  /** Realm scope of the main counters; default `all` (legacy behavior). */
+  realm?: RealmFilter
+}
+
 export interface CortexApi {
   /** Server-side paginated + filtered vulnerability list. */
   listVulnerabilities(filters?: VulnListQuery): Promise<PaginatedVulnerabilities>
   getVulnerability(id: string): Promise<Vulnerability | null>
-  getStats(): Promise<DashboardStats>
+  getStats(query?: DashboardStatsQuery): Promise<DashboardStats>
   updateVulnerabilityStatus(input: UpdateVulnStatusRequest): Promise<Vulnerability>
   deleteVulnerability(id: string): Promise<DeleteVulnResult>
   deleteVulnerabilities(ids: string[]): Promise<DeleteVulnsResult>
@@ -111,6 +132,19 @@ export interface CortexApi {
   deleteSnapshot(sessionId: string): Promise<DeleteSnapshotResult>
   /** One-step rollback of the latest overwrite (restores previous_state). */
   restoreSnapshotPrevious(sessionId: string): Promise<SnapshotSession>
+  /**
+   * Internal operations projections (Plan B). Read-only: writes arrive through
+   * the `sync_internal_scope` MCP tool / loot import.
+   */
+  getInternalOverview(input?: { project_name?: string }): Promise<InternalOverview>
+  getInternalGraph(input: { project_name: string }): Promise<InternalGraphData>
+  /** Projects that own at least one internal entity (page/project selector). */
+  getInternalProjects(): Promise<InternalProjectSummary[]>
+  /** Record the outcome of one credential trial (never auto-attempted). */
+  recordCredentialTrial(input: RecordCredentialTrialInput): Promise<CredentialTrial>
+  listLootImports(input?: { project_name?: string }): Promise<LootImport[]>
+  /** Parse one local loot file and persist the derived internal entities. */
+  importLoot(input: ImportLootInput): Promise<LootImport>
   /**
    * Read-only Memory Nebula projection computed from the existing tables.
    * Never writes and never mutates the database.
@@ -158,14 +192,17 @@ export const MCP_TOOL_DOCS: readonly McpToolDoc[] = [
     name: 'save_vulnerability',
     title: { zh: '写入 / 覆盖漏洞', en: 'Save / overwrite a vulnerability' },
     description: {
-      zh: '将 Agent 发现的漏洞持久化。相同 ID 已存在时整条覆盖，未提供 ID 时自动分配 VULN-YYYYMMDD-NNN。复测已有漏洞请用 update_vulnerability 的 retest 参数，避免覆盖原始证据。',
-      en: 'Persist a vulnerability found by the agent. An existing ID is replaced in full; without an ID a VULN-YYYYMMDD-NNN identifier is allocated. Use update_vulnerability with retest to append retest history instead of rewriting the original evidence.'
+      zh: '将 Agent 发现的漏洞持久化。相同 ID 已存在时整条覆盖，未提供 ID 时自动分配 VULN-YYYYMMDD-NNN。复测已有漏洞请用 update_vulnerability 的 retest 参数，避免覆盖原始证据。realm 区分「Web 漏洞」与「内网漏洞」：不传时按 service_host 是否为空推断；内网漏洞传 realm="internal"，host 填入口 Web 资产，service_host 与 internal_service_id 指向内网服务（internal_service_id 需先用 sync_internal_scope 登记）。',
+      en: 'Persist a vulnerability found by the agent. An existing ID is replaced in full; without an ID a VULN-YYYYMMDD-NNN identifier is allocated. Use update_vulnerability with retest to append retest history instead of rewriting the original evidence. realm separates Web findings from internal ones: omitted it is inferred from service_host; internal findings set realm="internal", keep host as the entry Web asset, and point service_host / internal_service_id at the internal service (register it with sync_internal_scope first).'
     },
     input: {
-      zh: '完整 Vulnerability 对象（zod 严格校验；reproduction_steps 为 Markdown 文本）',
-      en: 'Full Vulnerability object (strict zod validation; reproduction_steps is Markdown text)'
+      zh: '完整 Vulnerability 对象（zod 严格校验；reproduction_steps 为 Markdown 文本；新增可选 realm、internal_service_id）',
+      en: 'Full Vulnerability object (strict zod validation; reproduction_steps is Markdown text; optional realm / internal_service_id)'
     },
-    returns: { zh: '{ success: true, id, created }', en: '{ success: true, id, created }' }
+    returns: {
+      zh: '{ success: true, id, host, realm, created }',
+      en: '{ success: true, id, host, realm, created }'
+    }
   },
   {
     name: 'query_vulnerabilities',
@@ -178,8 +215,8 @@ export const MCP_TOOL_DOCS: readonly McpToolDoc[] = [
       en: 'Read-only entry point: vuln_id returns one full record, host returns compact summaries for that host, and search / severity / status return a paginated list. Used for pre-test recon, deduplication, retest review and report data.'
     },
     input: {
-      zh: '{ vuln_id?, host?, search?, severity?, status?, page?, pageSize? }（vuln_id 优先，其次 host，否则按过滤条件分页）',
-      en: '{ vuln_id?, host?, search?, severity?, status?, page?, pageSize? } (vuln_id first, then host, otherwise filtered pagination)'
+      zh: '{ vuln_id?, host?, search?, severity?, status?, realm?, page?, pageSize? }（vuln_id 优先，其次 host，否则按过滤条件分页；realm 默认 all 以兼容旧调用）',
+      en: '{ vuln_id?, host?, search?, severity?, status?, realm?, page?, pageSize? } (vuln_id first, then host, otherwise filtered pagination; realm defaults to all for backwards compatibility)'
     },
     returns: {
       zh: 'vuln_id: 完整 Vulnerability；host: { host, total, items[] }；过滤: { items[], total, page, pageSize }',
@@ -222,16 +259,16 @@ export const MCP_TOOL_DOCS: readonly McpToolDoc[] = [
     name: 'query_asset_context',
     title: { zh: '查询资产上下文', en: 'Query asset context' },
     description: {
-      zh: '只读查询入口，二选一：传 host_port 返回该资产的完整上下文（项目名、技术栈、interfaces[]、test_parameters[]、敏感泄露、关联漏洞）；传 project_name 模糊查询返回资产数组。开始测试前用于复用已有侦察成果。',
-      en: 'Read-only lookup, one of two modes: host_port returns the full asset context (project, tech stack, interfaces[], test_parameters[], leaked info, related vulnerabilities); project_name performs a fuzzy lookup and returns an asset array. Use it before testing to reuse existing recon.'
+      zh: '只读查询入口，二选一：传 host_port 返回该资产的完整上下文（项目名、技术栈、interfaces[]、test_parameters[]、敏感泄露、关联漏洞）；传 project_name 模糊查询返回资产数组。开始测试前用于复用已有侦察成果。可选 include_internal 返回该入口资产/项目的内网作战摘要（foothold、内网主机/服务、pivot），include_credentials 额外返回脱敏后的凭据（默认关闭，避免上下文膨胀与敏感值外泄）。',
+      en: 'Read-only lookup, one of two modes: host_port returns the full asset context (project, tech stack, interfaces[], test_parameters[], leaked info, related vulnerabilities); project_name performs a fuzzy lookup and returns an asset array. Use it before testing to reuse existing recon. Optional include_internal adds the internal-scope summary for the entry asset / project (footholds, internal hosts/services, pivots); include_credentials additionally returns masked credentials (off by default to avoid context bloat and secret exposure).'
     },
     input: {
-      zh: '{ host_port?: string, project_name?: string }（二选一）',
-      en: '{ host_port?: string, project_name?: string } (one of them)'
+      zh: '{ host_port?: string, project_name?: string }（二选一）+ { include_internal?: boolean, include_credentials?: boolean }',
+      en: '{ host_port?: string, project_name?: string } (one of them) + { include_internal?: boolean, include_credentials?: boolean }'
     },
     returns: {
-      zh: 'host_port: 完整 AssetContext；project_name: AssetContext[]',
-      en: 'host_port: full AssetContext; project_name: AssetContext[]'
+      zh: 'host_port: 完整 AssetContext（可含 internal 摘要）；project_name: AssetContext[]（可含 internal 摘要）',
+      en: 'host_port: full AssetContext (optionally with internal summary); project_name: AssetContext[] (optionally with internal summary)'
     }
   },
   {
@@ -248,6 +285,22 @@ export const MCP_TOOL_DOCS: readonly McpToolDoc[] = [
     returns: {
       zh: 'save: { success, action, created, session } | { success:false, requires_choice:true, candidates[] }；load/attach_assets/restore_previous: { success, action, session }；list: { success, action, total, items[] }',
       en: 'save: { success, action, created, session } | { success:false, requires_choice:true, candidates[] }; load/attach_assets/restore_previous: { success, action, session }; list: { success, action, total, items[] }'
+    }
+  },
+  {
+    name: 'sync_internal_scope',
+    title: { zh: '同步内网作战域', en: 'Sync internal operations scope' },
+    description: {
+      zh: '将内网作战域写入本地 SQLite：foothold、internal hosts/services、credentials、pivots。调用前先用 query_asset_context({ host_port }) 查看已有上下文，并用 save_vulnerability 保存入口 RCE/初始访问漏洞。所有实体按 project 归属；mode=merge（默认，增量、不删除）或 replace（仅替换本次传入的数组）；删除用 removed 显式指定。service_host / internal_service_id 用于把内网漏洞关联到服务。凭据是高敏数据：只记录必要字段，secret 会自动脱敏返回，不要把 secret 写进 notes/日志。',
+      en: 'Persist the internal operations domain into local SQLite: footholds, internal hosts/services, credentials and pivots. Call query_asset_context({ host_port }) first and save the entry RCE / initial-access finding with save_vulnerability. Every entity belongs to a project; mode=merge (default, incremental, never deletes) or replace (only the arrays provided are replaced); deletions are explicit via removed. service_host / internal_service_id link internal vulnerabilities to a service. Credentials are sensitive: record only necessary fields — secrets are masked on read, never put them in notes/logs.'
+    },
+    input: {
+      zh: '{ project_name, mode?: "merge" | "replace", footholds?: FootholdInput[], hosts?: InternalHostInput[], services?: InternalServiceInput[], credentials?: CredentialInput[], pivots?: PivotInput[], removed?: { foothold_ids[], host_ids[], service_ids[], credential_ids[], pivot_ids[] } }',
+      en: '{ project_name, mode?: "merge" | "replace", footholds?: FootholdInput[], hosts?: InternalHostInput[], services?: InternalServiceInput[], credentials?: CredentialInput[], pivots?: PivotInput[], removed?: { foothold_ids[], host_ids[], service_ids[], credential_ids[], pivot_ids[] } }'
+    },
+    returns: {
+      zh: '{ project_name, created: { footholds, hosts, services, credentials, pivots }, updated: {...}, ids: {...}, warnings[] }',
+      en: '{ project_name, created: { footholds, hosts, services, credentials, pivots }, updated: {...}, ids: {...}, warnings[] }'
     }
   }
 ] as const

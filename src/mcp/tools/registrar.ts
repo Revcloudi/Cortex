@@ -1,7 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 /**
- * Minimal tool-registration contract shared by the six Cortex tools.
+ * Minimal tool-registration contract shared by the seven Cortex tools.
  *
  * Keeping the tools decoupled from the MCP SDK's `McpServer` lets the server
  * advertise a strict JSON Schema in `tools/list` while still running the

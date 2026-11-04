@@ -7,7 +7,7 @@ description: "[MUST] Before resuming a task in a new session, restore tactical p
 
 Cortex's cognitive snapshots record the tactical progress of a task: project / target hosts / phase, unfinished tasks, failed paths, next steps, plus the structured endpoint test matrix `tested_interfaces`, Markdown notes `notes` and related vulnerability references `related_vuln_ids`. A snapshot records only **tactical progress + test conclusions** and does not re-store vulnerability evidence or raw messages.
 
-It is operated through a single tool, `manage_snapshot` (DSH: `mcp__cortex__manage_snapshot`), with `action` = `save` / `load` / `list` / `attach_assets` / `restore_previous`; the total number of tools remains 6. Sessions do not keep a version history — only one `previous_state` for a single-step rollback; a project has at most one level of child sessions, and do not maintain multiple sibling sessions for the same task in parallel.
+It is operated through a single tool, `manage_snapshot` (DSH: `mcp__cortex__manage_snapshot`), with `action` = `save` / `load` / `list` / `attach_assets` / `restore_previous`; the total number of tools remains 7. Sessions do not keep a version history — only one `previous_state` for a single-step rollback; a project has at most one level of child sessions, and do not maintain multiple sibling sessions for the same task in parallel.
 
 ## Hierarchy: project session → child session (one level only)
 

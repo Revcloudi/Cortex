@@ -1,7 +1,15 @@
 import type {
   AppliedMemoryGraphLimits,
+  FootholdNode,
+  FootholdNodeData,
+  GraphRelation,
+  GraphRouteOverlay,
   HostNode,
   HostNodeData,
+  InternalHostNode,
+  InternalHostNodeData,
+  InternalServiceNode,
+  InternalServiceNodeData,
   LeakNode,
   LeakNodeData,
   MemoryGraphData,
@@ -16,8 +24,7 @@ import type {
   SnapshotNodeData,
   TargetNode,
   VulnNode,
-  VulnNodeData,
-  GraphRelation
+  VulnNodeData
 } from '../../shared/graph'
 import {
   MEMORY_GRAPH_AGGREGATE_ELEMENT_LIMIT,
@@ -27,7 +34,17 @@ import {
   countNodeTypes,
   emptyTypeCounts
 } from '../../shared/graph'
-import type { AssetContext, SnapshotSession, Severity } from '../../shared/types'
+import type {
+  AssetContext,
+  Foothold,
+  InternalHost,
+  InternalService,
+  PivotWithHops,
+  Realm,
+  RealmFilter,
+  Severity,
+  SnapshotSession
+} from '../../shared/types'
 import type { DatabaseService, GraphVulnerabilityRecord } from '../db/DatabaseService'
 
 /**
@@ -146,6 +163,21 @@ export function resolveMemoryGraphLimits(
       limits?.snapshots,
       MEMORY_GRAPH_DEFAULT_LIMITS.snapshots,
       MEMORY_GRAPH_HARD_LIMITS.snapshots
+    ),
+    footholds: clamp(
+      limits?.footholds,
+      MEMORY_GRAPH_DEFAULT_LIMITS.footholds,
+      MEMORY_GRAPH_HARD_LIMITS.footholds
+    ),
+    internalHosts: clamp(
+      limits?.internalHosts,
+      MEMORY_GRAPH_DEFAULT_LIMITS.internalHosts,
+      MEMORY_GRAPH_HARD_LIMITS.internalHosts
+    ),
+    internalServices: clamp(
+      limits?.internalServices,
+      MEMORY_GRAPH_DEFAULT_LIMITS.internalServices,
+      MEMORY_GRAPH_HARD_LIMITS.internalServices
     )
   }
 }
@@ -328,6 +360,95 @@ function toSnapshotNode(session: SnapshotSession): SnapshotNode {
   }
 }
 
+/* ------------------------------------------------- internal layer nodes -- */
+
+/** `foothold:<id>` — the bridge node between a Web entry asset and the intranet. */
+function toFootholdNode(foothold: Foothold): FootholdNode {
+  const data: FootholdNodeData = {
+    foothold_id: foothold.id,
+    project_name: foothold.project_name,
+    entry_host_port: foothold.entry_host_port,
+    entry_vuln_id: foothold.entry_vuln_id,
+    access_type: foothold.access_type,
+    privilege_level: foothold.privilege_level,
+    status: foothold.status,
+    // Evidence is Markdown and can be long; the inspector only previews it.
+    evidence: truncate(foothold.evidence, 4_000),
+    notes: truncate(foothold.notes, 4_000),
+    established_at: foothold.established_at,
+    last_verified_at: foothold.last_verified_at,
+    host_count: foothold.host_ids.length
+  }
+  const entryKey = canonicalHostKey(foothold.entry_host_port) || foothold.entry_host_port.toLowerCase()
+  return {
+    id: `foothold:${foothold.id}`,
+    type: 'foothold',
+    // `FH · rce` reads as a bridge, not as a record title (plan §7.3).
+    name: `FH · ${foothold.access_type}`,
+    host: entryKey,
+    project: foothold.project_name,
+    val: 14,
+    data
+  }
+}
+
+/** `internal_host:<id>` — an intranet machine (never a top-level Web asset). */
+function toInternalHostNode(host: InternalHost, serviceCount: number): InternalHostNode {
+  const hostname = host.hostname.trim()
+  const data: InternalHostNodeData = {
+    host_id: host.id,
+    project_name: host.project_name,
+    ip: host.ip,
+    hostname,
+    os: host.os,
+    subnet: host.subnet,
+    state: host.state,
+    confidence: host.confidence,
+    service_count: serviceCount,
+    last_seen: host.last_seen,
+    foothold_ids: []
+  }
+  return {
+    id: `internal_host:${host.id}`,
+    type: 'internal_host',
+    name: hostname.length > 0 ? `${host.ip} · ${hostname}` : host.ip,
+    host: host.ip,
+    project: host.project_name,
+    val: clampNumber(9 + serviceCount * 0.4, 9, 24),
+    data
+  }
+}
+
+/** `internal_service:<id>` — a port/service on an internal host. */
+function toInternalServiceNode(
+  service: InternalService,
+  vulnIds: readonly string[]
+): InternalServiceNode {
+  const ip = service.host_ip.trim()
+  const endpoint = ip.length > 0 ? `${ip}:${service.port}` : `${service.host_id}:${service.port}`
+  const label = service.service.trim().length > 0 ? service.service.trim() : service.protocol
+  const data: InternalServiceNodeData = {
+    service_id: service.id,
+    project_name: service.project_name,
+    host_id: service.host_id,
+    ip,
+    port: service.port,
+    protocol: service.protocol,
+    service: service.service,
+    state: service.state,
+    vuln_ids: [...vulnIds]
+  }
+  return {
+    id: `internal_service:${service.id}`,
+    type: 'internal_service',
+    name: label.length > 0 ? `${endpoint} · ${label}` : endpoint,
+    host: ip,
+    project: service.project_name,
+    val: clampNumber(5 + vulnIds.length * 1.5, 5, 16),
+    data
+  }
+}
+
 /* ------------------------------------------------------------- accumulator -- */
 
 interface GraphAccumulator {
@@ -366,13 +487,30 @@ function addLink(
   accumulator.links.push(derived ? { source, target, relation, derived } : { source, target, relation })
 }
 
+/**
+ * Re-open a finalized graph as an accumulator so the internal layer can be
+ * appended to it (realm `all`) without re-running the Web projection.
+ */
+function accumulatorFromGraph(graph: MemoryGraphData): GraphAccumulator {
+  const accumulator = createAccumulator()
+  addNodes(accumulator, graph.nodes)
+  for (const link of graph.links) {
+    accumulator.linkKeys.add(`${link.relation}|${link.source}|${link.target}`)
+    accumulator.links.push(link)
+  }
+  accumulator.truncated = graph.meta.truncated
+  for (const target of graph.meta.unresolvedTargets) accumulator.unresolvedTargets.add(target)
+  return accumulator
+}
+
 function finalize(
   accumulator: GraphAccumulator,
   scope: MemoryGraphScope,
-  limits: AppliedMemoryGraphLimits
+  limits: AppliedMemoryGraphLimits,
+  routes?: readonly GraphRouteOverlay[]
 ): MemoryGraphData {
   const nodes = [...accumulator.nodes.values()]
-  return {
+  const graph: MemoryGraphData = {
     nodes,
     links: accumulator.links,
     meta: {
@@ -384,6 +522,9 @@ function finalize(
       unresolvedTargets: [...accumulator.unresolvedTargets]
     }
   }
+  // `routes` is only present for the internal / all realms (shared contract).
+  if (routes !== undefined) graph.routes = [...routes]
+  return graph
 }
 
 export function emptyGraph(scope: MemoryGraphScope, limits: AppliedMemoryGraphLimits): MemoryGraphData {
@@ -407,7 +548,9 @@ function resolveFilters(filters: MemoryGraphFilterFlags | undefined): Required<M
   return {
     vulnerabilities: filters?.vulnerabilities !== false,
     leaks: filters?.leaks !== false,
-    snapshots: filters?.snapshots !== false
+    snapshots: filters?.snapshots !== false,
+    // Internal layer is opt-out only in the `all` realm (plan §7.2).
+    internal: filters?.internal !== false
   }
 }
 
@@ -435,13 +578,19 @@ function appendLeaks(
   }
 }
 
-/** Load vulnerabilities up to `requestedLimit`, flagging truncation when cut. */
+/**
+ * Load vulnerabilities of one realm up to `requestedLimit`, flagging truncation
+ * when the database holds more rows than requested. The Web layer only ever sees
+ * `realm='web'`; the internal layer asks for `realm='internal'` explicitly, so
+ * the two databases views never bleed into each other (plan §3).
+ */
 function loadVulnerabilities(
   db: DatabaseService,
   requestedLimit: number,
-  totalCount: number
+  realm: Realm
 ): { records: GraphVulnerabilityRecord[]; truncated: boolean } {
-  const records = db.listGraphVulnerabilities(requestedLimit)
+  const records = db.listGraphVulnerabilities(requestedLimit, undefined, realm)
+  const totalCount = db.countVulnerabilities(realm)
   return { records, truncated: totalCount > requestedLimit || records.length > requestedLimit }
 }
 
@@ -673,7 +822,7 @@ function buildAllGraphPass(
   const vulnNodes = new Map<string, VulnNode>()
   const individualVulnIds = new Set<string>()
   if (filters.vulnerabilities) {
-    const loaded = loadVulnerabilities(db, limits.vulnerabilities, db.count())
+    const loaded = loadVulnerabilities(db, limits.vulnerabilities, 'web')
     if (loaded.truncated) accumulator.truncated = true
 
     interface VulnGroup {
@@ -897,7 +1046,7 @@ function buildAssetGraph(
     const loaded = loadVulnerabilities(
       db,
       MEMORY_GRAPH_HARD_LIMITS.vulnerabilities,
-      db.count()
+      'web'
     )
     vulnRecords = loaded.records
     const hostVulns = vulnRecords.filter(
@@ -930,7 +1079,9 @@ function buildAssetGraph(
       addNodes(accumulator, [vuln])
     }
     addRelatedVulnLinks(accumulator, vulnRecords, vulnNodes)
-    if (db.count() > MEMORY_GRAPH_HARD_LIMITS.vulnerabilities) accumulator.truncated = true
+    if (db.countVulnerabilities('web') > MEMORY_GRAPH_HARD_LIMITS.vulnerabilities) {
+      accumulator.truncated = true
+    }
   }
 
   if (filters.snapshots) {
@@ -972,7 +1123,7 @@ function buildTaskGraph(
   const allVulns = loadVulnerabilities(
     db,
     MEMORY_GRAPH_HARD_LIMITS.vulnerabilities,
-    db.count()
+    'web'
   )
   if (allVulns.truncated) accumulator.truncated = true
   const recordsById = new Map(allVulns.records.map((record) => [record.id, record]))
@@ -1079,23 +1230,392 @@ function buildTaskGraph(
   return finalize(accumulator, scope, limits)
 }
 
-/* -------------------------------------------------------------------- main -- */
+/* ------------------------------------------------------------ internal layer -- */
 
 /**
- * Build the Memory Nebula projection for one scope. Pure read:
- * `db` is only used for SELECT statements.
+ * Scope restriction applied to the internal layer:
+ * - `all` scope → no restriction (whole database, bounded by limits);
+ * - `asset` scope → only footholds whose entry Web asset is the focused one;
+ * - `task` scope → only the project of the focused snapshot session.
+ *
+ * `null` means the scope target does not exist (unresolved session id).
+ */
+interface InternalScopeFilter {
+  /** Canonical entry host keys allowed by an asset scope. */
+  entryKeys?: ReadonlySet<string>
+  /** Project names allowed by a task scope. */
+  projectNames?: ReadonlySet<string>
+}
+
+function resolveInternalScopeFilter(
+  db: DatabaseService,
+  scope: MemoryGraphScope
+): InternalScopeFilter | null {
+  switch (scope.kind) {
+    case 'all':
+      return {}
+    case 'asset':
+      return { entryKeys: new Set([canonicalHostKey(scope.hostPort)]) }
+    case 'task': {
+      const root = db.getSnapshotSession(scope.sessionId)
+      if (root === null) return null
+      return { projectNames: new Set([root.project_name]) }
+    }
+  }
+}
+
+/**
+ * Project nodes shared by the Web and internal layers. `ensure` reuses an
+ * existing `project:<name>` node (the Web pass already created them in the all
+ * scope) so the internal layer only *adds* structure, never duplicates it.
+ */
+interface ProjectRegistry {
+  nodes: Map<string, ProjectNode>
+  assetIds: Map<string, Set<string>>
+  ensure: (accumulator: GraphAccumulator, name: string) => ProjectNode
+  rememberAsset: (projectId: string, nodeId: string) => void
+  applyCounts: () => void
+}
+
+function createProjectRegistry(): ProjectRegistry {
+  const nodes = new Map<string, ProjectNode>()
+  const assetIds = new Map<string, Set<string>>()
+  const ensure = (accumulator: GraphAccumulator, name: string): ProjectNode => {
+    const key = name.trim().length > 0 ? name.trim() : '未命名项目'
+    const id = `project:${key}`
+    const existing = accumulator.nodes.get(id)
+    if (existing !== undefined && existing.type === 'project') return existing
+    const existingRegistry = nodes.get(id)
+    if (existingRegistry !== undefined) return existingRegistry
+    const node: ProjectNode = {
+      id,
+      name: key,
+      type: 'project',
+      project: key,
+      val: 26,
+      data: { project_name: key, asset_count: 0, session_count: 0 }
+    }
+    nodes.set(id, node)
+    addNodes(accumulator, [node])
+    return node
+  }
+  const rememberAsset = (projectId: string, nodeId: string): void => {
+    const ids = assetIds.get(projectId) ?? new Set<string>()
+    ids.add(nodeId)
+    assetIds.set(projectId, ids)
+  }
+  const applyCounts = (): void => {
+    for (const node of nodes.values()) {
+      node.data.asset_count = assetIds.get(node.id)?.size ?? 0
+    }
+  }
+  return { nodes, assetIds, ensure, rememberAsset, applyCounts }
+}
+
+/** Resolve a stored host value to an already-added host node (Web asset). */
+function resolveGraphHostNode(
+  accumulator: GraphAccumulator,
+  index: HostIndex,
+  value: string
+): HostNode | null {
+  const key = canonicalHostKey(value)
+  if (key !== '') {
+    const node = accumulator.nodes.get(`host:${key}`)
+    if (node !== undefined && node.type === 'host') return node
+  }
+  return resolveHost(index, value)?.node ?? null
+}
+
+/**
+ * Append the internal operations layer to an accumulator (plan §7.2 / §7.3).
+ *
+ * Layers added (internal / all realms only):
+ *   entry Web asset (host)  ──FOOTHOLD_FROM──▶ foothold
+ *   foothold                ──FOOTHOLD_REACHES──▶ internal host
+ *   internal host           ──HOST_HAS_SERVICE──▶ internal service
+ *   internal service        ──SERVICE_HAS_VULN──▶ internal vulnerability
+ *   project                 ──BELONGS_TO──▶ entry host / foothold / internal host
+ *
+ * Orphan internal vulnerabilities (no service id yet) fall back to a `HAS_VULN`
+ * edge against their entry asset when it is part of this realm, so a recorded
+ * intranet finding never floats unattached. Returns the pivot route overlays.
+ */
+function appendInternalLayer(
+  accumulator: GraphAccumulator,
+  db: DatabaseService,
+  limits: AppliedMemoryGraphLimits,
+  filters: Required<MemoryGraphFilterFlags>,
+  filter: InternalScopeFilter
+): GraphRouteOverlay[] {
+  /* ---- 1) footholds: the only bridge into the intranet ---- */
+  let footholds = db.listGraphInternalFootholds(limits.footholds)
+  if (db.countFootholds() > limits.footholds || footholds.length > limits.footholds) {
+    accumulator.truncated = true
+  }
+  if (filter.projectNames !== undefined) {
+    footholds = footholds.filter((foothold) => filter.projectNames?.has(foothold.project_name) === true)
+  } else if (filter.entryKeys !== undefined) {
+    footholds = footholds.filter(
+      (foothold) => filter.entryKeys?.has(canonicalHostKey(foothold.entry_host_port)) === true
+    )
+  }
+  const footholdById = new Map(footholds.map((foothold) => [foothold.id, foothold] as const))
+  const projects = createProjectRegistry()
+
+  /* ---- 2) entry Web assets (only assets referenced by footholds) ---- */
+  const entryKeys = new Set<string>()
+  for (const foothold of footholds) {
+    const key = canonicalHostKey(foothold.entry_host_port)
+    if (key !== '') entryKeys.add(key)
+  }
+  const entryAssets = db
+    .listGraphInternalEntryAssets(limits.hosts)
+    .filter((asset) => entryKeys.has(canonicalHostKey(asset.host_port)))
+  const entryIndex = createHostIndex(entryAssets)
+  addNodes(accumulator, entryIndex.nodes)
+  for (const node of entryIndex.nodes) {
+    const project = projects.ensure(accumulator, node.data.project_name)
+    addLink(accumulator, project.id, node.id, 'BELONGS_TO', true)
+    projects.rememberAsset(project.id, node.id)
+  }
+
+  /* ---- 3) internal hosts + services (bounded, scope-filtered) ---- */
+  let hosts = db.listGraphInternalHosts(limits.internalHosts)
+  if (db.countInternalHosts() > limits.internalHosts || hosts.length > limits.internalHosts) {
+    accumulator.truncated = true
+  }
+  if (filter.projectNames !== undefined) {
+    hosts = hosts.filter((host) => filter.projectNames?.has(host.project_name) === true)
+  } else if (filter.entryKeys !== undefined) {
+    // Only hosts recorded as reachable from the in-scope footholds.
+    const reachable = new Set<string>()
+    for (const foothold of footholds) for (const hostId of foothold.host_ids) reachable.add(hostId)
+    hosts = hosts.filter((host) => reachable.has(host.id))
+  }
+  const hostIds = new Set(hosts.map((host) => host.id))
+
+  let services = db.listGraphInternalServices(limits.internalServices)
+  if (
+    db.countInternalServices() > limits.internalServices ||
+    services.length > limits.internalServices
+  ) {
+    accumulator.truncated = true
+  }
+  services = services.filter((service) => hostIds.has(service.host_id))
+  const serviceIds = new Set(services.map((service) => service.id))
+  const serviceCountByHost = new Map<string, number>()
+  for (const service of services) {
+    serviceCountByHost.set(service.host_id, (serviceCountByHost.get(service.host_id) ?? 0) + 1)
+  }
+
+  /* ---- 4) internal vulnerabilities (realm='internal' only) ---- */
+  const keptVulns: GraphVulnerabilityRecord[] = []
+  if (filters.vulnerabilities) {
+    const loaded = loadVulnerabilities(db, limits.vulnerabilities, 'internal')
+    if (loaded.truncated) accumulator.truncated = true
+    for (const record of loaded.records) {
+      const serviceId = record.internal_service_id ?? ''
+      if (serviceId !== '' && serviceIds.has(serviceId)) {
+        keptVulns.push(record)
+        continue
+      }
+      const hostKey = canonicalHostKey(record.host)
+      if (filter.entryKeys !== undefined) {
+        if (hostKey !== '' && filter.entryKeys.has(hostKey)) keptVulns.push(record)
+      } else if (hostKey !== '' && entryKeys.has(hostKey)) {
+        keptVulns.push(record)
+      } else if (filter.projectNames === undefined) {
+        // All scope: keep recorded internal findings that are not normalized to a
+        // service yet (the inspector can show their `service_host` label).
+        keptVulns.push(record)
+      }
+    }
+  }
+  const vulnIdsByService = new Map<string, string[]>()
+  for (const record of keptVulns) {
+    const serviceId = record.internal_service_id ?? ''
+    if (serviceId === '') continue
+    const bucket = vulnIdsByService.get(serviceId) ?? []
+    bucket.push(record.id)
+    vulnIdsByService.set(serviceId, bucket)
+  }
+
+  /* ---- 5) nodes + the internal relation set ---- */
+  const footholdsByHost = new Map<string, Foothold[]>()
+  for (const foothold of footholds) {
+    const node = toFootholdNode(foothold)
+    addNodes(accumulator, [node])
+    const project = projects.ensure(accumulator, foothold.project_name)
+    addLink(accumulator, project.id, node.id, 'BELONGS_TO', true)
+    const entry = resolveGraphHostNode(accumulator, entryIndex, foothold.entry_host_port)
+    if (entry !== null) addLink(accumulator, entry.id, node.id, 'FOOTHOLD_FROM')
+    for (const hostId of foothold.host_ids) {
+      const bucket = footholdsByHost.get(hostId) ?? []
+      bucket.push(foothold)
+      footholdsByHost.set(hostId, bucket)
+    }
+  }
+
+  for (const host of hosts) {
+    const reachableFrom = footholdsByHost.get(host.id) ?? []
+    const node = toInternalHostNode(
+      host,
+      serviceCountByHost.get(host.id) ?? host.service_count
+    )
+    node.data.foothold_ids = reachableFrom.map((foothold) => foothold.id)
+    addNodes(accumulator, [node])
+    const project = projects.ensure(accumulator, host.project_name)
+    addLink(accumulator, project.id, node.id, 'BELONGS_TO', true)
+    for (const foothold of reachableFrom) {
+      addLink(accumulator, `foothold:${foothold.id}`, node.id, 'FOOTHOLD_REACHES')
+    }
+  }
+
+  for (const service of services) {
+    const node = toInternalServiceNode(service, vulnIdsByService.get(service.id) ?? [])
+    addNodes(accumulator, [node])
+    addLink(accumulator, `internal_host:${service.host_id}`, node.id, 'HOST_HAS_SERVICE')
+  }
+
+  for (const record of keptVulns) {
+    const serviceId = record.internal_service_id ?? ''
+    const serviceNodeId = serviceId === '' ? null : `internal_service:${serviceId}`
+    const entry = resolveGraphHostNode(accumulator, entryIndex, record.host)
+    const vuln = toVulnNode(record, entry?.data.project_name ?? '')
+    addNodes(accumulator, [vuln])
+    if (serviceNodeId !== null && accumulator.nodes.has(serviceNodeId)) {
+      addLink(accumulator, serviceNodeId, vuln.id, 'SERVICE_HAS_VULN')
+    } else if (entry !== null) {
+      addLink(accumulator, entry.id, vuln.id, 'HAS_VULN')
+    }
+  }
+
+  projects.applyCounts()
+
+  /* ---- 6) pivot routes (overlay only: never part of the force layout) ---- */
+  return collectInternalRoutes(accumulator, db, limits, footholdById, entryIndex)
+}
+
+/**
+ * Pivot route overlays: entry Web asset → foothold → ordered hops (plan §7.3 /
+ * §8.3). Only node ids that actually exist in the graph survive, and a route
+ * needs at least two resolvable endpoints to be worth highlighting.
+ */
+function collectInternalRoutes(
+  accumulator: GraphAccumulator,
+  db: DatabaseService,
+  limits: AppliedMemoryGraphLimits,
+  footholdById: ReadonlyMap<string, Foothold>,
+  entryIndex: HostIndex
+): GraphRouteOverlay[] {
+  const pivots: PivotWithHops[] = db.listGraphInternalPivots(limits.footholds)
+  const routes: GraphRouteOverlay[] = []
+  for (const pivot of pivots) {
+    const foothold = footholdById.get(pivot.foothold_id)
+    if (foothold === undefined) continue
+
+    const nodeIds: string[] = []
+    const entry = resolveGraphHostNode(accumulator, entryIndex, foothold.entry_host_port)
+    if (entry !== null) nodeIds.push(entry.id)
+    const footholdNodeId = `foothold:${pivot.foothold_id}`
+    if (accumulator.nodes.has(footholdNodeId)) nodeIds.push(footholdNodeId)
+    for (const hop of [...pivot.hops].sort((left, right) => left.seq - right.seq)) {
+      const hopId =
+        hop.ref_kind === 'internal_host'
+          ? `internal_host:${hop.ref_id}`
+          : `internal_service:${hop.ref_id}`
+      if (accumulator.nodes.has(hopId)) nodeIds.push(hopId)
+    }
+    if (nodeIds.length < 2) continue
+
+    const tool = pivot.tool.trim()
+    routes.push({
+      id: pivot.id,
+      foothold_id: pivot.foothold_id,
+      project_name: pivot.project_name,
+      kind: pivot.kind,
+      status: pivot.status,
+      tool,
+      local_endpoint: formatLocalEndpoint(pivot),
+      // The HUD shows the tool that carries the route; kind is the fallback.
+      label: tool.length > 0 ? tool : pivot.kind,
+      node_ids: nodeIds,
+      reachable_subnets: [...pivot.reachable_subnets]
+    })
+  }
+  return routes
+}
+
+function formatLocalEndpoint(pivot: PivotWithHops): string {
+  const endpoint = `${pivot.local_host}:${pivot.local_port}`
+  return pivot.local_protocol.trim().length > 0
+    ? `${endpoint}/${pivot.local_protocol.trim()}`
+    : endpoint
+}
+
+/* -------------------------------------------------------------------- main -- */
+
+function buildWebGraph(
+  db: DatabaseService,
+  scope: MemoryGraphScope,
+  limits: AppliedMemoryGraphLimits,
+  filters: Required<MemoryGraphFilterFlags>,
+  depth: 1 | 2
+): MemoryGraphData {
+  switch (scope.kind) {
+    case 'all':
+      return buildAllGraph(db, limits, filters, depth)
+    case 'asset':
+      return buildAssetGraph(db, scope.hostPort, limits, filters, depth)
+    case 'task':
+      return buildTaskGraph(
+        db,
+        scope.sessionId,
+        scope.includeChildren === true,
+        limits,
+        filters,
+        depth
+      )
+  }
+}
+
+/**
+ * Build the Memory Nebula projection for one scope + realm. Pure read: `db` is
+ * only used for SELECT statements.
+ *
+ * Realm semantics (plan §7.2):
+ * - `web` (default): the legacy projection, only `realm='web'` vulnerabilities.
+ * - `internal`: entry Web assets + footholds + internal hosts/services/internal
+ *   vulnerabilities + pivot routes; no target/snapshot/leak nodes.
+ * - `all`: the Web layer plus the internal layer (deduplicated by node id, and
+ *   only when `filters.internal !== false`).
  */
 export function buildMemoryGraph(db: DatabaseService, query: MemoryGraphQuery): MemoryGraphData {
   const limits = resolveMemoryGraphLimits(query.limits)
   const filters = resolveFilters(query.filters)
   const depth: 1 | 2 = query.depth === 2 ? 2 : 1
+  const realm: RealmFilter =
+    query.realm === 'internal' || query.realm === 'all' ? query.realm : 'web'
+  const scope = query.scope
 
-  switch (query.scope.kind) {
-    case 'all':
-      return buildAllGraph(db, limits, filters, depth)
-    case 'asset':
-      return buildAssetGraph(db, query.scope.hostPort, limits, filters, depth)
-    case 'task':
-      return buildTaskGraph(db, query.scope.sessionId, query.scope.includeChildren === true, limits, filters, depth)
+  // Web realm (and `all` with the internal layer switched off): unchanged.
+  if (realm === 'web' || (realm === 'all' && !filters.internal)) {
+    return buildWebGraph(db, scope, limits, filters, depth)
   }
+
+  const webGraph = realm === 'all' ? buildWebGraph(db, scope, limits, filters, depth) : null
+  const scopeFilter = resolveInternalScopeFilter(db, scope)
+
+  // Task scope pointing at a session that no longer exists: keep the Web layer
+  // in the all realm, otherwise report the missing session like the task builder.
+  if (scopeFilter === null) {
+    if (webGraph !== null) return webGraph
+    const accumulator = createAccumulator()
+    if (scope.kind === 'task') accumulator.unresolvedTargets.add(scope.sessionId)
+    return finalize(accumulator, scope, limits, [])
+  }
+
+  const accumulator = webGraph === null ? createAccumulator() : accumulatorFromGraph(webGraph)
+  const routes = appendInternalLayer(accumulator, db, limits, filters, scopeFilter)
+  return finalize(accumulator, scope, limits, routes)
 }

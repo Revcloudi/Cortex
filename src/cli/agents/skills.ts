@@ -5,8 +5,8 @@ import type { CliRuntime } from '../runtime'
 import type { AgentId, AgentPlan, FilePlan, SkillLanguage } from './index'
 
 /**
- * Copy the three agent skills (`vuln-db`, `asset-context`, `snapshot`) into the
- * agent skill directories.
+ * Copy the four agent skills (`vuln-db`, `asset-context`, `snapshot`,
+ * `internal-ops`) into the agent skill directories.
  *
  * Skill sources are language-scoped: `<skillSourceDir>/<lang>/<name>.skill.md`.
  * Development builds read `<repo>/skills`, installed builds read
@@ -17,7 +17,12 @@ import type { AgentId, AgentPlan, FilePlan, SkillLanguage } from './index'
  * under `<agent home>/skills`, matching the legacy layout.
  */
 
-export const SKILL_NAMES = ['vuln-db', 'asset-context', 'snapshot'] as const
+export const SKILL_NAMES = [
+  'vuln-db',
+  'asset-context',
+  'snapshot',
+  'internal-ops'
+] as const
 export type SkillName = (typeof SKILL_NAMES)[number]
 
 export const SKILL_LANGUAGES: readonly SkillLanguage[] = ['zh', 'en']

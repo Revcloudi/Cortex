@@ -6,9 +6,9 @@ Cortex: local-first pentest intelligence hub. Agents (pure stdio MCP server), th
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
-[![Version 0.1.4](https://img.shields.io/badge/version-0.1.4-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
+[![Version 0.1.5](https://img.shields.io/badge/version-0.1.5-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
 [![npm](https://img.shields.io/npm/v/@lievclouds/cortex?style=flat-square&label=npm)](https://www.npmjs.com/package/@lievclouds/cortex)
-[![MCP 6 tools](https://img.shields.io/badge/MCP-6%20tools-0ea5e9?style=flat-square)](#mcp-access)
+[![MCP 7 tools](https://img.shields.io/badge/MCP-7%20tools-0ea5e9?style=flat-square)](#mcp-access)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#cli-ctx)
 [![Node >= 22.12](https://img.shields.io/badge/node-%E2%89%A5%2022.12-339933?style=flat-square)](#requirements)
 [![License MIT](https://img.shields.io/badge/license-MIT-8b5cf6?style=flat-square)](LICENSE)
@@ -30,7 +30,7 @@ ctx init --yes            # auto-detect and write MCP config + skills + hard rul
 ctx web
 ```
 
-`ctx init --yes` auto-detects installed agents and writes their MCP config, the three skills and the system-level hard rules. To target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en` (skill language defaults to `zh` and can be overridden with `CTX_SKILL_LANG`).
+`ctx init --yes` auto-detects installed agents and writes their MCP config, the four skills and the system-level hard rules. To target agents explicitly (lowercase ids, comma separated) use `ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`, or a single agent such as `ctx init --yes --agents claude`; for English skills add `--skill-lang en` (skill language defaults to `zh` and can be overridden with `CTX_SKILL_LANG`).
 
 ### Command-line options
 
@@ -85,11 +85,11 @@ CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 
 ## Windows desktop app
 
-The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.4**. macOS and Linux: install from npm (see [CLI (ctx)](#cli-ctx)).
+The Windows installer is published to GitHub Releases by the release workflow. Current release: **cortex-v0.1.5**. macOS and Linux: install from npm (see [CLI (ctx)](#cli-ctx)).
 
 | Platform | Download |
 | --- | --- |
-| Windows 10/11 x64 | [Cortex-0.1.4-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.4-setup.exe) |
+| Windows 10/11 x64 | [Cortex-0.1.5-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.5-setup.exe) |
 
 > The link always points at the newest Cortex release; the full list is on the [Releases page](https://github.com/Revcloudi/Cortex/releases). The installer is unsigned: Windows SmartScreen may warn ("More info → Run anyway").
 
@@ -133,6 +133,9 @@ The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macO
 | `ctx assets get <host_port>` | Show one asset context with full interfaces (raw requests), leaks and test parameters |
 | `ctx snapshots list [--keyword]` | List cognitive snapshot sessions |
 | `ctx snapshots get <session_id>` | Show one snapshot session |
+| `ctx internal overview\|hosts\|routes --project <name>` | Read-only internal operations queries: overview, hosts/services, proxy routes (all accept `--json`) |
+| `ctx loot import <file> --project <name> [--entry <host_port>] [--format auto]` | Parse a local Loot file into the internal operations domain (untrusted input: parsed only, never executed, no network) |
+| `ctx loot list --project <name>` | List Loot import records |
 | `ctx search <keyword>` | Search vulnerabilities, assets and snapshots together |
 | `ctx open [--dev] [--path <exe>] [--software]` | Launch or focus the desktop app (Windows install or source build); `--software` forces software rendering for GPU-less / VM / remote-desktop machines |
 | `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | Serve the same dashboard in a browser (loopback or trusted intranet only) |
@@ -156,9 +159,10 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 
 - Vulnerability model: host, entry point, type, severity, URL, description, impact, affected interfaces, Markdown reproduction, remediation, crypto notes, test boundaries, append-only retests, related IDs and status.
 - Asset context: full URLs, project, tech stack, structured interfaces (`path` / `method` / `params` / raw request), leaked info, non-secret `test_parameters` and related vulnerabilities. Legacy `interface_dir` arrays are normalized automatically.
-- One MCP server with exactly six tools: `save_vulnerability`, `query_vulnerabilities`, `update_vulnerability`, `sync_asset_info`, `query_asset_context`, `manage_snapshot`.
-- `ctx init` detects installed agents and writes their MCP config, the three skills and system-level hard rules idempotently (with backups, a dry-run mode and JSON / TOML / YAML validation).
-- GUI: vulnerability dashboard with server-side filtering/pagination, asset library with interface explorer, cognitive snapshot sessions (project → child hierarchy), Markdown report export, and a compact bilingual MCP page with a one-click **Connect agents** action and the six-tool reference.
+- Internal operations domain (Plan B, schema v3): Web and internal findings are logically isolated, and the main dashboard splits into "Web vulnerabilities" (default) and "Internal operations" tabs; footholds bridge entry assets to internal hosts / services / credentials / pivots, and the internal page provides an overview, subnet heatmap, credential-service matrix, proxy route view and local Loot import.
+- One MCP server with exactly seven tools: `save_vulnerability`, `query_vulnerabilities`, `update_vulnerability`, `sync_asset_info`, `query_asset_context`, `manage_snapshot`, `sync_internal_scope` (internal operations: register footholds, internal hosts / services, credentials and pivots).
+- `ctx init` detects installed agents and writes their MCP config, the four skills and system-level hard rules idempotently (with backups, a dry-run mode and JSON / TOML / YAML validation).
+- GUI: vulnerability dashboard with server-side filtering/pagination, asset library with interface explorer, cognitive snapshot sessions (project → child hierarchy), Markdown report export, and a compact bilingual MCP page with a one-click **Connect agents** action and the seven-tool reference.
 - **Memory Nebula** (details below): an interactive 3D HUD view of the same memory, with tactical HUD chrome, wireframe nodes, a holographic grid floor, projected DOM labels, all/asset/task scopes, search/filter/focus, `+N` aggregation, fullscreen and PNG export.
 - Optional Web UI (`ctx web`): the same dashboard, asset library, snapshot and MCP pages in a browser on the same machine or a trusted intranet; per-run token login, no accounts, loopback-only by default, SSE refresh when the shared database changes.
 - The sidebar database button can attach another Cortex SQLite file for browsing (desktop view only; agents keep using the default database).
@@ -178,7 +182,7 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 
 ## MCP access
 
-The MCP server is **stdio only**: the agent starts it in its own process; there is no listening port and the GUI never starts MCP. Server name: `cortex`, version `0.1.4`.
+The MCP server is **stdio only**: the agent starts it in its own process; there is no listening port and the GUI never starts MCP. Server name: `cortex`, version `0.1.5`.
 
 | Scenario | Launch command |
 | --- | --- |
@@ -261,8 +265,8 @@ node out/cli/ctx.cjs doctor                            # diagnose config + runti
 
 ```
 skills/
-  zh/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md
-  en/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md
+  zh/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md  internal-ops.skill.md
+  en/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md  internal-ops.skill.md
 ```
 
 `ctx init` copies the selected language to the agent skill directories (`~/.agents/skills/<name>/SKILL.md`, plus client-specific skill directories for Codex / Claude Code / ZCode; import the shared `.agents/skills` copies through the WorkBuddy Skill UI). The desktop MCP page and the installer both use the same generator, so configs and skills never drift apart.
@@ -299,7 +303,7 @@ npm run dist:win     # Windows installer (bundled Node runtime, artifact in rele
 ## Packaging and releases
 
 ```bash
-npm run dist:win           # build + bundled runtime → Windows x64 NSIS installer (release/Cortex-0.1.4-setup.exe)
+npm run dist:win           # build + bundled runtime → Windows x64 NSIS installer (release/Cortex-0.1.5-setup.exe)
 npm run build:runtime      # only materialize runtime/ (manual/advanced packaging)
 ```
 
@@ -328,7 +332,7 @@ The installed layout (per-user on Windows):
 src/
   shared/      shared contracts (types, IPC channels, Zod schemas, MCP config generator)
   core/        Electron-free database, paths, logging, version
-  mcp/         pure stdio MCP server and the six tools
+  mcp/         pure stdio MCP server and the seven tools
   cli/         ctx commands and agent config writers
   server/      ctx web HTTP server (auth, security, static SPA, REST/SSE routes)
   main/        Electron main process (IPC, file watcher, database switching, no MCP server)

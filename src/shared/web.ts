@@ -42,10 +42,20 @@ export const WEB_API_PATHS = {
   snapshots: '/api/snapshots',
   /** Read-only Memory Nebula projection (P2). */
   graph: '/api/graph',
+  /** Internal operations domain (Plan B): read-only projections + two writes. */
+  internalOverview: '/api/internal/overview',
+  internalGraph: '/api/internal/graph',
+  internalProjects: '/api/internal/projects',
+  internalCredentialTrial: '/api/internal/credential-trial',
+  /** `GET` newest-first import list; `POST` parses one local loot file. */
+  loot: '/api/loot',
   setup: '/api/setup',
   seedDemoData: '/api/demo/seed',
   events: '/api/events'
 } as const
+
+/** Every canonical REST path, e.g. for route tables and transport maps. */
+export type WebApiPaths = typeof WEB_API_PATHS
 
 /** One exported Markdown report returned by `POST /api/vulns/export`. */
 export interface WebExportFile {

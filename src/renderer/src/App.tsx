@@ -5,6 +5,7 @@ import { Sidebar } from '@renderer/components/layout/Sidebar'
 import { Titlebar } from '@renderer/components/layout/Titlebar'
 import { TooltipProvider } from '@renderer/components/ui/tooltip'
 import { DashboardPage } from '@renderer/pages/DashboardPage'
+import { InternalPage } from '@renderer/pages/InternalPage'
 import { AssetPage } from '@renderer/pages/AssetPage'
 import { SnapshotPage } from '@renderer/pages/SnapshotPage'
 import { McpPage } from '@renderer/pages/McpPage'
@@ -68,8 +69,11 @@ export default function App() {
                   <DashboardPage
                     dataVersion={dataVersion}
                     onOpenMcp={() => navigate('mcp')}
+                    onOpenInternal={() => navigate('internal')}
                     initialVulnId={detailTarget?.kind === 'vuln' ? detailTarget.id : null}
                   />
+                ) : page === 'internal' ? (
+                  <InternalPage dataVersion={dataVersion} />
                 ) : page === 'assets' ? (
                   <AssetPage
                     dataVersion={dataVersion}

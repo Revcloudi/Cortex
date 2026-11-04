@@ -1,4 +1,11 @@
 import { z } from 'zod'
+import { REALMS, REALM_FILTERS, type Realm, type RealmFilter } from './internal'
+
+/**
+ * Internal operations domain types / schemas re-exported here so existing
+ * call sites keep importing everything from `@shared/types`.
+ */
+export * from './internal'
 
 export const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info'] as const
 export type Severity = (typeof SEVERITIES)[number]
@@ -50,6 +57,10 @@ export interface Vulnerability {
   host: string
   /** Internal service the vulnerability actually lives on (entry host stays in `host`). */
   service_host: string
+  /** Logical isolation: `web` (default dashboard) or `internal` (internal operations). */
+  realm: Realm
+  /** Structured link to `internal_services.id`; empty for Web findings. */
+  internal_service_id: string
   /** Initial entry point, e.g. /login. */
   entry_point: string
   vuln_name: string
@@ -144,6 +155,13 @@ export const VulnerabilityPayloadSchema = z
      * service_host `10.0.0.5:8080` (a service reached by pivoting).
      */
     service_host: z.string().trim().max(4_000).default(''),
+    /**
+     * Logical realm. Omitted keeps backwards compatibility: the server infers
+     * `internal` when `service_host` is set and `web` otherwise.
+     */
+    realm: z.enum(REALMS).optional(),
+    /** Structured link to an internal service; validated by the writer. */
+    internal_service_id: z.string().trim().max(100).default(''),
     entry_point: z.string().trim().max(4000).default(''),
     vuln_name: z.string().trim().min(1, 'vuln_name 不能为空').max(500),
     /** Optional taxonomy label; some older reports may omit it. */
@@ -174,7 +192,9 @@ export const VulnerabilitySchema = VulnerabilityPayloadSchema.extend({
     .trim()
     .min(1)
     .max(100)
-    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
+  /** Stored rows always carry an explicit realm; legacy data defaults to web. */
+  realm: z.enum(REALMS).default('web')
 }).strict()
 
 export const ASSET_STATUSES = ['Alive', 'Dead', 'WAF_Blocked'] as const
@@ -815,6 +835,8 @@ export const QueryVulnerabilitiesInputSchema = z
     search: z.string().trim().max(500).optional(),
     severity: z.enum(SEVERITIES).optional(),
     status: z.enum(VULN_STATUSES).optional(),
+    /** Realm isolation; default `all` keeps the legacy behavior for old agents. */
+    realm: z.enum(REALM_FILTERS).optional(),
     page: z.number().int().min(1).max(100_000).optional(),
     pageSize: z.number().int().min(1).max(200).optional()
   })
@@ -825,8 +847,12 @@ export const QueryVulnerabilitiesInputSchema = z
       value.host !== undefined ||
       (value.search !== undefined && value.search.length > 0) ||
       value.severity !== undefined ||
-      value.status !== undefined,
-    { message: '至少提供 vuln_id、host、search、severity、status 之一', path: ['vuln_id'] }
+      value.status !== undefined ||
+      value.realm !== undefined,
+    {
+      message: '至少提供 vuln_id、host、search、severity、status、realm 之一',
+      path: ['vuln_id']
+    }
   )
 
 export type QueryVulnerabilitiesInput = z.infer<typeof QueryVulnerabilitiesInputSchema>
@@ -864,7 +890,11 @@ const assetHostPortLookupSchema = z
 export const QueryAssetContextInputSchema = z
   .object({
     host_port: assetHostPortLookupSchema.optional(),
-    project_name: z.string().trim().min(1, 'project_name 不能为空').max(120).optional()
+    project_name: z.string().trim().min(1, 'project_name 不能为空').max(120).optional(),
+    /** Include the internal-scope summary (footholds / hosts / services / pivots). */
+    include_internal: z.boolean().optional(),
+    /** Include masked credentials (implies `include_internal`). */
+    include_credentials: z.boolean().optional()
   })
   .strict()
   .refine(
@@ -879,6 +909,8 @@ export interface SaveVulnerabilityResult {
   id: string
   /** The host value exactly as persisted (host or host:port). */
   host: string
+  /** Resolved logical realm of the stored record. */
+  realm: Realm
   /** True when a new row was created, false when an existing row was replaced. */
   created: boolean
 }
@@ -911,6 +943,10 @@ export interface VulnerabilityListItem {
   id: string
   host: string
   service_host: string
+  /** Logical realm of the record (`web` / `internal`). */
+  realm: Realm
+  /** Structured internal service link; empty until normalized. */
+  internal_service_id: string
   entry_point: string
   vuln_name: string
   vuln_type: string
@@ -928,6 +964,13 @@ export interface DashboardStats {
   today: number
   bySeverity: Record<Severity, number>
   byStatus: Record<VulnStatus, number>
+  /** Internal-realm counters, independent of the requested realm filter. */
+  internal: {
+    total: number
+    critical: number
+    high: number
+    hosts: number
+  }
 }
 
 export interface VulnFilters {
@@ -935,6 +978,8 @@ export interface VulnFilters {
   search?: string
   severity?: Severity | 'all'
   status?: VulnStatus | 'all'
+  /** Realm isolation filter; omitted keeps the legacy cross-domain behavior. */
+  realm?: RealmFilter
 }
 
 /** Page sizes offered by the vulnerability dashboard. */
@@ -984,7 +1029,7 @@ export interface SeedDemoResult {
 }
 
 /** Current on-disk schema version; bump when DatabaseService.migrate changes. */
-export const DATABASE_SCHEMA_VERSION = 2
+export const DATABASE_SCHEMA_VERSION = 3
 
 export interface DatabaseInfo {
   dbPath: string

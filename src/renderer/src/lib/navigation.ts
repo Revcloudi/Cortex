@@ -1,6 +1,6 @@
-import { Boxes, Brain, Orbit, Plug, ShieldAlert, type LucideIcon } from 'lucide-react'
+import { Boxes, Brain, Network, Orbit, Plug, ShieldAlert, type LucideIcon } from 'lucide-react'
 
-export type AppPage = 'dashboard' | 'nebula' | 'assets' | 'snapshots' | 'mcp'
+export type AppPage = 'dashboard' | 'internal' | 'nebula' | 'assets' | 'snapshots' | 'mcp'
 
 /** Cross-page deep link used by the nebula inspector ("view full details"). */
 export type AppDetailKind = 'vuln' | 'asset' | 'snapshot'
@@ -24,6 +24,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { page: 'dashboard', labelKey: 'nav.dashboard', icon: ShieldAlert },
+  { page: 'internal', labelKey: 'nav.internal', icon: Network },
   { page: 'nebula', labelKey: 'nav.nebula', icon: Orbit },
   { page: 'assets', labelKey: 'nav.assets', icon: Boxes },
   { page: 'snapshots', labelKey: 'nav.snapshots', icon: Brain },
@@ -34,6 +35,10 @@ export const PAGE_META: Record<AppPage, { titleKey: string; descriptionKey: stri
   dashboard: {
     titleKey: 'nav.dashboard',
     descriptionKey: 'ui.pageMeta.dashboard.description'
+  },
+  internal: {
+    titleKey: 'nav.internal',
+    descriptionKey: 'internal.page.description'
   },
   nebula: {
     titleKey: 'nav.nebula',

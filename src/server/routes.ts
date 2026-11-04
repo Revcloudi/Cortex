@@ -4,10 +4,16 @@ import {
   AssetHostPortIpcSchema,
   DeleteVulnerabilityIpcSchema,
   GetVulnerabilityIpcSchema,
+  ImportLootIpcSchema,
+  InternalGraphQueryIpcSchema,
+  InternalOverviewIpcSchema,
   ListAssetsIpcSchema,
+  ListLootImportsIpcSchema,
   ListSnapshotsIpcSchema,
+  DashboardStatsIpcSchema,
   ListVulnerabilitiesIpcSchema,
   MemoryGraphQueryIpcSchema,
+  RecordCredentialTrialIpcSchema,
   SetupRunRequestIpcSchema,
   SnapshotArchiveIpcSchema,
   SnapshotSessionIdIpcSchema,
@@ -23,12 +29,17 @@ import type {
   AppInfo,
   AssetContext,
   AssetListItem,
+  CredentialTrial,
   DashboardStats,
   DatabaseInfo,
   DeleteAssetResult,
   DeleteSnapshotResult,
   DeleteVulnResult,
   DeleteVulnsResult,
+  InternalGraphData,
+  InternalOverview,
+  InternalProjectSummary,
+  LootImport,
   PaginatedVulnerabilities,
   SeedDemoResult,
   SetupInfo,
@@ -94,6 +105,20 @@ function stringQuery(query: URLSearchParams, key: string): string | undefined {
   return query.get(key) ?? undefined
 }
 
+/**
+ * 403 when `ctx web` opened the SQLite file read-only (plan §9.2): every write
+ * route answers with the same user-safe message instead of relying on a raw
+ * `SQLITE_READONLY` error mapping. Reads keep working in that mode.
+ */
+function assertWritable(deps: WebServerDeps, action: string): void {
+  if (deps.config.readOnly) {
+    throw new WebApiError(
+      403,
+      `${action} is unavailable: the Web server opened the database read-only and this action needs write permission on the SQLite file.`
+    )
+  }
+}
+
 /** `Number()`-coerced query value; unparsable input is a 400. */
 function numberQuery(
   query: URLSearchParams,
@@ -135,12 +160,14 @@ export function createRoutes(deps: WebServerDeps): RouteDefinition[] {
         const search = stringQuery(request.query, 'search')
         const severity = stringQuery(request.query, 'severity')
         const status = stringQuery(request.query, 'status')
+        const realm = stringQuery(request.query, 'realm')
         const page = numberQuery(request.query, 'page', 'Invalid vulnerability filter')
         const pageSize = numberQuery(request.query, 'pageSize', 'Invalid vulnerability filter')
         const parsed = ListVulnerabilitiesIpcSchema.safeParse({
           ...(search !== undefined ? { search } : {}),
           ...(severity !== undefined ? { severity } : {}),
           ...(status !== undefined ? { status } : {}),
+          ...(realm !== undefined ? { realm } : {}),
           ...(page !== undefined ? { page } : {}),
           ...(pageSize !== undefined ? { pageSize } : {})
         })
@@ -416,6 +443,9 @@ export function createRoutes(deps: WebServerDeps): RouteDefinition[] {
         const sessionId = stringQuery(request.query, 'sessionId')
         const includeChildren = booleanQuery(request.query, 'includeChildren', errorScope)
         const depth = numberQuery(request.query, 'depth', errorScope)
+        // Realm filter (plan §7.2): validated by the shared schema below, which
+        // only accepts web / internal / all (the builder defaults to `web`).
+        const realm = stringQuery(request.query, 'realm')
         // The shared schema is a strict discriminated union: only the fields
         // that belong to the requested kind may reach validation.
         const scope: Record<string, unknown> =
@@ -431,34 +461,57 @@ export function createRoutes(deps: WebServerDeps): RouteDefinition[] {
         const vulnerabilities = booleanQuery(request.query, 'vulnerabilities', errorScope)
         const leaks = booleanQuery(request.query, 'leaks', errorScope)
         const snapshots = booleanQuery(request.query, 'snapshots', errorScope)
+        const internal = booleanQuery(request.query, 'internal', errorScope)
         const filters =
-          vulnerabilities !== undefined || leaks !== undefined || snapshots !== undefined
+          vulnerabilities !== undefined ||
+          leaks !== undefined ||
+          snapshots !== undefined ||
+          internal !== undefined
             ? {
                 ...(vulnerabilities !== undefined ? { vulnerabilities } : {}),
                 ...(leaks !== undefined ? { leaks } : {}),
-                ...(snapshots !== undefined ? { snapshots } : {})
+                ...(snapshots !== undefined ? { snapshots } : {}),
+                ...(internal !== undefined ? { internal } : {})
               }
             : undefined
         const hosts = numberQuery(request.query, 'limitHosts', errorScope)
         const vulnerabilityLimit = numberQuery(request.query, 'limitVulnerabilities', errorScope)
         const leakLimit = numberQuery(request.query, 'limitLeaks', errorScope)
         const snapshotLimit = numberQuery(request.query, 'limitSnapshots', errorScope)
+        const footholdLimit = numberQuery(request.query, 'limitFootholds', errorScope)
+        const internalHostLimit = numberQuery(request.query, 'limitInternalHosts', errorScope)
+        const internalServiceLimit = numberQuery(
+          request.query,
+          'limitInternalServices',
+          errorScope
+        )
         const limits =
           hosts !== undefined ||
           vulnerabilityLimit !== undefined ||
           leakLimit !== undefined ||
-          snapshotLimit !== undefined
+          snapshotLimit !== undefined ||
+          footholdLimit !== undefined ||
+          internalHostLimit !== undefined ||
+          internalServiceLimit !== undefined
             ? {
                 ...(hosts !== undefined ? { hosts } : {}),
                 ...(vulnerabilityLimit !== undefined
                   ? { vulnerabilities: vulnerabilityLimit }
                   : {}),
                 ...(leakLimit !== undefined ? { leaks: leakLimit } : {}),
-                ...(snapshotLimit !== undefined ? { snapshots: snapshotLimit } : {})
+                ...(snapshotLimit !== undefined ? { snapshots: snapshotLimit } : {}),
+                ...(footholdLimit !== undefined ? { footholds: footholdLimit } : {}),
+                ...(internalHostLimit !== undefined
+                  ? { internalHosts: internalHostLimit }
+                  : {}),
+                ...(internalServiceLimit !== undefined
+                  ? { internalServices: internalServiceLimit }
+                  : {})
               }
             : undefined
         const parsed = MemoryGraphQueryIpcSchema.safeParse({
           scope,
+          ...(realm !== undefined ? { realm } : {}),
           ...(depth !== undefined ? { depth } : {}),
           ...(filters !== undefined ? { filters } : {}),
           ...(limits !== undefined ? { limits } : {})
@@ -470,11 +523,121 @@ export function createRoutes(deps: WebServerDeps): RouteDefinition[] {
       }
     },
 
-    // GET /api/stats — mirror `getStats`.
+    /**
+     * Internal operations projections (Plan B). The four reads below never
+     * write and so never emit the SSE `changed` event. `project` is optional
+     * for overview / loot list (the database falls back to the active project)
+     * and required for the graph, which is always scoped to one project.
+     */
+    // GET /api/internal/overview?project= — mirror `getInternalOverview`.
+    {
+      method: 'GET',
+      pattern: createPattern(WEB_API_PATHS.internalOverview),
+      handler: (request: RouteRequest): InternalOverview => {
+        const project = stringQuery(request.query, 'project')
+        const parsed = InternalOverviewIpcSchema.safeParse(
+          project === undefined ? undefined : { project_name: project }
+        )
+        if (!parsed.success) {
+          throw invalidInput('Invalid internal overview filter', parsed.error)
+        }
+        return db.getInternalOverview(parsed.data?.project_name)
+      }
+    },
+
+    // GET /api/internal/graph?project= — mirror `getInternalGraph`.
+    {
+      method: 'GET',
+      pattern: createPattern(WEB_API_PATHS.internalGraph),
+      handler: (request: RouteRequest): InternalGraphData => {
+        const parsed = InternalGraphQueryIpcSchema.safeParse({
+          project_name: stringQuery(request.query, 'project')
+        })
+        if (!parsed.success) {
+          throw invalidInput('Invalid internal graph query', parsed.error)
+        }
+        return db.getInternalGraph(parsed.data.project_name)
+      }
+    },
+
+    // GET /api/internal/projects — mirror `getInternalProjects`.
+    {
+      method: 'GET',
+      pattern: createPattern(WEB_API_PATHS.internalProjects),
+      handler: (): InternalProjectSummary[] => db.getInternalProjects()
+    },
+
+    // GET /api/loot?project= — mirror `listLootImports` (newest first).
+    {
+      method: 'GET',
+      pattern: createPattern(WEB_API_PATHS.loot),
+      handler: (request: RouteRequest): LootImport[] => {
+        const project = stringQuery(request.query, 'project')
+        const parsed = ListLootImportsIpcSchema.safeParse(
+          project === undefined ? undefined : { project_name: project }
+        )
+        if (!parsed.success) {
+          throw invalidInput('Invalid loot import filter', parsed.error)
+        }
+        return db.listLootImports(parsed.data?.project_name)
+      }
+    },
+
+    // POST /api/internal/credential-trial — mirror `recordCredentialTrial`.
+    // Recording an observed trial is a write; the matrix never attempts one.
+    {
+      method: 'POST',
+      pattern: createPattern(WEB_API_PATHS.internalCredentialTrial),
+      handler: (request: RouteRequest): CredentialTrial => {
+        const parsed = RecordCredentialTrialIpcSchema.safeParse(request.body)
+        if (!parsed.success) {
+          throw invalidInput('Invalid credential trial payload', parsed.error)
+        }
+        assertWritable(deps, 'Credential trial recording')
+        const trial = db.recordCredentialTrial(parsed.data)
+        deps.notifyDataChanged()
+        return trial
+      }
+    },
+
+    /**
+     * POST /api/loot — parse ONE local loot file and persist the derived
+     * internal entities (§8.4). The path is resolved on the server machine: the
+     * parsers only read it (never execute the content) and the database stores
+     * a path reference / hash / summary, not the raw file. `ctx web` is
+     * token-authenticated, CSRF/Origin-gated and loopback-only unless
+     * `--allow-intranet` was passed, so this stays a local / trusted-intranet
+     * action; read-only servers answer 403.
+     */
+    {
+      method: 'POST',
+      pattern: createPattern(WEB_API_PATHS.loot),
+      handler: (request: RouteRequest): LootImport => {
+        const parsed = ImportLootIpcSchema.safeParse(request.body)
+        if (!parsed.success) {
+          throw invalidInput('Invalid loot import payload', parsed.error)
+        }
+        assertWritable(deps, 'Loot import')
+        const imported = db.importLoot(parsed.data)
+        deps.notifyDataChanged()
+        return imported
+      }
+    },
+
+    // GET /api/stats — mirror `getStats`; `?realm=web|internal|all` scopes the counters.
     {
       method: 'GET',
       pattern: createPattern(WEB_API_PATHS.stats),
-      handler: (): DashboardStats => db.getStats()
+      handler: (request: RouteRequest): DashboardStats => {
+        const realm = stringQuery(request.query, 'realm')
+        const parsed = DashboardStatsIpcSchema.safeParse({
+          ...(realm !== undefined ? { realm } : {})
+        })
+        if (!parsed.success) {
+          throw invalidInput('Invalid stats query', parsed.error)
+        }
+        return db.getStats(parsed.data ?? {})
+      }
     },
 
     // GET /api/db — mirror `getDatabaseInfo`, but reduce the absolute path to

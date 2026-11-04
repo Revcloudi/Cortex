@@ -6,9 +6,9 @@ Cortex 是本地优先的渗透测试情报中枢。Agent（纯 stdio MCP server
 
 [![README English](https://img.shields.io/badge/README-English-0f766e?style=flat-square)](README.md)
 [![README 中文](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-f59e0b?style=flat-square)](README.zh-CN.md)
-[![版本 0.1.4](https://img.shields.io/badge/version-0.1.4-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
+[![版本 0.1.5](https://img.shields.io/badge/version-0.1.5-2dd4bf?style=flat-square)](https://github.com/Revcloudi/Cortex/releases)
 [![npm](https://img.shields.io/npm/v/@lievclouds/cortex?style=flat-square&label=npm)](https://www.npmjs.com/package/@lievclouds/cortex)
-[![MCP 6 tools](https://img.shields.io/badge/MCP-6%20tools-0ea5e9?style=flat-square)](#mcp-接入)
+[![MCP 7 tools](https://img.shields.io/badge/MCP-7%20tools-0ea5e9?style=flat-square)](#mcp-接入)
 [![平台](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20CLI%20%C2%B7%20Linux%20CLI-64748b?style=flat-square)](#cli-ctx)
 [![Node >= 22.12](https://img.shields.io/badge/node-%E2%89%A5%2022.12-339933?style=flat-square)](#环境要求)
 [![License MIT](https://img.shields.io/badge/license-MIT-8b5cf6?style=flat-square)](LICENSE)
@@ -30,7 +30,7 @@ ctx init --yes            # 自动检测并写入 Claude Code / DSH / Codex / Cu
 ctx web
 ```
 
-`ctx init --yes` 会自动检测本机已安装的 Agent，并写入 MCP 配置、三个 Skill 与系统级强制规则；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`；只配单个 Agent 例如 `ctx init --yes --agents claude`。英文 Skill 用 `--skill-lang en`（Skill 语言默认 `zh`，可用 `CTX_SKILL_LANG` 覆盖默认值）。
+`ctx init --yes` 会自动检测本机已安装的 Agent，并写入 MCP 配置、四个 Skill 与系统级强制规则；也可以显式指定（Agent 名必须小写、逗号分隔）：`ctx init --yes --agents dsh,codex,claude,cursor,workbuddy,zcode`；只配单个 Agent 例如 `ctx init --yes --agents claude`。英文 Skill 用 `--skill-lang en`（Skill 语言默认 `zh`，可用 `CTX_SKILL_LANG` 覆盖默认值）。
 
 ### 命令行参数
 
@@ -85,11 +85,11 @@ CTX_WEB_ALLOWED_HOSTS=cortex.corp.example ctx web
 
 ## Windows 桌面端
 
-Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.4**。macOS / Linux 请使用 npm 安装（见 [CLI (ctx)](#cli-ctx)）。
+Windows 安装包由 GitHub Actions 发布到 Releases。当前版本：**cortex-v0.1.5**。macOS / Linux 请使用 npm 安装（见 [CLI (ctx)](#cli-ctx)）。
 
 | 平台 | 下载 |
 | --- | --- |
-| Windows 10/11 x64 | [Cortex-0.1.4-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.4-setup.exe) |
+| Windows 10/11 x64 | [Cortex-0.1.5-setup.exe](https://github.com/Revcloudi/Cortex/releases/latest/download/Cortex-0.1.5-setup.exe) |
 
 > 链接始终指向最新的 Cortex Release；完整列表见 [Releases 页面](https://github.com/Revcloudi/Cortex/releases)。安装包未做代码签名：Windows SmartScreen 可能提示（"更多信息 → 仍要运行"）。
 
@@ -133,6 +133,9 @@ ctx doctor               # 检查数据库、MCP 运行时与 Agent 配置
 | `ctx assets get <host_port>` | 查看资产详情：完整接口（含原始请求）、敏感泄露与测试参数 |
 | `ctx snapshots list [--keyword]` | 认知快照列表 |
 | `ctx snapshots get <session_id>` | 查看单条会话 |
+| `ctx internal overview\|hosts\|routes --project <name>` | 内网作战域只读查询：概览、主机/服务、代理路由（均支持 `--json`） |
+| `ctx loot import <file> --project <name> [--entry <host_port>] [--format auto]` | 本地解析 Loot 文件并写入内网作战域（不可信输入：只解析、不执行、不联网） |
+| `ctx loot list --project <name>` | 列出 Loot 导入记录 |
 | `ctx search <keyword>` | 同时搜索漏洞 / 资产 / 快照 |
 | `ctx open [--dev] [--path <exe>] [--software]` | 启动/聚焦桌面端（Windows 安装版或源码构建）；`--software` 在无 GPU / 虚拟机 / 远程桌面环境强制软件渲染 |
 | `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | 在浏览器中使用同一套看板（仅回环或受信任内网） |
@@ -156,8 +159,9 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 
 - 漏洞模型：Host、入口、类型、等级、URL、描述、影响、受影响接口、Markdown 复现步骤、修复建议、加解密说明、测试边界、只追加的复测历史、关联漏洞与状态流转。
 - 资产上下文：完整 URL、项目、技术栈、结构化 `interfaces`（`path` / `method` / `params` / 原始请求）、敏感泄露、非密 `test_parameters` 与关联漏洞；旧版 `interface_dir` 自动规范化。
-- 固定 6 个 MCP 工具：`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`。
-- `ctx init` 自动检测 Agent，幂等写入 MCP 配置、3 个 Skill 与系统级强制规则（带备份、`--dry-run`、JSON/TOML/YAML 校验）。
+- 内网作战域（Plan B，schema v3）：Web 与内网逻辑隔离，主看板分「Web 漏洞」（默认）与「内网作战」两个 tab；入口资产通过 foothold 桥接内网主机 / 服务 / 凭据 / pivot，内网作战页提供概览、网段热力图、凭据-服务矩阵、代理路由视图与 Loot 本地导入。
+- 固定 7 个 MCP 工具：`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`、`sync_internal_scope`（内网作战域：登记 foothold / 内网主机 / 服务 / 凭据 / pivot）。
+- `ctx init` 自动检测 Agent，幂等写入 MCP 配置、4 个 Skill 与系统级强制规则（带备份、`--dry-run`、JSON/TOML/YAML 校验）。
 - 桌面端：漏洞看板（服务端过滤/分页）、资产库（接口浏览器）、认知快照（项目 → 子会话层级）、Markdown 报告导出、双语 MCP 接入页（一键「接入 Agent」+ 精简工具表）。
 - **记忆星云**（详见下文）：把同一份记忆呈现为可交互的 3D HUD——战术 HUD 外壳、线框节点、全息网格地板、投影 DOM 标签，支持全库/资产/任务 Scope、搜索/过滤/聚焦、`+N` 聚合、全屏与 PNG 导出。
 - 可选 Web 端（`ctx web`）：在本机或受信任内网的浏览器里使用同一套看板、资产库、快照与 MCP 页面；每次运行临时 token 登录，无账号体系，默认只监听回环地址，共享数据库变更时通过 SSE 自动刷新。
@@ -178,7 +182,7 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 
 ## MCP 接入
 
-MCP Server 只使用 **stdio**：由 Agent 在自己的进程里拉起，不监听端口，桌面端也不启动 MCP。Server 名称 `cortex`，版本 `0.1.4`。
+MCP Server 只使用 **stdio**：由 Agent 在自己的进程里拉起，不监听端口，桌面端也不启动 MCP。Server 名称 `cortex`，版本 `0.1.5`。
 
 | 场景 | 启动命令 |
 | --- | --- |
@@ -261,8 +265,8 @@ node out/cli/ctx.cjs doctor                            # 诊断配置与运行�
 
 ```
 skills/
-  zh/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md
-  en/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md
+  zh/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md  internal-ops.skill.md
+  en/  vuln-db.skill.md  asset-context.skill.md  snapshot.skill.md  internal-ops.skill.md
 ```
 
 `ctx init` 把所选语言复制到 Agent 技能目录（`~/.agents/skills/<name>/SKILL.md`，以及 Codex / Claude Code / ZCode 各自技能目录；WorkBuddy 在应用内从 `.agents/skills` 导入）。桌面端 MCP 页与安装器使用同一个生成器，配置不会漂移。
@@ -299,7 +303,7 @@ npm run dist:win     # Windows 安装包（含内置 Node 运行时，产物在 
 ## 打包与发布
 
 ```bash
-npm run dist:win           # 构建 + 内置运行时 → Windows x64 NSIS（release/Cortex-0.1.4-setup.exe）
+npm run dist:win           # 构建 + 内置运行时 → Windows x64 NSIS（release/Cortex-0.1.5-setup.exe）
 npm run build:runtime      # 只生成 runtime/（手动/高级打包用）
 ```
 
@@ -328,7 +332,7 @@ npm run build:runtime      # 只生成 runtime/（手动/高级打包用）
 src/
   shared/      共享契约（类型、IPC、Zod schema、MCP 配置生成器）
   core/        Electron-free 数据库、路径、日志、版本
-  mcp/         纯 stdio MCP Server 与 6 个工具
+  mcp/         纯 stdio MCP Server 与 7 个工具
   cli/         ctx 命令与 Agent 配置写入
   server/      ctx web HTTP 服务端（鉴权、安全、静态 SPA、REST/SSE 路由）
   main/        Electron 主进程（IPC、文件监听、数据库切换，不启动 MCP）

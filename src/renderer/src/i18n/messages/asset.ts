@@ -103,7 +103,27 @@ export const assetMessages: MessageBundle = {
     'asset.related.empty.title': '暂未关联漏洞',
     'asset.related.empty.description':
       '资产 host 对应的漏洞会自动关联；Agent 也可以在 sync_asset_info 中显式写入 related_vuln_ids。',
-    'asset.related.open': '查看'
+    'asset.related.open': '查看',
+    'asset.tab.internal': '内网入口',
+    'asset.internal.loading': '正在加载内网入口信息',
+    'asset.internal.loadError': '无法加载内网入口信息',
+    'asset.internal.notEntry.title': '该资产不是已登记的入口',
+    'asset.internal.notEntry.description':
+      '当该 Web 资产成为内网入口时，Agent 会用 sync_internal_scope 登记 foothold、可达主机与 pivot，这里会显示对应入口信息。',
+    'asset.internal.footholds': 'Footholds',
+    'asset.internal.footholdPrivilege': '权限',
+    'asset.internal.footholdEstablishedAt': '建立时间',
+    'asset.internal.footholdEvidence': '证据摘要',
+    'asset.internal.noEvidence': '未记录证据',
+    'asset.internal.reachableHosts': '可达内网主机',
+    'asset.internal.reachableServices': '可达内网服务',
+    'asset.internal.pivots': '代理路由',
+    'asset.internal.relatedVulns': '相关内网漏洞',
+    'asset.internal.noRelatedVulns': '暂无关联内网漏洞',
+    'asset.internal.noHosts': '未登记可达主机',
+    'asset.internal.noServices': '未登记可达服务',
+    'asset.internal.noPivots': '未登记代理路由',
+    'asset.internal.openVuln': '查看'
   },
   en: {
     'asset.page.eyebrow': 'Asset Context',
@@ -207,6 +227,26 @@ export const assetMessages: MessageBundle = {
     'asset.related.empty.title': 'No related vulnerabilities yet',
     'asset.related.empty.description':
       'Vulnerabilities that share this host are linked automatically. An agent can also write related_vuln_ids explicitly through sync_asset_info.',
-    'asset.related.open': 'View'
+    'asset.related.open': 'View',
+    'asset.tab.internal': 'Internal entry',
+    'asset.internal.loading': 'Loading internal entry data',
+    'asset.internal.loadError': 'Cannot load internal entry data',
+    'asset.internal.notEntry.title': 'This asset is not a recorded entry',
+    'asset.internal.notEntry.description':
+      'When this web asset becomes an internal entry, the agent registers a foothold plus reachable hosts and pivots via sync_internal_scope; the entry details appear here.',
+    'asset.internal.footholds': 'Footholds',
+    'asset.internal.footholdPrivilege': 'Privilege',
+    'asset.internal.footholdEstablishedAt': 'Established',
+    'asset.internal.footholdEvidence': 'Evidence',
+    'asset.internal.noEvidence': 'No evidence recorded',
+    'asset.internal.reachableHosts': 'Reachable internal hosts',
+    'asset.internal.reachableServices': 'Reachable internal services',
+    'asset.internal.pivots': 'Pivot routes',
+    'asset.internal.relatedVulns': 'Related internal vulnerabilities',
+    'asset.internal.noRelatedVulns': 'No related internal vulnerabilities',
+    'asset.internal.noHosts': 'No reachable hosts recorded',
+    'asset.internal.noServices': 'No reachable services recorded',
+    'asset.internal.noPivots': 'No pivot routes recorded',
+    'asset.internal.openVuln': 'View'
   }
 }

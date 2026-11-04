@@ -2,6 +2,7 @@ import type { MessageBundle } from './types'
 import { assetMessages } from './asset'
 import { commonMessages } from './common'
 import { dashboardMessages } from './dashboard'
+import { internalMessages } from './internal'
 import { mcpMessages } from './mcp'
 import { nebulaMessages } from './nebula'
 import { snapshotMessages } from './snapshot'
@@ -14,6 +15,7 @@ const bundles: MessageBundle[] = [
   commonMessages,
   uiMessages,
   dashboardMessages,
+  internalMessages,
   vulnMessages,
   assetMessages,
   snapshotMessages,

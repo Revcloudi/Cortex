@@ -1,5 +1,10 @@
 import type { GraphNodeType, GraphRelation, LeakNode, NebulaNode } from '@shared/graph'
-import type { Severity } from '@shared/types'
+import type {
+  FootholdStatus,
+  InternalHostState,
+  ServiceState,
+  Severity
+} from '@shared/types'
 
 /**
  * Single source of truth for the Memory Nebula's J.A.R.V.I.S. tactical HUD.
@@ -107,14 +112,53 @@ export const NEBULA_UI = {
 
 /* ------------------------------------------------------------- node colours -- */
 
-/** HUD hierarchy: project violet → target blue → host cyan → evidence. */
+/**
+ * HUD hierarchy: project violet → target blue → host cyan → evidence.
+ *
+ * Internal operations (plan §7.3) add a second family: the foothold bridge is
+ * amber-red, internal hosts borrow the HUD amber (their actual colour is driven
+ * by `state`, see `INTERNAL_HOST_STATE_COLORS`) and services are a cool steel
+ * blue so a port never reads as a Web asset.
+ */
 export const NODE_TYPE_COLORS: Record<GraphNodeType, string> = {
   project: HUD.violet,
   target: HUD.blue,
   host: HUD.cyan,
   vuln: HUD.danger,
   leak: HUD.white,
-  snapshot: HUD.success
+  snapshot: HUD.success,
+  foothold: '#FF7A33',
+  internal_host: '#FFB020',
+  internal_service: '#6FB6D9'
+}
+
+/**
+ * Internal host state colouring (plan §7.3 / §8.1): compromised = danger red,
+ * alive = amber, firewalled/unreachable = grey (unknown is *not* rendered as
+ * alive — the legend says the data comes from agent records, not a live scan).
+ */
+export const INTERNAL_HOST_STATE_COLORS: Record<InternalHostState, string> = {
+  compromised: HUD.danger,
+  alive: HUD.warning,
+  firewalled: '#5C8FAE',
+  unreachable: '#3E6274',
+  unknown: '#7B8FA3'
+}
+
+/** Foothold lifecycle tint used by the inspector chips and legend hints. */
+export const FOOTHOLD_STATUS_COLORS: Record<FootholdStatus, string> = {
+  planned: HUD.cyanDim,
+  established: HUD.warning,
+  degraded: '#FF8A3D',
+  lost: HUD.muted
+}
+
+/** Internal service state tint used by the inspector chips. */
+export const SERVICE_STATE_COLORS: Record<ServiceState, string> = {
+  open: HUD.success,
+  closed: HUD.muted,
+  filtered: HUD.warning,
+  unknown: '#3E6274'
 }
 
 /** Vulns are coloured by severity (Critical/High share the danger red). */
@@ -146,6 +190,7 @@ export const STATUS_BADGE_CLASSES: Record<string, string> = {
 
 export function nodeColor(node: NebulaNode): string {
   if (node.type === 'vuln') return SEVERITY_NODE_COLORS[node.severity]
+  if (node.type === 'internal_host') return INTERNAL_HOST_STATE_COLORS[node.data.state]
   return NODE_TYPE_COLORS[node.type]
 }
 
@@ -162,7 +207,13 @@ const SHELL_BASE: Record<GraphNodeType, readonly [number, number, number]> = {
   host: [1.35, 6, 10],
   vuln: [1.15, 3.6, 6],
   leak: [0.85, 2.6, 4],
-  snapshot: [1.45, 5, 8.5]
+  snapshot: [1.45, 5, 8.5],
+  /** Bridge node: small diamond, sits between the entry asset and the intranet. */
+  foothold: [1.05, 3.2, 5.6],
+  /** Internal host: hexagon hub, sized by its known service count. */
+  internal_host: [1.25, 5, 9],
+  /** Internal service: small port ring, never larger than its host. */
+  internal_service: [0.8, 2.4, 4.2]
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -182,7 +233,12 @@ export function nodeCoreRadius(node: NebulaNode): number {
 
 /** Additive halo sprite diameter relative to the shell radius. */
 export function nodeGlowScale(node: NebulaNode): number {
-  const factor = node.type === 'host' || node.type === 'project' || node.type === 'target' ? 5.2 : 4.4
+  const hub =
+    node.type === 'host' ||
+    node.type === 'project' ||
+    node.type === 'target' ||
+    node.type === 'internal_host'
+  const factor = hub ? 5.2 : node.type === 'foothold' ? 4.8 : 4.4
   return nodeRadius(node) * factor
 }
 
@@ -202,7 +258,13 @@ export const LINK_COLORS: Record<GraphRelation, string> = {
   RELATED_VULN: HUD.muted,
   SNAPSHOT_TARGETS: HUD.success,
   SNAPSHOT_VULN: HUD.success,
-  TASK_TOUCHED_HOST: HUD.cyan
+  TASK_TOUCHED_HOST: HUD.cyan,
+  /** Entry asset → foothold: the bridge edge, warmest line in the graph. */
+  FOOTHOLD_FROM: '#FF9A3D',
+  /** Foothold → internal host: recorded reachability (rendered fainter). */
+  FOOTHOLD_REACHES: '#FFB86B',
+  HOST_HAS_SERVICE: '#3FA9CC',
+  SERVICE_HAS_VULN: HUD.danger
 }
 
 /** Pre-blended alpha look; hairline links stay between ~0.10 and ~0.22. */
@@ -215,7 +277,11 @@ export const LINK_OPACITY: Record<GraphRelation, number> = {
   RELATED_VULN: 0.13,
   SNAPSHOT_TARGETS: 0.16,
   SNAPSHOT_VULN: 0.18,
-  TASK_TOUCHED_HOST: 0.12
+  TASK_TOUCHED_HOST: 0.12,
+  FOOTHOLD_FROM: 0.34,
+  FOOTHOLD_REACHES: 0.22,
+  HOST_HAS_SERVICE: 0.15,
+  SERVICE_HAS_VULN: 0.27
 }
 
 export const LINK_WIDTH = 0.32
@@ -227,6 +293,25 @@ export const LINK_HIGHLIGHT_OPACITY = 0.85
 export const LINK_DIM_OPACITY = 0.035
 /** `three-forcegraph` has no line-dash accessor; derived = thinner + fainter. */
 export const DERIVED_LINK_DASH: [number, number] = [2, 3]
+
+/* ------------------------------------------------------------- attack path -- */
+
+/**
+ * Selected pivot route overlay (plan §7.3 / §8.3).
+ *
+ * The overlay is a *highlight*, never a layout input: the 3D canvas recolours
+ * the batched link vertices of the route and the 2D fallback draws one SVG
+ * polyline. The hot amber-red is deliberately warmer than every node hue so the
+ * route reads as "this is the way in" at a glance.
+ */
+export const ATTACK_PATH_COLOR = '#FF6A2B'
+export const ATTACK_PATH_OPACITY = 0.98
+/** SVG stroke width (world units) for the 2D polyline / 3D hairline emphasis. */
+export const ATTACK_PATH_WIDTH = 1.7
+/** Non-selected routes keep a faint rehearsal footprint when the overlay is on. */
+export const ATTACK_PATH_IDLE_OPACITY = 0.35
+/** Selected route links are drawn above the normal additive link batch. */
+export const ATTACK_PATH_RENDER_ORDER = 7
 
 export function linkOpacity(relation: GraphRelation, derived: boolean): number {
   const base = LINK_OPACITY[relation]
@@ -347,6 +432,13 @@ export function labelVariantOf(node: NebulaNode): LabelVariant {
   }
   if (node.type === 'leak') return 'white'
   if (node.type === 'snapshot') return 'success'
+  if (node.type === 'foothold') return node.data.status === 'lost' ? 'muted' : 'warning'
+  if (node.type === 'internal_host') {
+    if (node.data.state === 'compromised') return 'danger'
+    if (node.data.state === 'alive') return 'warning'
+    return 'muted'
+  }
+  if (node.type === 'internal_service') return 'muted'
   return 'default'
 }
 
@@ -369,8 +461,18 @@ export function nodeLabelPriority(node: NebulaNode, selected: boolean, hovered: 
       return 780
     case 'host':
       return 740
+    /** Internal hosts are the "second ring" hubs: keep their labels above vulns. */
+    case 'internal_host':
+      return 730
+    /** The foothold bridge explains *how* the intranet was reached; label it. */
+    case 'foothold':
+      return 700
     case 'snapshot':
       return 580
+    case 'internal_service': {
+      const locked = node.data.state === 'open'
+      return locked ? 470 : 430
+    }
     case 'vuln': {
       const severityRank: Record<Severity, number> = {
         Critical: 720,

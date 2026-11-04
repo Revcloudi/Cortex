@@ -17,6 +17,8 @@ import { NebulaGraph2D } from '@renderer/components/nebula/NebulaGraph2D'
 import { NebulaLabelLayer, type NebulaLabelDatum } from '@renderer/components/nebula/nebulaLabels'
 import { useI18n } from '@renderer/i18n'
 import {
+  ATTACK_PATH_COLOR,
+  ATTACK_PATH_OPACITY,
   AUTO_ROTATE_RESUME_MS,
   AUTO_ROTATE_SPEED,
   CAMERA_FOCUS_MS,
@@ -94,6 +96,14 @@ export interface NebulaGraphProps {
   focusIds: string[] | null
   /** Large-graph mode: no idle labels, halos only for the selected node. */
   performanceMode: boolean
+  /**
+   * Selected pivot route (ordered node ids) for the attack-path overlay. The
+   * overlay only recolours existing geometry — it never feeds the force layout.
+   * `null` / omitted means "no route selected".
+   */
+  routeNodeIds?: string[] | null
+  /** Link keys (`source|target`) belonging to the selected pivot route. */
+  routeLinkKeys?: string[] | null
   /** Auto-rotation is already reduced-motion aware upstream. */
   autoRotate: boolean
   /**
@@ -241,7 +251,13 @@ const LINK_DISTANCE_BY_RELATION: Record<GraphRelation, readonly [number, number]
   TARGET_SESSION: [58, 82],
   TARGET_ASSET: [52, 76],
   BELONGS_TO: [48, 72],
-  TASK_TOUCHED_HOST: [46, 70]
+  TASK_TOUCHED_HOST: [46, 70],
+  // Internal layer: the foothold hugs its entry asset, then the chain stretches
+  // out host → service → vulnerability like a lateral movement path.
+  FOOTHOLD_FROM: [18, 30],
+  FOOTHOLD_REACHES: [40, 60],
+  HOST_HAS_SERVICE: [18, 28],
+  SERVICE_HAS_VULN: [16, 26]
 }
 
 function linkDistance(link: GraphLink): number {
@@ -317,6 +333,16 @@ function summarizeLabel(node: GraphNode, t: TranslateFn): string {
     case 'target':
     case 'host':
       return truncateLabel(node.name, 24)
+    case 'foothold':
+      return truncateLabel(`FH · ${t(`nebula.accessType.${node.data.access_type}`)}`, 20)
+    case 'internal_host': {
+      const hostname = node.data.hostname.trim()
+      return truncateLabel(hostname.length > 0 ? `${node.data.ip} · ${hostname}` : node.data.ip, 22)
+    }
+    case 'internal_service': {
+      const service = node.data.service.trim() || node.data.protocol.trim()
+      return truncateLabel(service.length > 0 ? `${node.data.port} ${service}` : String(node.data.port), 18)
+    }
   }
 }
 
@@ -522,6 +548,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     highlightIds,
     focusIds,
     performanceMode,
+    routeNodeIds = null,
+    routeLinkKeys = null,
     autoRotate,
     reducedMotion: reducedMotionOverride,
     onSelect,
@@ -558,6 +586,9 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   const selectedIdRef = useRef<string | null>(selectedId)
   const highlightSetRef = useRef<ReadonlySet<string> | null>(null)
   const focusSetRef = useRef<ReadonlySet<string> | null>(null)
+  /** Selected pivot route: node ids + link keys for the attack-path overlay. */
+  const routeNodeSetRef = useRef<ReadonlySet<string> | null>(null)
+  const routeLinkKeysRef = useRef<ReadonlySet<string> | null>(null)
   const performanceModeRef = useRef(performanceMode)
   const autoRotateRef = useRef(autoRotate)
   const reducedMotionRef = useRef(reducedMotion)
@@ -618,6 +649,15 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     [highlightIds]
   )
   const focusSet = useMemo(() => (focusIds === null ? null : new Set(focusIds)), [focusIds])
+  /** Route overlays arrive as plain arrays; memoize them as sets for tinting. */
+  const routeNodeSet = useMemo(
+    () => (routeNodeIds === null || routeNodeIds.length === 0 ? null : new Set(routeNodeIds)),
+    [routeNodeIds]
+  )
+  const routeLinkKeySet = useMemo(
+    () => (routeLinkKeys === null || routeLinkKeys.length === 0 ? null : new Set(routeLinkKeys)),
+    [routeLinkKeys]
+  )
   /** Hovered node + direct neighbours; `null` when nothing is hovered. */
   const hoverIds = useMemo(() => {
     if (hoverFocusId === null) return null
@@ -634,6 +674,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   graphDataRef.current = graphData
   highlightSetRef.current = highlightSet
   focusSetRef.current = focusSet
+  routeNodeSetRef.current = routeNodeSet
+  routeLinkKeysRef.current = routeLinkKeySet
 
   /* ------------------------------------------------------- visual state -- */
 
@@ -657,6 +699,10 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     const matched = highlightSet === null || highlightSet.has(nodeId)
     const inFocus = focusSet === null || focusSet.has(nodeId) || selected
     const emphasized = selected || hovered
+    // Attack path: the route's own nodes stay readable above the dimmed web.
+    // Performance mode opts out of the whole overlay (documented no-op).
+    const onRoute =
+      !performance && routeNodeSetRef.current !== null && routeNodeSetRef.current.has(nodeId)
     const leaf = visual.nodeType === 'vuln' || visual.nodeType === 'leak'
     // Hover: keep the hovered node and its direct neighbours bright, fade the
     // rest hard so the local structure reads immediately.
@@ -674,6 +720,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     }
     // LOD level 2: far away, evidence fades to faint dust around the hubs.
     if (lod >= 2 && leaf) level = Math.min(level, 0.22)
+    if (onRoute) level = Math.max(level, 0.92)
     if (emphasized) level = 1
 
     // Holographic wireframe shell: brighter when selected/hovered.
@@ -877,20 +924,34 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
   /**
    * Hover/selection edge emphasis: connected edges brighten to
    * `LINK_HIGHLIGHT_OPACITY`, everything else fades to `LINK_DIM_OPACITY`.
+   *
+   * The selected pivot route is baked into the same vertex-colour buffer: its
+   * links are pre-blended at `ATTACK_PATH_OPACITY` in the hot attack-path hue,
+   * so highlighting a route costs one attribute upload, never new geometry and
+   * never a force-layout change. Performance mode intentionally no-ops it.
    */
   const applyLinkTint = useCallback(() => {
     const batch = linkBatchRef.current
     if (batch === null) return
     const links = linksRef.current
     const focusId = hoveredIdRef.current ?? selectedIdRef.current
+    const routeKeys = performanceModeRef.current ? null : routeLinkKeysRef.current
+    const routeColor =
+      routeKeys === null
+        ? null
+        : new THREE.Color(blendOnCanvas(ATTACK_PATH_COLOR, ATTACK_PATH_OPACITY))
     const colors = batch.colors
     for (let index = 0; index < links.length; index += 1) {
       const link = links[index]
+      const sourceId = linkEndpointId(link.source)
+      const targetId = linkEndpointId(link.target)
       let color = batch.baseColors[index]
       if (focusId !== null) {
-        const connected =
-          linkEndpointId(link.source) === focusId || linkEndpointId(link.target) === focusId
+        const connected = sourceId === focusId || targetId === focusId
         color = connected ? batch.highlightColors[index] : batch.dimColors[index]
+      }
+      if (routeColor !== null && routeKeys?.has(`${sourceId}|${targetId}`) === true) {
+        color = routeColor
       }
       const offset = index * 6
       colors[offset] = color.r
@@ -1278,7 +1339,7 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
 
   useEffect(() => {
     applyLinkTint()
-  }, [applyLinkTint, graphData, selectedId, hoverFocusId])
+  }, [applyLinkTint, graphData, selectedId, hoverFocusId, routeLinkKeySet, performanceMode])
 
   useEffect(() => {
     flowRef.current?.setRoutes(toFlowRoutes(linksRef.current))
@@ -1295,7 +1356,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
     highlightIds,
     focusIds,
     performanceMode,
-    hoverFocusId
+    hoverFocusId,
+    routeNodeSet
   ])
 
   // Performance mode: swap to the coarse shared geometries (no object rebuild)
@@ -1601,6 +1663,8 @@ export const NebulaGraph = forwardRef<NebulaGraphHandle, NebulaGraphProps>(funct
         highlightIds={highlightIds}
         focusIds={focusIds}
         performanceMode={performanceMode}
+        routeNodeIds={routeNodeIds}
+        routeLinkKeys={routeLinkKeys}
         onSelect={onSelect}
         className={className}
       />

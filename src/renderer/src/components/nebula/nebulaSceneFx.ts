@@ -149,29 +149,165 @@ function isStructuralShell(nodeType: GraphNodeType): boolean {
   return nodeType === 'project' || nodeType === 'target' || nodeType === 'host'
 }
 
+/** One line-segment list → cached `LineSegments` geometry (unit radius). */
+function lineSegmentsGeometry(edges: readonly (readonly [number, number, number])[][]): THREE.BufferGeometry {
+  const positions = new Float32Array(edges.length * 6)
+  for (const [index, [from, to]] of edges.entries()) {
+    positions[index * 6] = from[0]
+    positions[index * 6 + 1] = from[1]
+    positions[index * 6 + 2] = from[2]
+    positions[index * 6 + 3] = to[0]
+    positions[index * 6 + 4] = to[1]
+    positions[index * 6 + 5] = to[2]
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  return geometry
+}
+
+/**
+ * Foothold diamond (plan §7.3): the Web↔intranet bridge. A vertically stretched
+ * octahedron built as 12 explicit edges — its tall silhouette cannot be confused
+ * with the small evidence octahedra around it.
+ */
+function diamondGeometry(): THREE.BufferGeometry {
+  const top: [number, number, number] = [0, 1.32, 0]
+  const bottom: [number, number, number] = [0, -1.32, 0]
+  const equator: [number, number, number][] = [
+    [0.78, 0, 0],
+    [0, 0, 0.78],
+    [-0.78, 0, 0],
+    [0, 0, -0.78]
+  ]
+  const edges: [number, number, number][][] = []
+  for (let index = 0; index < equator.length; index += 1) {
+    const current = equator[index]
+    const next = equator[(index + 1) % equator.length]
+    edges.push([top, current], [bottom, current], [current, next])
+  }
+  return lineSegmentsGeometry(edges)
+}
+
+/**
+ * Internal host hex prism: the "machine silhouette" of the intranet ring. Two
+ * hexagonal rings joined by six vertical struts — clearly different from the
+ * icosahedron used by Web host assets.
+ */
+function hexShellGeometry(): THREE.BufferGeometry {
+  const radius = 0.92
+  const halfHeight = 0.58
+  const sides = 6
+  const top: [number, number, number][] = []
+  const bottom: [number, number, number][] = []
+  for (let index = 0; index < sides; index += 1) {
+    const angle = (index / sides) * Math.PI * 2 - Math.PI / 2
+    const x = Math.cos(angle) * radius
+    const z = Math.sin(angle) * radius
+    top.push([x, halfHeight, z])
+    bottom.push([x, -halfHeight, z])
+  }
+  const edges: [number, number, number][][] = []
+  for (let index = 0; index < sides; index += 1) {
+    const next = (index + 1) % sides
+    edges.push(
+      [top[index], top[next]],
+      [bottom[index], bottom[next]],
+      [top[index], bottom[index]]
+    )
+  }
+  return lineSegmentsGeometry(edges)
+}
+
+/**
+ * Internal service port ring: two concentric rings plus eight radial ticks — a
+ * small "socket" glyph, never a solid hub. Coarser segment count in performance
+ * mode keeps the shared buffer budget flat.
+ */
+function portRingGeometry(detail: GeometryDetail): THREE.BufferGeometry {
+  const outerSegments = detail === 1 ? 24 : 12
+  const innerSegments = detail === 1 ? 16 : 8
+  const outerRadius = 1
+  const innerRadius = 0.56
+  const ring = (segments: number, radius: number): [number, number, number][] => {
+    const points: [number, number, number][] = []
+    for (let index = 0; index < segments; index += 1) {
+      const angle = (index / segments) * Math.PI * 2
+      points.push([Math.cos(angle) * radius, 0, Math.sin(angle) * radius])
+    }
+    return points
+  }
+  const outer = ring(outerSegments, outerRadius)
+  const inner = ring(innerSegments, innerRadius)
+  const edges: [number, number, number][][] = []
+  for (let index = 0; index < outer.length; index += 1) {
+    edges.push([outer[index], outer[(index + 1) % outer.length]])
+  }
+  for (let index = 0; index < inner.length; index += 1) {
+    edges.push([inner[index], inner[(index + 1) % inner.length]])
+  }
+  const ticks = detail === 1 ? 8 : 4
+  for (let index = 0; index < ticks; index += 1) {
+    const angle = (index / ticks) * Math.PI * 2
+    const direction: [number, number, number] = [Math.cos(angle), 0, Math.sin(angle)]
+    edges.push([
+      [direction[0] * innerRadius, 0, direction[2] * innerRadius],
+      [direction[0] * outerRadius, 0, direction[2] * outerRadius]
+    ])
+  }
+  return lineSegmentsGeometry(edges)
+}
+
 /**
  * Unit-radius `LineSegments` wireframe shell for a node.
  *
- * Built from `WireframeGeometry` (an explicit line buffer) instead of
- * `MeshBasicMaterial.wireframe`, so the HUD shell is a real line layer: it stays
- * hairline at every zoom level and can be drawn with additive blending without
- * the triangle-edge overdraw of a wireframe mesh. Callers scale the returned
- * geometry by `nodeRadius(node)`, which keeps one buffer per (type, detail).
+ * Built from an explicit line buffer instead of `MeshBasicMaterial.wireframe`,
+ * so the HUD shell is a real line layer: it stays hairline at every zoom level
+ * and can be drawn with additive blending without the triangle-edge overdraw of
+ * a wireframe mesh. Callers scale the returned geometry by `nodeRadius(node)`,
+ * which keeps one buffer per (type, detail).
+ *
+ * Internal silhouettes (plan §7.3 / §8): foothold = diamond, internal host =
+ * hex prism ("machine"), internal service = port ring.
  */
 export function shellLineGeometry(nodeType: GraphNodeType, detail: GeometryDetail): THREE.BufferGeometry {
-  const structural = isStructuralShell(nodeType)
-  const key = structural ? `ico|${detail}` : 'octa'
+  const key =
+    nodeType === 'foothold'
+      ? 'diamond'
+      : nodeType === 'internal_host'
+        ? 'hex'
+        : nodeType === 'internal_service'
+          ? `ring|${detail}`
+          : isStructuralShell(nodeType)
+            ? `ico|${detail}`
+            : 'octa'
   const cached = shellGeometries.get(key)
   if (cached !== undefined) return cached
 
-  const source = structural
-    ? new THREE.IcosahedronGeometry(1, detail)
-    : new THREE.OctahedronGeometry(1, 0)
-  const wireframe = new THREE.WireframeGeometry(source)
-  // The solid source geometry only feeds WireframeGeometry; its buffers are gone.
-  source.dispose()
-  shellGeometries.set(key, wireframe)
-  return wireframe
+  let geometry: THREE.BufferGeometry
+  switch (key) {
+    case 'diamond':
+      geometry = diamondGeometry()
+      break
+    case 'hex':
+      geometry = hexShellGeometry()
+      break
+    case 'ring|0':
+    case 'ring|1':
+      geometry = portRingGeometry(detail)
+      break
+    default: {
+      const structural = key.startsWith('ico')
+      const source = structural
+        ? new THREE.IcosahedronGeometry(1, detail)
+        : new THREE.OctahedronGeometry(1, 0)
+      geometry = new THREE.WireframeGeometry(source)
+      // The solid source geometry only feeds WireframeGeometry; its buffers are gone.
+      source.dispose()
+      break
+    }
+  }
+  shellGeometries.set(key, geometry)
+  return geometry
 }
 
 /** Unit-radius white-hot core sphere (segments drop in performance mode). */

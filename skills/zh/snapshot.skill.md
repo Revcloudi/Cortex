@@ -7,7 +7,7 @@ description: 【硬性】新会话继续任务前先用 manage_snapshot 的 list
 
 Cortex 的认知快照保存任务的战术进度：项目 / 目标 Host / 阶段、未完成任务、失败路径、下一步，以及结构化接口测试矩阵 `tested_interfaces`、Markdown 备注 `notes`、关联漏洞引用 `related_vuln_ids`。快照只记**战术进度 + 测试结论**，不重复存储漏洞证据与原始报文。
 
-只通过一个工具 `manage_snapshot` 操作（DSH：`mcp__cortex__manage_snapshot`），`action` = `save` / `load` / `list` / `attach_assets` / `restore_previous`；工具总数仍为 6 个。会话不保留历史版本，只保留一版 `previous_state` 供单步回滚；同一项目最多一层子会话，同一任务不要并行维护多个同级会话。
+只通过一个工具 `manage_snapshot` 操作（DSH：`mcp__cortex__manage_snapshot`），`action` = `save` / `load` / `list` / `attach_assets` / `restore_previous`；工具总数仍为 7 个。会话不保留历史版本，只保留一版 `previous_state` 供单步回滚；同一项目最多一层子会话，同一任务不要并行维护多个同级会话。
 
 ## 层级：项目会话 → 子会话（只一层）
 

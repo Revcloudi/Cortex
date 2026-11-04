@@ -1,10 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC_CHANNELS, type CortexApi } from '../shared/ipc'
+import { IPC_CHANNELS, type CortexApi, type DashboardStatsQuery } from '../shared/ipc'
 import type {
   AppInfo,
   AssetContext,
   AssetFilters,
   AssetListItem,
+  CredentialTrial,
   DashboardStats,
   DatabaseInfo,
   DatabaseSwitchResult,
@@ -13,7 +14,13 @@ import type {
   DeleteVulnResult,
   DeleteVulnsResult,
   ExportReportsResult,
+  ImportLootInput,
+  InternalGraphData,
+  InternalOverview,
+  InternalProjectSummary,
+  LootImport,
   PaginatedVulnerabilities,
+  RecordCredentialTrialInput,
   SeedDemoResult,
   SetupInfo,
   SetupRunRequest,
@@ -39,8 +46,8 @@ const api: CortexApi = {
   getVulnerability(id: string): Promise<Vulnerability | null> {
     return ipcRenderer.invoke(IPC_CHANNELS.getVulnerability, id) as Promise<Vulnerability | null>
   },
-  getStats(): Promise<DashboardStats> {
-    return ipcRenderer.invoke(IPC_CHANNELS.getStats) as Promise<DashboardStats>
+  getStats(query: DashboardStatsQuery = {}): Promise<DashboardStats> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getStats, query) as Promise<DashboardStats>
   },
   updateVulnerabilityStatus(input: UpdateVulnStatusRequest): Promise<Vulnerability> {
     return ipcRenderer.invoke(IPC_CHANNELS.updateVulnerabilityStatus, input) as Promise<Vulnerability>
@@ -92,6 +99,24 @@ const api: CortexApi = {
       IPC_CHANNELS.deleteSnapshot,
       sessionId
     ) as Promise<DeleteSnapshotResult>
+  },
+  getInternalOverview(input?: { project_name?: string }): Promise<InternalOverview> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getInternalOverview, input) as Promise<InternalOverview>
+  },
+  getInternalGraph(input: { project_name: string }): Promise<InternalGraphData> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getInternalGraph, input) as Promise<InternalGraphData>
+  },
+  getInternalProjects(): Promise<InternalProjectSummary[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getInternalProjects) as Promise<InternalProjectSummary[]>
+  },
+  recordCredentialTrial(input: RecordCredentialTrialInput): Promise<CredentialTrial> {
+    return ipcRenderer.invoke(IPC_CHANNELS.recordCredentialTrial, input) as Promise<CredentialTrial>
+  },
+  listLootImports(input?: { project_name?: string }): Promise<LootImport[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.listLootImports, input) as Promise<LootImport[]>
+  },
+  importLoot(input: ImportLootInput): Promise<LootImport> {
+    return ipcRenderer.invoke(IPC_CHANNELS.importLoot, input) as Promise<LootImport>
   },
   getMemoryGraph(query: MemoryGraphQuery): Promise<MemoryGraphData> {
     return ipcRenderer.invoke(IPC_CHANNELS.getMemoryGraph, query) as Promise<MemoryGraphData>

@@ -4,6 +4,8 @@ import { createCliContext } from './context'
 import { registerAssetCommands } from './commands/assets'
 import { registerDoctorCommand } from './commands/doctor'
 import { registerInitCommand } from './commands/init'
+import { registerInternalCommands } from './commands/internal'
+import { registerLootCommands } from './commands/loot'
 import { registerMcpConfigCommands } from './commands/mcpConfig'
 import { registerOpenCommand } from './commands/open'
 import { registerSearchCommand } from './commands/search'
@@ -30,6 +32,8 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   registerMcpConfigCommands(cli)
   registerVulnCommands(cli)
   registerAssetCommands(cli)
+  registerInternalCommands(cli)
+  registerLootCommands(cli)
   registerSnapshotCommands(cli)
   registerSearchCommand(cli)
   registerOpenCommand(cli)

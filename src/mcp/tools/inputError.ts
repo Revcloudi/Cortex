@@ -53,9 +53,29 @@ const TOOL_EXAMPLES: Record<string, string> = {
     "next_steps": "继续测试 IDOR"
   }
 }`,
-  query_vulnerabilities: `{ "host": "probe.example.com" } 或 { "vuln_id": "VULN-..." } 或 { "search": "登录" }`,
-  query_asset_context: `{ "host_port": "https://probe.example.com" } 或 { "project_name": "Example SRC" }`,
-  update_vulnerability: `{ "vuln_id": "VULN-...", "status": "Retest_Passed" } 或 { "vuln_id": "VULN-...", "retest": { "time_range": "2026-11-02", "conclusion": "已修复" } }`
+  query_vulnerabilities: `{ "host": "probe.example.com" } 或 { "vuln_id": "VULN-..." } 或 { "search": "登录", "realm": "internal" }`,
+  query_asset_context: `{ "host_port": "https://probe.example.com", "include_internal": true } 或 { "project_name": "Example SRC", "include_internal": true, "include_credentials": true }`,
+  update_vulnerability: `{ "vuln_id": "VULN-...", "status": "Retest_Passed" } 或 { "vuln_id": "VULN-...", "retest": { "time_range": "2026-11-02", "conclusion": "已修复" } }`,
+  sync_internal_scope: `{
+  "project_name": "Starport Portal 物流客户门户靶场",
+  "mode": "merge",
+  "footholds": [
+    {
+      "entry_host_port": "http://127.0.0.1:8080/",
+      "entry_vuln_id": "VULN-20261102-008",
+      "access_type": "rce",
+      "privilege_level": "admin",
+      "status": "established",
+      "host_ids": ["IH-3F9A2C71B4D0"]
+    }
+  ],
+  "hosts": [
+    { "ip": "10.0.1.10", "hostname": "jump", "os": "linux", "subnet": "10.0.1.0/24", "state": "compromised", "source": "agent" }
+  ],
+  "services": [
+    { "host_id": "IH-3F9A2C71B4D0", "port": 22, "protocol": "tcp", "service": "ssh", "state": "open" }
+  ]
+}`
 }
 
 const FIELD_HINTS: Array<{ pattern: RegExp; hint: string }> = [
@@ -98,6 +118,46 @@ const FIELD_HINTS: Array<{ pattern: RegExp; hint: string }> = [
   {
     pattern: /(^|\.)remediation$/,
     hint: 'remediation 是字符串数组，例如 ["增加服务端鉴权"]。'
+  },
+  {
+    pattern: /(^|\.)entry_host_port$/,
+    hint: 'entry_host_port 是入口 Web 资产的 assets.host_port（完整 URL，如 "http://10.0.0.5:8080/"），不是内网 IP、不是 host:port。'
+  },
+  {
+    pattern: /(^|\.)access_type$/,
+    hint: 'access_type 枚举：rce | webshell | ssrf_proxy | credential | vpn | other。'
+  },
+  {
+    pattern: /(^|\.)privilege_level$/,
+    hint: 'privilege_level 枚举：user | admin | system | domain_admin | unknown。'
+  },
+  {
+    pattern: /(^|\.)status$/,
+    hint: 'status 取值随实体而定：漏洞用 Confirmed | Inconclusive | Retest_Passed；foothold/pivot 用 planned | established | degraded | lost；主机状态用 state（unknown | alive | compromised | unreachable | firewalled）。'
+  },
+  {
+    pattern: /(^|\.)host_id$/,
+    hint: 'host_id 必须是 hosts[] 中某个主机的 id（IH-...）；服务登记前先 sync hosts，再引用返回的 ids.hosts。'
+  },
+  {
+    pattern: /(^|\.)foothold_id$/,
+    hint: 'foothold_id 必须是 footholds[] 中某个 foothold 的 id（FH-...）；先 sync footholds 再登记 pivots。'
+  },
+  {
+    pattern: /(^|\.)ip$/,
+    hint: 'hosts[].ip 必须是合法 IPv4 / IPv6 字面量（如 "10.0.1.10"），不能写 CIDR、URL、host:port 或主机名；网段写 subnet（如 "10.0.1.0/24"）。'
+  },
+  {
+    pattern: /(^|\.)port$/,
+    hint: 'services[].port 是 1-65535 的整数（number，不是字符串）；service_host 里的 "ip:port" 才是字符串。'
+  },
+  {
+    pattern: /(^|\.)hops(\[\])?$/,
+    hint: 'hops 是数组，每项 { "ref_kind": "internal_host" | "internal_service", "ref_id": "IH-...", "label": "...", "via": "ssh:22" }。'
+  },
+  {
+    pattern: /(^|\.)entry_vuln_id$/,
+    hint: 'entry_vuln_id 是已在漏洞库登记的入口漏洞 ID（VULN-...），保存入口 RCE 后再登记 foothold。'
   }
 ]
 
@@ -176,6 +236,6 @@ export function formatMcpInputError(
     ...issues,
     '',
     ...(example === undefined ? [] : ['正确调用示例:', example, '']),
-    '提示: 字段规范见对应 skill（vuln-db / asset-context / snapshot）；先按示例修正后再重试。'
+    '提示: 字段规范见对应 skill（vuln-db / asset-context / snapshot / internal-ops）；先按示例修正后再重试。'
   ].join('\n')
 }

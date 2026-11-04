@@ -3,6 +3,9 @@ import { aggregateInfoOf, type NebulaLink, type NebulaNode } from '@shared/graph
 import { HudStatusDot } from '@renderer/components/nebula/HudChrome'
 import { useI18n } from '@renderer/i18n'
 import {
+  ATTACK_PATH_COLOR,
+  ATTACK_PATH_OPACITY,
+  ATTACK_PATH_WIDTH,
   DERIVED_LINK_DASH,
   HUD,
   HUD_FONT,
@@ -25,6 +28,11 @@ import { cn } from '@renderer/lib/utils'
  * ring), rendered as SVG so search highlighting, type filters, selection and
  * the inspector keep working without a GPU. No simulation and no animation.
  *
+ * The internal layer (plan §7.3) extends the same idea one level deeper: a
+ * foothold orbits its entry host, an internal host orbits its foothold, and its
+ * services orbit the host. The selected pivot route is drawn as one hot
+ * `<polyline>` over the link web — an overlay, never a layout input.
+ *
  * The HUD dress keeps the layout maths untouched: the canvas gets the same
  * #02040A holo grid as the 3D scene, nodes become wireframe glyphs with a white
  * core, and labels are counter-scaled so they stay 12px mono boxes no matter how
@@ -38,6 +46,10 @@ export interface NebulaGraph2DProps {
   highlightIds: string[] | null
   focusIds: string[] | null
   performanceMode: boolean
+  /** Selected pivot route: ordered graph node ids (attack-path overlay). */
+  routeNodeIds?: string[] | null
+  /** Selected pivot route: `source|target` link keys to highlight. */
+  routeLinkKeys?: string[] | null
   onSelect: (nodeId: string | null) => void
   className?: string
 }
@@ -77,8 +89,28 @@ const LABEL_SVG: Record<LabelVariant, { border: string; bar: string; text: strin
 function radiusOf(node: NebulaNode): number {
   if (node.type === 'host') return 11 + Math.min(10, Math.sqrt(node.val) * 1.4)
   if (node.type === 'snapshot') return 7 + Math.min(6, Math.sqrt(node.val) * 1.2)
+  /** Internal hubs sit between the Web ring and the evidence leaves. */
+  if (node.type === 'internal_host') return 8 + Math.min(8, Math.sqrt(node.val) * 1.3)
+  if (node.type === 'foothold') return 6 + Math.min(5, Math.sqrt(node.val))
+  if (node.type === 'internal_service') return 4.5 + Math.min(3, Math.sqrt(node.val) * 0.8)
   return 5 + Math.min(9, Math.sqrt(node.val) * 1.6)
 }
+
+/** Relations where the link source owns the target (child hangs off source). */
+const SOURCE_PARENT_RELATIONS: ReadonlySet<string> = new Set([
+  'HAS_VULN',
+  'LEAKED',
+  'HOST_HAS_SERVICE',
+  'SERVICE_HAS_VULN',
+  'FOOTHOLD_FROM',
+  'FOOTHOLD_REACHES'
+])
+
+/** Relations where the link target owns the source (snapshot → target host). */
+const TARGET_PARENT_RELATIONS: ReadonlySet<string> = new Set([
+  'SNAPSHOT_TARGETS',
+  'TARGET_ASSET'
+])
 
 function computeLayout(nodes: readonly NebulaNode[], links: readonly NebulaLink[]): Layout {
   const hosts = nodes.filter((node) => node.type === 'host')
@@ -97,58 +129,78 @@ function computeLayout(nodes: readonly NebulaNode[], links: readonly NebulaLink[
     })
   })
 
-  // Attach children to the host they belong to, when the graph says so.
-  const parentHostOf = new Map<string, string>()
+  /**
+   * Parent assignment mirrors the real relation graph: a vuln/leak hangs off
+   * its host, a foothold off its entry host, an internal host off its foothold,
+   * a service off its internal host, and a service vuln off its service. Nodes
+   * without a placed parent fall back to the outer ring.
+   */
+  const nodeById = new Map(nodes.map((node) => [node.id, node] as const))
+  const parentOf = new Map<string, string>()
   for (const link of links) {
-    if (link.relation === 'HAS_VULN' || link.relation === 'LEAKED') {
-      if (hostPositions.has(link.source) && !parentHostOf.has(link.target)) {
-        parentHostOf.set(link.target, link.source)
-      }
-    } else if (link.relation === 'SNAPSHOT_TARGETS') {
-      if (hostPositions.has(link.target) && !parentHostOf.has(link.source)) {
-        parentHostOf.set(link.source, link.target)
-      }
+    if (SOURCE_PARENT_RELATIONS.has(link.relation) && nodeById.has(link.source)) {
+      if (!parentOf.has(link.target)) parentOf.set(link.target, link.source)
+    } else if (TARGET_PARENT_RELATIONS.has(link.relation) && nodeById.has(link.target)) {
+      if (!parentOf.has(link.source)) parentOf.set(link.source, link.target)
     }
   }
 
-  const childrenByHost = new Map<string, NebulaNode[]>()
-  const unparented: NebulaNode[] = []
+  const childrenOf = new Map<string, NebulaNode[]>()
   for (const node of nodes) {
     if (node.type === 'host') continue
-    const parent = parentHostOf.get(node.id)
-    if (parent !== undefined) {
-      const bucket = childrenByHost.get(parent) ?? []
-      bucket.push(node)
-      childrenByHost.set(parent, bucket)
-    } else {
-      unparented.push(node)
+    const parentId = parentOf.get(node.id)
+    if (parentId === undefined) continue
+    const bucket = childrenOf.get(parentId) ?? []
+    bucket.push(node)
+    childrenOf.set(parentId, bucket)
+  }
+
+  const placed = new Map<string, { x: number; y: number }>()
+  for (const host of hosts) {
+    const position = hostPositions.get(host.id)
+    if (position !== undefined) placed.set(host.id, position)
+  }
+
+  // Breadth-first around the Web host ring: each depth gets a wider orbit so an
+  // entry → foothold → internal host → service chain reads as one arm.
+  let frontier = hosts.map((host) => host.id)
+  let depth = 1
+  while (frontier.length > 0 && depth <= 10) {
+    const next: string[] = []
+    for (const parentId of frontier) {
+      const center = placed.get(parentId)
+      if (center === undefined) continue
+      const children = [...(childrenOf.get(parentId) ?? [])].sort((left, right) =>
+        left.id.localeCompare(right.id)
+      )
+      children.forEach((child, index) => {
+        if (placed.has(child.id)) return
+        const orbit = 22 + depth * 14 + Math.sqrt(index + 1) * 12
+        const angle = index * GOLDEN_ANGLE + depth * 0.6
+        placed.set(child.id, {
+          x: center.x + Math.cos(angle) * orbit,
+          y: center.y + Math.sin(angle) * orbit
+        })
+        next.push(child.id)
+      })
     }
+    frontier = next
+    depth += 1
   }
 
   const positioned: PositionedNode[] = []
-  for (const host of hosts) {
-    const position = hostPositions.get(host.id)
-    if (position === undefined) continue
-    positioned.push({ node: host, x: position.x, y: position.y, radius: radiusOf(host) })
+  for (const node of nodes) {
+    const position = placed.get(node.id)
+    if (position !== undefined) {
+      positioned.push({ node, x: position.x, y: position.y, radius: radiusOf(node) })
+    }
   }
 
-  for (const [hostId, children] of childrenByHost) {
-    const center = hostPositions.get(hostId)
-    if (center === undefined) continue
-    const sorted = [...children].sort((left, right) => left.id.localeCompare(right.id))
-    sorted.forEach((child, index) => {
-      const orbit = 26 + Math.sqrt(index + 1) * 15
-      const angle = index * GOLDEN_ANGLE
-      positioned.push({
-        node: child,
-        x: center.x + Math.cos(angle) * orbit,
-        y: center.y + Math.sin(angle) * orbit,
-        radius: radiusOf(child)
-      })
-    })
-  }
-
-  unparented.forEach((node, index) => {
+  // Anything the BFS could not reach (unparented nodes and children whose
+  // parent chain never got a position, e.g. a foothold whose entry asset row is
+  // missing) still renders on the outer ring instead of disappearing.
+  const orphans = nodes.filter((node) => !placed.has(node.id))
+  orphans.forEach((node, index) => {
     const radius = hostOrbit + 90 + Math.sqrt(index + 1) * 26
     const angle = index * GOLDEN_ANGLE
     positioned.push({
@@ -335,6 +387,48 @@ function NodeGlyph({
             strokeWidth={0.6}
           />
         </>
+      ) : node.type === 'foothold' ? (
+        <>
+          {/* Foothold bridge: tall diamond + a stem hinting at the entry asset. */}
+          <polygon
+            points={polygonPoints(radius * 0.85, 4)}
+            fill={rgba(color, 0.12)}
+            stroke={color}
+            strokeWidth={1.4}
+          />
+          <line
+            x1={0}
+            y1={-radius * 1.45}
+            x2={0}
+            y2={radius * 1.45}
+            stroke={color}
+            strokeOpacity={0.45}
+            strokeWidth={0.6}
+          />
+        </>
+      ) : node.type === 'internal_host' ? (
+        <>
+          {/* Internal host: hex prism silhouette (two hex rings + inner hex). */}
+          <polygon
+            points={polygonPoints(radius, 6)}
+            fill={rgba(color, 0.1)}
+            stroke={color}
+            strokeWidth={1.25}
+          />
+          <polygon
+            points={polygonPoints(radius * 0.6, 6, Math.PI / 2)}
+            fill="none"
+            stroke={color}
+            strokeOpacity={0.42}
+            strokeWidth={0.6}
+          />
+        </>
+      ) : node.type === 'internal_service' ? (
+        <>
+          {/* Internal service: the small port ring. */}
+          <circle r={radius} fill={rgba(color, 0.08)} stroke={color} strokeWidth={1.1} />
+          <circle r={radius * 0.5} fill="none" stroke={color} strokeOpacity={0.5} strokeWidth={0.6} />
+        </>
       ) : (
         <>
           {/* Snapshot: emerald double ring. */}
@@ -380,6 +474,8 @@ export function NebulaGraph2D({
   highlightIds,
   focusIds,
   performanceMode,
+  routeNodeIds = null,
+  routeLinkKeys = null,
   onSelect,
   className
 }: NebulaGraph2DProps) {
@@ -396,6 +492,24 @@ export function NebulaGraph2D({
   )
   const focusSet = useMemo(() => (focusIds === null ? null : new Set(focusIds)), [focusIds])
 
+  /**
+   * Selected pivot route. The overlay is a pure highlight: only ids that have a
+   * layout position are drawn, and performance mode degrades it to a no-op like
+   * the 3D batched tint does.
+   */
+  const routePoints = useMemo(() => {
+    if (performanceMode || routeNodeIds === null) return null
+    const points = routeNodeIds
+      .map((id) => positions.get(id))
+      .filter((entry): entry is PositionedNode => entry !== undefined)
+      .map((entry) => `${entry.x},${entry.y}`)
+    return points.length >= 2 ? points.join(' ') : null
+  }, [performanceMode, positions, routeNodeIds])
+  const routeLinkSet = useMemo(() => {
+    if (performanceMode || routeLinkKeys === null || routeLinkKeys.length === 0) return null
+    return new Set(routeLinkKeys)
+  }, [performanceMode, routeLinkKeys])
+
   const opacityOf = (node: NebulaNode): number => {
     const selected = node.id === selectedId
     const matched = highlightSet === null || highlightSet.has(node.id)
@@ -409,7 +523,11 @@ export function NebulaGraph2D({
     // Large graphs keep only aggregate labels to avoid text soup; small graphs
     // additionally label hosts and heavy nodes.
     if (performanceMode) return false
-    if (node.type === 'host') return true
+    if (node.type === 'host' || node.type === 'internal_host' || node.type === 'foothold') {
+      return true
+    }
+    // A port label is noise unless it actually carries a vulnerability.
+    if (node.type === 'internal_service') return node.data.vuln_ids.length > 0
     return node.val >= 14
   }
 
@@ -490,6 +608,7 @@ export function NebulaGraph2D({
             const to = positions.get(link.target)
             if (from === undefined || to === undefined) return null
             const derived = link.derived === true
+            const onRoute = routeLinkSet?.has(`${link.source}|${link.target}`) === true
             return (
               <line
                 key={`link-${index}`}
@@ -497,16 +616,44 @@ export function NebulaGraph2D({
                 y1={from.y}
                 x2={to.x}
                 y2={to.y}
-                stroke={LINK_COLORS[link.relation]}
-                strokeOpacity={linkOpacity(link.relation, derived)}
-                strokeWidth={derived ? 0.5 : 0.85}
+                stroke={onRoute ? ATTACK_PATH_COLOR : LINK_COLORS[link.relation]}
+                strokeOpacity={onRoute ? ATTACK_PATH_OPACITY : linkOpacity(link.relation, derived)}
+                strokeWidth={onRoute ? ATTACK_PATH_WIDTH : derived ? 0.5 : 0.85}
                 strokeDasharray={
-                  derived ? `${DERIVED_LINK_DASH[0]} ${DERIVED_LINK_DASH[1]}` : undefined
+                  derived && !onRoute
+                    ? `${DERIVED_LINK_DASH[0]} ${DERIVED_LINK_DASH[1]}`
+                    : undefined
                 }
               />
             )
           })}
         </g>
+
+        {/* Selected pivot route: one hot polyline over the link web (plan §7.3).
+            Pure overlay — it neither moves a node nor changes the layout. */}
+        {routePoints !== null ? (
+          <g aria-hidden="true" className="pointer-events-none">
+            <polyline
+              points={routePoints}
+              fill="none"
+              stroke={ATTACK_PATH_COLOR}
+              strokeOpacity={0.35}
+              strokeWidth={ATTACK_PATH_WIDTH * 3.4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <polyline
+              points={routePoints}
+              fill="none"
+              stroke={ATTACK_PATH_COLOR}
+              strokeOpacity={ATTACK_PATH_OPACITY}
+              strokeWidth={ATTACK_PATH_WIDTH}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ filter: `drop-shadow(0 0 4px ${rgba(ATTACK_PATH_COLOR, 0.85)})` }}
+            />
+          </g>
+        ) : null}
 
         <g>
           {layout.nodes.map(({ node, x, y, radius }) => {

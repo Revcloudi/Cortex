@@ -346,8 +346,21 @@ export class NebulaLabelLayer {
     if (state.focusIds !== null && !state.focusIds.has(id)) return false
     if (state.hoveredId !== null && !(state.hoverIds?.has(id) ?? false)) return false
 
-    const structural = kind === 'project' || kind === 'target' || kind === 'host'
-    const evidence = kind === 'vuln' || kind === 'leak'
+    /**
+     * Structural bucket = the constellation's skeleton. Internal hub types are
+     * part of it (plan §7.3): a foothold bridge or an intranet host must never
+     * be culled by LOD / performance mode, otherwise the attack path loses its
+     * anchors. Services are evidence-ish (a port is only worth a label when
+     * zoomed in or selected), vulns/leaks keep their existing evidence rule.
+     */
+    const structural =
+      kind === 'project' ||
+      kind === 'target' ||
+      kind === 'host' ||
+      kind === 'foothold' ||
+      kind === 'internal_host'
+    const evidence =
+      kind === 'vuln' || kind === 'leak' || kind === 'internal_service'
 
     if (state.performanceMode && !structural && !danger && kind !== 'snapshot') return false
     if (lod >= 2 && !structural && !danger) return false

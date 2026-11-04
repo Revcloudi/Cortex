@@ -316,7 +316,7 @@ function defaultRunClaudeCli(args: string[]): ReturnType<ClaudeCliRunner> {
 
 export function registerInitCommand(cli: CAC, context?: CliContext): void {
   cli
-    .command('init', '一键接入 Agent：stdio MCP 配置 + 三个 Skill + 系统级强制规则')
+    .command('init', '一键接入 Agent：stdio MCP 配置 + 四个 Skill + 系统级强制规则')
     .option('--dry-run', '只展示将修改的文件与 diff，不写任何文件')
     .option('--yes', '跳过交互确认，直接写入')
     .option('--agents <agents>', '限定 Agent，逗号分隔：dsh,codex,claude,cursor,workbuddy,zcode（默认自动检测）')

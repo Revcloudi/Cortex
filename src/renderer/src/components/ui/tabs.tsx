@@ -38,7 +38,11 @@ const TabsContent = forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      'focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+      // Radix hides inactive panels with the `hidden` attribute, but an author
+      // display utility on the panel (e.g. `flex`) would override the UA
+      // `[hidden]{display:none}` rule and keep the panel in the layout. The
+      // data-state variant restores the intended hiding with higher specificity.
+      'data-[state=inactive]:hidden focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
       className
     )}
     {...props}

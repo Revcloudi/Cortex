@@ -8,8 +8,11 @@ import {
   X
 } from 'lucide-react'
 import type {
+  FootholdNode,
   GraphNeighbor,
   HostNode,
+  InternalHostNode,
+  InternalServiceNode,
   LeakNode,
   NebulaNode,
   ProjectNode,
@@ -27,8 +30,11 @@ import { useI18n } from '@renderer/i18n'
 import type { Translate } from '@renderer/lib/api'
 import { formatDateTimeFull, formatVulnType } from '@renderer/lib/format'
 import {
+  FOOTHOLD_STATUS_COLORS,
+  INTERNAL_HOST_STATE_COLORS,
   NEBULA_UI,
   NODE_TYPE_COLORS,
+  SERVICE_STATE_COLORS,
   SEVERITY_BADGE_CLASSES,
   SEVERITY_NODE_COLORS,
   STATUS_BADGE_CLASSES,
@@ -468,6 +474,185 @@ function TargetSections(node: TargetNode, t: Translate): NodeSections {
   }
 }
 
+/** Tinted HUD chip for a status colour that is not a severity (internal states). */
+function statusTint(color: string): CSSProperties {
+  return {
+    borderColor: rgba(color, 0.4),
+    backgroundColor: rgba(color, 0.12),
+    color: rgba(color, 0.95)
+  }
+}
+
+/** Foothold bridge: identity + how/where the intranet was entered (plan §7.1). */
+function FootholdSections(node: FootholdNode, t: Translate): NodeSections {
+  const { data } = node
+  const identity: RowSpec[] = [
+    {
+      key: 'project',
+      label: t('nebula.field.project'),
+      value: data.project_name.trim().length > 0 ? data.project_name : t('nebula.field.none')
+    },
+    {
+      key: 'entryHost',
+      label: t('nebula.field.entryHost'),
+      value: data.entry_host_port,
+      mono: true
+    },
+    {
+      key: 'accessType',
+      label: t('nebula.field.accessType'),
+      value: (
+        <Badge style={statusTint(NODE_TYPE_COLORS.foothold)}>
+          {t(`nebula.accessType.${data.access_type}`)}
+        </Badge>
+      )
+    },
+    {
+      key: 'privilege',
+      label: t('nebula.field.privilege'),
+      value: t(`nebula.privilege.${data.privilege_level}`)
+    },
+    {
+      key: 'status',
+      label: t('nebula.field.status'),
+      value: (
+        <Badge style={statusTint(FOOTHOLD_STATUS_COLORS[data.status])}>
+          {t(`nebula.footholdStatus.${data.status}`)}
+        </Badge>
+      )
+    },
+    {
+      key: 'establishedAt',
+      label: t('nebula.field.establishedAt'),
+      value:
+        data.established_at.trim().length > 0
+          ? formatDateTimeFull(data.established_at)
+          : t('nebula.field.none')
+    },
+    {
+      key: 'lastVerifiedAt',
+      label: t('nebula.field.lastVerifiedAt'),
+      value:
+        data.last_verified_at.trim().length > 0
+          ? formatDateTimeFull(data.last_verified_at)
+          : t('nebula.field.none')
+    },
+    {
+      key: 'evidence',
+      label: t('nebula.field.evidence'),
+      value:
+        data.evidence.trim().length > 0 ? preview(data.evidence, 140) : t('nebula.field.none')
+    }
+  ]
+  const metrics: RowSpec[] = [
+    { key: 'reachedHosts', label: t('nebula.field.reachedHosts'), value: data.host_count, mono: true }
+  ]
+  if (data.entry_vuln_id.trim().length > 0) {
+    metrics.push({
+      key: 'entryVuln',
+      label: t('nebula.field.entryVuln'),
+      value: data.entry_vuln_id,
+      mono: true
+    })
+  }
+  return { identity, metrics }
+}
+
+/** Internal host: the intranet machine record (never a top-level Web asset). */
+function InternalHostSections(node: InternalHostNode, t: Translate): NodeSections {
+  const { data } = node
+  return {
+    identity: [
+      { key: 'ip', label: t('nebula.field.ip'), value: data.ip, mono: true },
+      {
+        key: 'hostname',
+        label: t('nebula.field.hostname'),
+        value: data.hostname.trim().length > 0 ? data.hostname : t('nebula.field.none')
+      },
+      {
+        key: 'project',
+        label: t('nebula.field.project'),
+        value: data.project_name.trim().length > 0 ? data.project_name : t('nebula.field.none')
+      },
+      {
+        key: 'os',
+        label: t('nebula.field.os'),
+        value: data.os.trim().length > 0 ? data.os : t('nebula.field.none')
+      },
+      {
+        key: 'subnet',
+        label: t('nebula.field.subnet'),
+        value: data.subnet.trim().length > 0 ? data.subnet : t('nebula.field.none'),
+        mono: true
+      },
+      {
+        key: 'state',
+        label: t('nebula.field.status'),
+        value: (
+          <Badge style={statusTint(INTERNAL_HOST_STATE_COLORS[data.state])}>
+            {t(`nebula.hostState.${data.state}`)}
+          </Badge>
+        )
+      },
+      {
+        key: 'confidence',
+        label: t('nebula.field.confidence'),
+        value: t(`nebula.confidence.${data.confidence}`)
+      },
+      {
+        key: 'lastSeen',
+        label: t('nebula.field.lastSeen'),
+        value:
+          data.last_seen.trim().length > 0
+            ? formatDateTimeFull(data.last_seen)
+            : t('nebula.field.none')
+      }
+    ],
+    metrics: [
+      { key: 'services', label: t('nebula.field.serviceCount'), value: data.service_count, mono: true },
+      { key: 'footholds', label: t('nebula.field.footholdCount'), value: data.foothold_ids.length, mono: true }
+    ]
+  }
+}
+
+/** Internal service: one port on one intranet host. */
+function InternalServiceSections(node: InternalServiceNode, t: Translate): NodeSections {
+  const { data } = node
+  const endpoint = data.ip.trim().length > 0 ? `${data.ip}:${data.port}` : `${data.host_id}:${data.port}`
+  return {
+    identity: [
+      { key: 'endpoint', label: t('nebula.field.serviceEndpoint'), value: endpoint, mono: true },
+      {
+        key: 'protocol',
+        label: t('nebula.field.protocol'),
+        value: data.protocol.trim().length > 0 ? data.protocol : t('nebula.field.none')
+      },
+      {
+        key: 'service',
+        label: t('nebula.field.service'),
+        value: data.service.trim().length > 0 ? data.service : t('nebula.field.none')
+      },
+      {
+        key: 'state',
+        label: t('nebula.field.status'),
+        value: (
+          <Badge style={statusTint(SERVICE_STATE_COLORS[data.state])}>
+            {t(`nebula.serviceState.${data.state}`)}
+          </Badge>
+        )
+      },
+      {
+        key: 'project',
+        label: t('nebula.field.project'),
+        value: data.project_name.trim().length > 0 ? data.project_name : t('nebula.field.none')
+      }
+    ],
+    metrics: [
+      { key: 'vulns', label: t('nebula.field.vulnCount'), value: data.vuln_ids.length, mono: true }
+    ]
+  }
+}
+
 /** Discriminated-union dispatch — no casts, every branch gets its own data type. */
 function sectionsFor(node: NebulaNode, t: Translate): NodeSections {
   switch (node.type) {
@@ -483,8 +668,12 @@ function sectionsFor(node: NebulaNode, t: Translate): NodeSections {
       return node.data.aggregate === undefined ? LeakSections(node, t) : AggregateSections(node, t)
     case 'snapshot':
       return SnapshotSections(node, t)
-    default:
-      return { identity: [], metrics: [] }
+    case 'foothold':
+      return FootholdSections(node, t)
+    case 'internal_host':
+      return InternalHostSections(node, t)
+    case 'internal_service':
+      return InternalServiceSections(node, t)
   }
 }
 

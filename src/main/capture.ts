@@ -70,6 +70,44 @@ const clickAssetRow = (index: number): Promise<unknown> =>
     })()
   `)
 
+/** Click the n-th option of an open HUD dropdown (`role="listbox"`). */
+const clickRoleOption = (index: number): Promise<unknown> =>
+  window.webContents.executeJavaScript(`
+    (() => {
+      const options = document.querySelectorAll('[role="option"]');
+      const option = options[${index}];
+      if (!option) return false;
+      option.click();
+      return true;
+    })()
+  `)
+
+/** Close the plain `role="dialog"` overlay (database picker) via its X button. */
+const closeDialogOverlay = (): Promise<unknown> =>
+  window.webContents.executeJavaScript(`
+    (() => {
+      const dialog = document.querySelector('[role="dialog"]');
+      if (!dialog) return false;
+      const button = dialog.querySelector('button');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()
+  `)
+
+/** Scroll the page until an element carrying `testId` is centered (capture helper). */
+const scrollToTestId = (testId: string): Promise<unknown> => {
+  const selector = `[data-testid="${testId}"]`
+  return window.webContents.executeJavaScript(`
+    (() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return false;
+      el.scrollIntoView({ block: 'center' });
+      return true;
+    })()
+  `)
+}
+
 const clickNav = (label: string): Promise<unknown> =>
   window.webContents.executeJavaScript(`
     (() => {
@@ -433,8 +471,171 @@ export async function runCaptureMode(
     if (dbOpened) {
       await delay(600)
       await captureStep('29-db-picker.png')
+      // The picker is a plain role="dialog" overlay (not Radix), so close it via
+      // its header button before continuing; Escape would not dismiss it.
+      const closed = await closeDialogOverlay()
+      if (!closed) logger.warn('[capture] database picker close button not found')
+      await delay(500)
     }
   } catch (error) {
     logger.warn('[capture] failed to capture MCP page', error)
+  }
+
+  /*
+   * Internal operations domain (Plan B). The English toggle above leaves the UI
+   * in EN; flip it back first so the new screens are captured in the primary
+   * language, then also re-check one EN frame at the end for i18n coverage.
+   */
+  try {
+    await clickSelector('[data-testid="lang-toggle"]')
+    await delay(500)
+
+    // Dashboard: Web (default) / internal-summary tabs.
+    await clickNav('漏洞看板')
+    await delay(500)
+    const internalTab = await clickSelector('[data-testid="dashboard-tab-internal"]')
+    if (internalTab) {
+      await waitForSelector('[data-testid="dashboard-internal-panel"]', true)
+      await delay(900)
+      await captureStep('30-dashboard-internal-tab.png')
+      await clickSelector('[data-testid="dashboard-tab-web"]')
+      await delay(500)
+    } else {
+      logger.warn('[capture] dashboard internal tab not found')
+    }
+  } catch (error) {
+    logger.warn('[capture] failed to capture dashboard internal tab', error)
+  }
+
+  try {
+    // Internal operations page: overview cards + heatmap.
+    await clickNav('内网作战')
+    await waitForSelector('[data-testid="internal-page"]', true)
+    await delay(1400)
+    await captureStep('31-internal-overview.png')
+
+    const heatmapScrolled = await scrollToTestId('internal-heatmap')
+    if (heatmapScrolled) {
+      await delay(500)
+    }
+    const bucketClicked = await clickSelector('[data-testid="internal-heatmap-bucket"]')
+    if (bucketClicked) {
+      await delay(700)
+      await captureStep('32-internal-heatmap.png')
+      await clickSelector('[data-testid="internal-heatmap-clear"]')
+      await delay(500)
+    } else {
+      logger.warn('[capture] internal heatmap bucket not found')
+    }
+
+    const matrixScrolled = await scrollToTestId('internal-matrix-row')
+    if (matrixScrolled) {
+      await delay(700)
+      await captureStep('33-internal-credential-matrix.png')
+    } else {
+      logger.warn('[capture] internal credential matrix not found')
+    }
+
+    const routeScrolled = await scrollToTestId('internal-route-lane')
+    if (routeScrolled) {
+      await delay(700)
+      await captureStep('34-internal-routes.png')
+    } else {
+      logger.warn('[capture] internal route view not found')
+    }
+
+    const lootScrolled = await scrollToTestId('internal-loot-form')
+    if (lootScrolled) {
+      await delay(700)
+      await captureStep('35-internal-loot.png')
+    } else {
+      logger.warn('[capture] internal loot panel not found')
+    }
+
+    const vulnScrolled = await scrollToTestId('internal-vuln-row')
+    if (vulnScrolled) {
+      await delay(700)
+      await captureStep('36-internal-vulns.png')
+    } else {
+      logger.warn('[capture] internal vulnerability list not found')
+    }
+  } catch (error) {
+    logger.warn('[capture] failed to capture internal operations page', error)
+  }
+
+  try {
+    // Entry asset detail: foothold / reachable-internal section.
+    await clickNav('资产库')
+    await delay(600)
+    const assetOpened = await clickAssetRow(0)
+    if (assetOpened) {
+      await waitForSelector('[data-testid="asset-sheet"]', true)
+      await delay(900)
+      const internalAssetTab = await clickSelector('[data-testid="asset-tab-internal"]')
+      if (internalAssetTab) {
+        await delay(800)
+        await captureStep('37-asset-internal-entry.png')
+      } else {
+        logger.warn('[capture] asset internal tab not found')
+      }
+      pressEscape()
+      await delay(400)
+    }
+  } catch (error) {
+    logger.warn('[capture] failed to capture asset internal entry', error)
+  }
+
+  try {
+    // Memory Nebula: realm switch (web / internal / all) + attack-path overlay.
+    await clickNav('记忆星云')
+    // The nebula chunk is lazy + heavy under software rendering: wait for the
+    // control panel instead of a fixed delay.
+    await waitForSelector('[data-testid="realm-internal"]', true, 10_000)
+    await delay(2_600)
+    const internalRealm = await clickSelector('[data-testid="realm-internal"]')
+    if (internalRealm) {
+      await delay(2200)
+      // The attack-path overlay is ON by default with the first pivot route
+      // auto-selected, so this frame already shows the highlighted path.
+      await captureStep('38-nebula-internal-realm.png')
+      // Switch to the other pivot route (established chain) for a second frame.
+      const pickerOpened = await clickSelector('[aria-label="选择路由"]')
+      if (pickerOpened) {
+        await waitForSelector('[role="listbox"]', true)
+        await delay(400)
+        const routePicked = await clickRoleOption(1)
+        if (routePicked) {
+          await delay(1800)
+          await captureStep('39-nebula-attack-path.png')
+        } else {
+          logger.warn('[capture] second nebula route option not found')
+        }
+      } else {
+        logger.warn('[capture] nebula route picker did not open')
+      }
+      await clickSelector('[data-testid="realm-all"]')
+      await delay(2200)
+      await captureStep('40-nebula-all-realms.png')
+    } else {
+      logger.warn('[capture] nebula realm switch not found')
+    }
+  } catch (error) {
+    logger.warn('[capture] failed to capture nebula realms', error)
+  }
+
+  try {
+    // One English frame of the internal page for i18n coverage.
+    await clickNav('内网作战')
+    await waitForSelector('[data-testid="internal-page"]', true)
+    await delay(600)
+    const toggledToEnglish = await clickSelector('[data-testid="lang-toggle"]')
+    if (toggledToEnglish) {
+      await delay(800)
+      await captureStep('41-internal-overview-en.png')
+      await clickSelector('[data-testid="lang-toggle"]')
+      await delay(400)
+    }
+  } catch (error) {
+    logger.warn('[capture] failed to capture English internal page', error)
   }
 }
