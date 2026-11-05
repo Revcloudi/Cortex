@@ -70,6 +70,18 @@ const clickAssetRow = (index: number): Promise<unknown> =>
     })()
   `)
 
+/** Select the n-th retest-lab candidate (so a PoC-bearing finding is captured). */
+const clickPocCandidate = (index: number): Promise<unknown> =>
+  window.webContents.executeJavaScript(`
+    (() => {
+      const rows = document.querySelectorAll('[data-testid="retest-candidate-row"]');
+      const row = rows[${index}];
+      if (!row) return false;
+      row.click();
+      return true;
+    })()
+  `)
+
 /** Click the n-th option of an open HUD dropdown (`role="listbox"`). */
 const clickRoleOption = (index: number): Promise<unknown> =>
   window.webContents.executeJavaScript(`
@@ -637,5 +649,84 @@ export async function runCaptureMode(
     }
   } catch (error) {
     logger.warn('[capture] failed to capture English internal page', error)
+  }
+
+  try {
+    /*
+     * Exploit-as-Code retest lab (desktop only): left nav card, candidate list
+     * + workspace, provider/config dialog. The DB used for capture should
+     * contain Web vulnerabilities (and optionally a draft PoC artifact) so the
+     * workspace renders a form/code panel instead of the empty state.
+     */
+    const opened = await clickSelector('[data-testid="nav-retest"]')
+    if (!opened) {
+      logger.warn('[capture] retest lab nav card not found')
+    } else {
+      await waitForSelector('[data-testid="retest-page"]', true, 5_000)
+      await delay(900)
+      await captureStep('42-retest-lab.png')
+
+      const selected = await clickSelector('[data-testid="retest-candidate-row"]')
+      if (selected) {
+        await waitForSelector('[data-testid="retest-workspace"]', true, 4_000)
+        await delay(1_000)
+        await captureStep('43-retest-workspace.png')
+        const runScrolled = await scrollToTestId('retest-run-button')
+        if (runScrolled) {
+          await delay(500)
+          await captureStep('44-retest-run-panel.png')
+        }
+
+        // Pick a candidate that owns a PoC artifact (if the seeded/real DB has
+        // one) so the dynamic form + code panel + run history are captured too.
+        const richCandidate = await clickPocCandidate(6)
+        if (richCandidate) {
+          await delay(1_000)
+          await scrollToTestId('retest-workspace')
+          await delay(400)
+          await captureStep('47-retest-workspace-artifact.png')
+          const historyScrolled = await scrollToTestId('retest-run-button')
+          if (historyScrolled) {
+            // Scroll further to the log terminal / run history section.
+            await window.webContents.executeJavaScript(`
+              (() => {
+                const scroller = document.querySelector('[data-testid="retest-page"] main, [data-testid="retest-page"]')
+                const target = document.querySelector('[data-testid="retest-console"]') ?? document.querySelector('[data-testid="retest-run-button"]')
+                if (target) target.scrollIntoView({ block: 'start' })
+                return true
+              })()
+            `)
+            await delay(700)
+            await captureStep('48-retest-console-history.png')
+          }
+        } else {
+          logger.warn('[capture] no PoC-bearing retest candidate to capture')
+        }
+      } else {
+        logger.warn('[capture] retest lab has no Web candidate row')
+      }
+
+      const configOpened = await clickSelector('[data-testid="retest-config-open"]')
+      if (configOpened) {
+        await waitForSelector('[data-testid="retest-config-panel"]', true, 3_000)
+        await delay(700)
+        await captureStep('45-retest-config.png')
+        pressEscape()
+        await delay(400)
+      } else {
+        logger.warn('[capture] retest config dialog did not open')
+      }
+
+      // English frame for i18n coverage.
+      const toggled = await clickSelector('[data-testid="lang-toggle"]')
+      if (toggled) {
+        await delay(700)
+        await captureStep('46-retest-lab-en.png')
+        await clickSelector('[data-testid="lang-toggle"]')
+        await delay(400)
+      }
+    }
+  } catch (error) {
+    logger.warn('[capture] failed to capture retest lab', error)
   }
 }

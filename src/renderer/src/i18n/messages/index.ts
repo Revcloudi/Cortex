@@ -5,6 +5,7 @@ import { dashboardMessages } from './dashboard'
 import { internalMessages } from './internal'
 import { mcpMessages } from './mcp'
 import { nebulaMessages } from './nebula'
+import { retestMessages } from './retest'
 import { snapshotMessages } from './snapshot'
 import { uiMessages } from './ui'
 import { vulnMessages } from './vuln'
@@ -20,7 +21,8 @@ const bundles: MessageBundle[] = [
   assetMessages,
   snapshotMessages,
   nebulaMessages,
-  mcpMessages
+  mcpMessages,
+  retestMessages
 ]
 
 function mergeBundles(lang: 'zh' | 'en'): Record<string, string> {

@@ -58,7 +58,22 @@ export const IPC_CHANNELS = {
   closeWindow: 'window:close',
   getWindowMaximized: 'window:get-maximized',
   windowMaximizedChanged: 'window:maximized-changed',
-  dataChanged: 'data:changed'
+  dataChanged: 'data:changed',
+  /**
+   * AI model configuration + retest proxy configuration (desktop only).
+   *
+   * The old Exploit-as-Code generated-JS pipeline and its `poc_artifacts` /
+   * `poc_runs` tables were removed in schema v5. Only provider/model settings
+   * and the retest-scoped proxy remain here.
+   */
+  getPocConfig: 'poc:config:get',
+  savePocConfig: 'poc:config:save',
+  reloadPocConfig: 'poc:config:reload',
+  upsertPocProvider: 'poc:provider:upsert',
+  removePocProvider: 'poc:provider:remove',
+  listPocModels: 'poc:provider:models',
+  testPocProvider: 'poc:provider:test',
+  sendRepeaterRequest: 'repeater:send'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -101,13 +116,41 @@ import type {
   VulnStatus
 } from './types'
 import type { MemoryGraphData, MemoryGraphQuery } from './graph'
+import type {
+  ListPocModelsInput,
+  ListPocModelsResult,
+  PocConfigView,
+  SavePocConfigInput,
+  TestPocProviderResult,
+  UpsertPocProviderInput
+} from './poc'
+import type { RepeaterSendInput, RepeaterSendResult } from './repeater'
 
 export interface DashboardStatsQuery {
   /** Realm scope of the main counters; default `all` (legacy behavior). */
   realm?: RealmFilter
 }
 
-export interface CortexApi {
+/**
+ * AI model configuration + retest HTTP repeater API (desktop only).
+ *
+ * `ctx web` does not implement these: model keys and retest traffic stay in the
+ * Electron main process.
+ */
+export interface PocApi {
+  getPocConfig(): Promise<PocConfigView>
+  savePocConfig(input: SavePocConfigInput): Promise<PocConfigView>
+  reloadPocConfig(): Promise<PocConfigView>
+  upsertPocProvider(input: UpsertPocProviderInput): Promise<PocConfigView>
+  removePocProvider(id: string): Promise<PocConfigView>
+  /** Credentials are used in-memory for this call only; never persisted/logged. */
+  listPocModels(input: ListPocModelsInput): Promise<ListPocModelsResult>
+  testPocProvider(input: { id: string }): Promise<TestPocProviderResult>
+  /** Sends a raw HTTP request for the selected Web finding via the retest proxy. */
+  sendRepeaterRequest(input: RepeaterSendInput): Promise<RepeaterSendResult>
+}
+
+export interface CortexApi extends PocApi {
   /** Server-side paginated + filtered vulnerability list. */
   listVulnerabilities(filters?: VulnListQuery): Promise<PaginatedVulnerabilities>
   getVulnerability(id: string): Promise<Vulnerability | null>

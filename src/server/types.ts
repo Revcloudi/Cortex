@@ -1,4 +1,6 @@
 import type { DatabaseService } from '../core/db/DatabaseService'
+import type { PocConfigService } from '../main/services/pocContracts'
+import type { RepeaterService } from '../main/services/RepeaterService'
 import type {
   AppInfo,
   SetupInfo,
@@ -32,6 +34,10 @@ export interface WebServerDeps {
   getSetupInfo: () => SetupInfo
   /** Reuse `ctx init` in-process (writes the server machine's agent configs). */
   runSetup: (request: SetupRunRequest) => Promise<SetupRunResult>
+  /** Retest-scoped proxy + AI config file (same file as the desktop app). */
+  pocConfig: PocConfigService
+  /** Raw HTTP repeater with target-origin allowlist. */
+  repeater: RepeaterService
 }
 
 /** Normalized HTTP request handed to a route handler. */

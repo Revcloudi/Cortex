@@ -60,6 +60,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "test": "tsx --test \"src/cli/__tests__/*.test.ts\"",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "agent:dsh": "node out/cli/ctx.cjs init --yes --agents dsh",
     "agent:codex": "node out/cli/ctx.cjs init --yes --agents codex",

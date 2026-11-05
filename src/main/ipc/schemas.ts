@@ -214,3 +214,18 @@ export { RecordCredentialTrialInputSchema as RecordCredentialTrialIpcSchema } fr
 /** `importLoot`: local file path only; the importer never executes the file. */
 export { ImportLootInputSchema as ImportLootIpcSchema } from '../../shared/internal'
 
+/* ------------------------------------------------------------------------- */
+/* AI model config + retest repeater (desktop only)                          */
+/* ------------------------------------------------------------------------- */
+
+export { PocIdSchema as PocIdIpcSchema } from '../../shared/poc'
+
+export {
+  ListPocModelsInputSchema as ListPocModelsIpcSchema,
+  SavePocConfigInputSchema as SavePocConfigIpcSchema,
+  TestPocProviderInputSchema as TestPocProviderIpcSchema,
+  UpsertPocProviderInputSchema as UpsertPocProviderIpcSchema
+} from '../../shared/poc'
+
+export { RepeaterSendInputSchema as RepeaterSendIpcSchema } from '../../shared/repeater'
+

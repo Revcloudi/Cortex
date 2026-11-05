@@ -9,9 +9,10 @@ import { InternalPage } from '@renderer/pages/InternalPage'
 import { AssetPage } from '@renderer/pages/AssetPage'
 import { SnapshotPage } from '@renderer/pages/SnapshotPage'
 import { McpPage } from '@renderer/pages/McpPage'
+import { AiConfigPage } from '@renderer/pages/AiConfigPage'
 import { useAppInfo } from '@renderer/hooks/useAppInfo'
 import { I18nProvider, useI18n } from '@renderer/i18n'
-import { getApi } from '@renderer/lib/api'
+import { getApi, IS_WEB_RUNTIME } from '@renderer/lib/api'
 import type { AppDetailTarget, AppPage } from '@renderer/lib/navigation'
 
 /**
@@ -21,6 +22,15 @@ import type { AppDetailTarget, AppPage } from '@renderer/lib/navigation'
 const NebulaPage = lazy(async () => {
   const module = await import('@renderer/pages/NebulaPage')
   return { default: module.NebulaPage }
+})
+
+/**
+ * The desktop-only re-test lab owns a syntax highlighter; like the nebula page
+ * it must not inflate the first-screen bundle (and never loads in `ctx web`).
+ */
+const RetestPage = lazy(async () => {
+  const module = await import('@renderer/pages/RetestPage')
+  return { default: module.RetestPage }
 })
 
 export default function App() {
@@ -61,7 +71,11 @@ export default function App() {
           <Titlebar />
 
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            <Sidebar page={page} onNavigate={navigate} databasePath={info?.dbPath ?? null} />
+            <Sidebar
+              page={page}
+              onNavigate={navigate}
+              databasePath={info?.dbPath ?? null}
+            />
 
             <div className="flex min-w-0 flex-1 flex-col">
               <main className="min-h-0 flex-1 overflow-y-auto">
@@ -88,6 +102,12 @@ export default function App() {
                   <Suspense fallback={<NebulaPageFallback />}>
                     <NebulaPage dataVersion={dataVersion} onOpenDetail={openDetail} />
                   </Suspense>
+                ) : page === 'retest' ? (
+                  <Suspense fallback={<RetestPageFallback />}>
+                    <RetestPage dataVersion={dataVersion} />
+                  </Suspense>
+                ) : page === 'ai-config' && !IS_WEB_RUNTIME ? (
+                  <AiConfigPage />
                 ) : (
                   <McpPage />
                 )}
@@ -135,6 +155,19 @@ function NebulaPageFallback() {
       <div className="flex items-center gap-2.5 text-[12px] text-white/45">
         <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
         {t('nebula.loading')}
+      </div>
+    </div>
+  )
+}
+
+/** Light-weight fallback while the desktop-only re-test chunk loads. */
+function RetestPageFallback() {
+  const { t } = useI18n()
+  return (
+    <div className="flex h-full w-full items-center justify-center">
+      <div className="flex items-center gap-2.5 text-[12px] text-muted-foreground">
+        <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+        {t('common.loading')}
       </div>
     </div>
   )

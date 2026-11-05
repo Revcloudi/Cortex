@@ -603,6 +603,18 @@ const LIST_COLUMNS = `
   severity, target_url, status, created_at
 `
 
+/**
+ * Explicit full-row column list (no `SELECT *`): future columns must be added
+ * here deliberately, so neither the GUI nor MCP can start exposing one by
+ * accident. PoC data lives in separate tables and is never joined in.
+ */
+const FULL_VULNERABILITY_COLUMNS = `
+  id, host, service_host, realm, internal_service_id, entry_point, vuln_name, vuln_type,
+  severity, target_url, description, impact, affected_interfaces, reproduction_steps,
+  remediation, crypto_details, test_boundaries, retest_results, related_vuln_ids,
+  status, created_at
+`
+
 function parseJsonArray<T>(raw: string): T[] {
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -1356,6 +1368,14 @@ export class DatabaseService {
       'CREATE INDEX IF NOT EXISTS idx_vulnerabilities_internal_service ON vulnerabilities (internal_service_id)'
     )
 
+    /*
+     * Schema v5: remove the abandoned Exploit-as-Code PoC tables. The retest
+     * lab is being rebuilt as a raw HTTP repeater; generated JS artifacts and
+     * run history are no longer part of the product. Dropping is idempotent.
+     */
+    this.db.exec('DROP TABLE IF EXISTS poc_runs')
+    this.db.exec('DROP TABLE IF EXISTS poc_artifacts')
+
     this.db.pragma(`user_version = ${DATABASE_SCHEMA_VERSION}`)
   }
 
@@ -1545,7 +1565,7 @@ export class DatabaseService {
 
   getById(id: string): Vulnerability | null {
     const row = this.db
-      .prepare('SELECT * FROM vulnerabilities WHERE id = ?')
+      .prepare(`SELECT ${FULL_VULNERABILITY_COLUMNS} FROM vulnerabilities WHERE id = ?`)
       .get(id) as VulnerabilityRow | undefined
     return row ? this.mapRow(row) : null
   }

@@ -1,6 +1,14 @@
-import { Boxes, Brain, Network, Orbit, Plug, ShieldAlert, type LucideIcon } from 'lucide-react'
+import { Bot, Boxes, Brain, FlaskConical, Network, Orbit, Plug, ShieldAlert, type LucideIcon } from 'lucide-react'
 
-export type AppPage = 'dashboard' | 'internal' | 'nebula' | 'assets' | 'snapshots' | 'mcp'
+export type AppPage =
+  | 'dashboard'
+  | 'internal'
+  | 'nebula'
+  | 'assets'
+  | 'snapshots'
+  | 'mcp'
+  | 'retest'
+  | 'ai-config'
 
 /** Cross-page deep link used by the nebula inspector ("view full details"). */
 export type AppDetailKind = 'vuln' | 'asset' | 'snapshot'
@@ -28,7 +36,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { page: 'nebula', labelKey: 'nav.nebula', icon: Orbit },
   { page: 'assets', labelKey: 'nav.assets', icon: Boxes },
   { page: 'snapshots', labelKey: 'nav.snapshots', icon: Brain },
-  { page: 'mcp', labelKey: 'nav.mcp', icon: Plug }
+  { page: 'mcp', labelKey: 'nav.mcp', icon: Plug },
+  { page: 'retest', labelKey: 'nav.retest', icon: FlaskConical },
+  { page: 'ai-config', labelKey: 'retest.aiConfig.nav', icon: Bot }
 ]
 
 export const PAGE_META: Record<AppPage, { titleKey: string; descriptionKey: string }> = {
@@ -55,5 +65,13 @@ export const PAGE_META: Record<AppPage, { titleKey: string; descriptionKey: stri
   mcp: {
     titleKey: 'nav.mcp',
     descriptionKey: 'ui.pageMeta.mcp.description'
+  },
+  retest: {
+    titleKey: 'nav.retest',
+    descriptionKey: 'retest.page.repeaterSubtitle'
+  },
+  'ai-config': {
+    titleKey: 'retest.aiConfig.nav',
+    descriptionKey: 'retest.aiConfig.description'
   }
 }

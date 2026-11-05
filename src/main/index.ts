@@ -16,6 +16,8 @@ import type { AppInfo, McpRuntimeInfo } from '../shared/types'
 import { runCaptureMode } from './capture'
 import { registerIpcHandlers, unregisterIpcHandlers } from './ipc/handlers'
 import { logger } from './logger'
+import { createPocConfigService } from './pocConfig'
+import { createRepeaterService, type RepeaterService } from './services/RepeaterService'
 import { developmentNodeCommand, installedBinDir, nodeExecutableName } from './runtimePaths'
 import { configuredDatabasePath, persistDatabasePath } from './settings'
 import { createDatabaseWatcher, type DatabaseWatcher } from './watcher'
@@ -83,6 +85,7 @@ let database: DatabaseService | null = null
 let databaseWatcher: DatabaseWatcher | null = null
 let ipcRegistered = false
 let quitting = false
+let repeaterService: RepeaterService | null = null
 /** One automatic relaunch for the elevated-sandbox renderer failure. */
 let rendererRelaunchAttempted = false
 
@@ -260,12 +263,21 @@ function registerDatabaseHandlers(): void {
     unregisterIpcHandlers()
     ipcRegistered = false
   }
+  // Re-create the AI config + retest repeater for the newly attached database
+  // (config file is `dirname(data.db)/config.json`).
+  repeaterService?.dispose()
+  repeaterService = null
+  const config = createPocConfigService({ dbPath: db.dbPath, logger })
+  const repeater = createRepeaterService({ db, config, logger })
+  repeaterService = repeater
   registerIpcHandlers({
     db,
     notifyDataChanged: broadcastDataChanged,
     seedDemo: () => seedDemoData(db),
     appInfo: buildAppInfo(db),
-    switchDatabase
+    switchDatabase,
+    pocConfig: config,
+    repeater
   })
   ipcRegistered = true
 }
@@ -379,6 +391,9 @@ async function shutdown(): Promise<void> {
     logger.warn('[cortex] failed to unregister IPC handlers', error)
   }
   ipcRegistered = false
+
+  repeaterService?.dispose()
+  repeaterService = null
 
   if (databaseWatcher) {
     try {

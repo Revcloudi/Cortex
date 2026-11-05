@@ -12,15 +12,21 @@ import {
   InternalOverviewIpcSchema,
   ListAssetsIpcSchema,
   ListLootImportsIpcSchema,
+  ListPocModelsIpcSchema,
   ListSnapshotsIpcSchema,
   DashboardStatsIpcSchema,
   ListVulnerabilitiesIpcSchema,
   MemoryGraphQueryIpcSchema,
+  PocIdIpcSchema,
   RecordCredentialTrialIpcSchema,
+  RepeaterSendIpcSchema,
+  SavePocConfigIpcSchema,
   SetupRunRequestIpcSchema,
   SnapshotArchiveIpcSchema,
   SnapshotSessionIdIpcSchema,
+  TestPocProviderIpcSchema,
   UpdateStatusIpcSchema,
+  UpsertPocProviderIpcSchema,
   VulnerabilityIdsIpcSchema,
   WriteClipboardIpcSchema
 } from './schemas'
@@ -41,6 +47,8 @@ import type {
   Vulnerability
 } from '../../shared/types'
 import type { DatabaseService } from '../../core/db/DatabaseService'
+import type { PocConfigService } from '../services/pocContracts'
+import type { RepeaterService } from '../services/RepeaterService'
 import { buildMemoryGraph } from '../../core/graph/buildMemoryGraph'
 import type { MemoryGraphData } from '../../shared/graph'
 import {
@@ -55,6 +63,10 @@ export interface IpcHandlerDeps {
   seedDemo: () => number
   appInfo: AppInfo
   switchDatabase: (dbPath: string | null) => Promise<AppInfo>
+  /** AI model configuration + retest proxy configuration. */
+  pocConfig: PocConfigService
+  /** Raw HTTP repeater for the selected Web finding. */
+  repeater: RepeaterService
 }
 
 /**
@@ -356,6 +368,64 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   )
 
+  /*
+   * AI model configuration + retest-scoped proxy (desktop only).
+   * The generated-JS pipeline was removed in schema v5; only provider/model
+   * settings and the retest proxy remain. Keys never leave the main process.
+   */
+  const { pocConfig, repeater } = deps
+
+  ipcMain.handle(IPC_CHANNELS.getPocConfig, () => pocConfig.view())
+
+  ipcMain.handle(IPC_CHANNELS.savePocConfig, (_event, rawInput: unknown) => {
+    const parsed = SavePocConfigIpcSchema.safeParse(rawInput)
+    if (!parsed.success) {
+      throw new Error(`Invalid AI config payload: ${formatZodError(parsed.error)}`)
+    }
+    return pocConfig.save(parsed.data)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.reloadPocConfig, () => pocConfig.reload())
+
+  ipcMain.handle(IPC_CHANNELS.upsertPocProvider, (_event, rawInput: unknown) => {
+    const parsed = UpsertPocProviderIpcSchema.safeParse(rawInput)
+    if (!parsed.success) {
+      throw new Error(`Invalid AI provider payload: ${formatZodError(parsed.error)}`)
+    }
+    return pocConfig.upsertProvider(parsed.data)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.removePocProvider, (_event, rawId: unknown) => {
+    const parsed = PocIdIpcSchema.safeParse(rawId)
+    if (!parsed.success) {
+      throw new Error(`Invalid AI provider id: ${formatZodError(parsed.error)}`)
+    }
+    return pocConfig.removeProvider(parsed.data)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.listPocModels, async (_event, rawInput: unknown) => {
+    const parsed = ListPocModelsIpcSchema.safeParse(rawInput)
+    if (!parsed.success) {
+      throw new Error(`Invalid AI model discovery payload: ${formatZodError(parsed.error)}`)
+    }
+    return pocConfig.listModels(parsed.data)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.testPocProvider, async (_event, rawInput: unknown) => {
+    const parsed = TestPocProviderIpcSchema.safeParse(rawInput)
+    if (!parsed.success) {
+      throw new Error(`Invalid AI provider test payload: ${formatZodError(parsed.error)}`)
+    }
+    return pocConfig.testProvider(parsed.data.id)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.sendRepeaterRequest, async (_event, rawInput: unknown) => {
+    const parsed = RepeaterSendIpcSchema.safeParse(rawInput)
+    if (!parsed.success) {
+      throw new Error(`Invalid repeater payload: ${formatZodError(parsed.error)}`)
+    }
+    return repeater.send(parsed.data)
+  })
   ipcMain.handle(IPC_CHANNELS.getAppInfo, (): AppInfo => {
     return deps.appInfo
   })
@@ -486,4 +556,12 @@ export function unregisterIpcHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.toggleMaximizeWindow)
   ipcMain.removeHandler(IPC_CHANNELS.closeWindow)
   ipcMain.removeHandler(IPC_CHANNELS.getWindowMaximized)
+  ipcMain.removeHandler(IPC_CHANNELS.getPocConfig)
+  ipcMain.removeHandler(IPC_CHANNELS.savePocConfig)
+  ipcMain.removeHandler(IPC_CHANNELS.reloadPocConfig)
+  ipcMain.removeHandler(IPC_CHANNELS.upsertPocProvider)
+  ipcMain.removeHandler(IPC_CHANNELS.removePocProvider)
+  ipcMain.removeHandler(IPC_CHANNELS.listPocModels)
+  ipcMain.removeHandler(IPC_CHANNELS.testPocProvider)
+  ipcMain.removeHandler(IPC_CHANNELS.sendRepeaterRequest)
 }

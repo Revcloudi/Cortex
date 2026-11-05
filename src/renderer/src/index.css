@@ -173,6 +173,23 @@
   }
 }
 
+/*
+ * PoC progress spinners convey "still working", not decoration. With Windows
+ * "animation effects" off (prefers-reduced-motion: reduce) the global rule above
+ * freezes every spinner, which reads as a stuck button. Keep a slow rotation for
+ * these specific progress indicators only.
+ */
+@keyframes poc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.poc-spinner {
+  animation: poc-spin 1s linear infinite !important;
+  animation-duration: 1s !important;
+  animation-iteration-count: infinite !important;
+}
+
 .markdown-body {
   color: hsl(var(--foreground));
   font-size: 12.5px;

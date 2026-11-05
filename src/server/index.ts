@@ -17,6 +17,8 @@ import {
   type WebConfigInfo
 } from '../shared/web'
 import { createDatabaseWatcher } from '../main/watcher'
+import { createPocConfigService } from '../main/pocConfig'
+import { createRepeaterService } from '../main/services/RepeaterService'
 import { unauthorizedPageHtml, WebAuth } from './auth'
 import { toHttpError } from './errors'
 import { createRoutes } from './routes'
@@ -271,6 +273,9 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     logger: hubLogger
   })
 
+  const pocConfig = createPocConfigService({ dbPath: db.dbPath, logger: hubLogger })
+  const repeater = createRepeaterService({ db, config: pocConfig, logger: hubLogger })
+
   let deps: WebServerDeps = {
     db,
     notifyDataChanged: broadcastDataChanged,
@@ -278,7 +283,9 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     appInfo: buildWebAppInfo(db),
     config: buildWebConfig(options, db, readOnly, options.port, startedAt),
     getSetupInfo: () => getWebSetupInfo(),
-    runSetup: (request) => runWebSetup(request)
+    runSetup: (request) => runWebSetup(request),
+    pocConfig,
+    repeater
   }
   let routes: RouteDefinition[] = createRoutes(deps)
 
@@ -323,6 +330,19 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     pathname: string,
     search: URLSearchParams
   ): Promise<void> => {
+    /*
+     * Exploit-as-Code is desktop-only in v1 (§11.4): the `ctx web` runtime has
+     * no utility-process sandbox and deliberately exposes no `/api/poc/*`
+     * routes. Answer with the documented machine-readable error instead of a
+     * generic 404 so a future Web adapter fails loudly.
+     */
+    if (pathname === '/api/poc' || pathname.startsWith('/api/poc/')) {
+      sendJson(res, 404, {
+        error:
+          'POC_DESKTOP_ONLY: 复测实验室仅桌面端可用；ctx web 不提供 /api/poc/*（Web 端按设计文档附录 A 另行实施）。'
+      })
+      return
+    }
     const route = findRoute(method, pathname)
     if (route === null) {
       sendJson(res, 404, { error: 'Not found' })
@@ -475,6 +495,7 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     // process hangs after printing the friendly port error.
     clearInterval(heartbeat)
     rateLimiter.dispose()
+    repeater.dispose()
     try {
       await watcher.stop()
     } catch {
@@ -523,6 +544,7 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     closed = true
     clearInterval(heartbeat)
     rateLimiter.dispose()
+    repeater.dispose()
     for (const client of sseClients) {
       try {
         client.end()

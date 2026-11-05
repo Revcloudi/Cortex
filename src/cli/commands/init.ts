@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -12,14 +11,20 @@ import {
   detectAgents,
   parseAgentSelection,
   resolveAgentHomes,
+  type AgentId,
   type AgentPlan,
-  type ClaudeCliRunner,
+  type ClaudeInspection,
   type FilePlan,
   type InitAction,
   type InitActionStatus,
   type InitReport,
   type SkillLanguage
 } from '../agents'
+import {
+  claudeFixHint,
+  describeClaudeProbe,
+  inspectClaudeCommand
+} from '../agents/claudeCommand'
 import {
   applyClaudeRegistration,
   planClaude,
@@ -67,7 +72,11 @@ export interface InitDeps {
   runtime?: CliRuntime
   /** Backup timestamp source; injectable for deterministic tests. */
   now?: () => Date
-  runClaudeCli?: ClaudeCliRunner
+  /**
+   * `claude` launcher resolution + probe, injectable for tests. Called lazily and
+   * at most once, so `--agents dsh` never pays for a probe.
+   */
+  claudeInspection?: () => ClaudeInspection
   exists?: (filePath: string) => boolean
   readFile?: (filePath: string) => string
   writeFile?: (filePath: string, content: string) => void
@@ -89,8 +98,16 @@ export async function runInit(
     deps.writeFile ??
     ((filePath: string, content: string) => writeFileSync(filePath, content, 'utf8'))
   const copyFile = deps.copyFile ?? ((from: string, to: string) => copyFileSync(from, to))
-  const runClaudeCli = deps.runClaudeCli ?? defaultRunClaudeCli
   const now = deps.now ?? (() => new Date())
+
+  // The launcher probe spawns subprocesses (`where.exe`, `claude --version`), so
+  // it is lazy and memoized: `--agents dsh,codex` must never probe `claude`, and
+  // a single `ctx init` must not probe twice (detection + registration).
+  let claudeInspection: ClaudeInspection | undefined
+  const inspectClaude =
+    deps.claudeInspection ??
+    (() => inspectClaudeCommand({ env: context.env, platform: process.platform, cwd: context.cwd }))
+  const getClaudeInspection = (): ClaudeInspection => (claudeInspection ??= inspectClaude())
 
   const warnings: string[] = []
   if (!mcpEntryExists(runtime)) {
@@ -101,12 +118,25 @@ export async function runInit(
 
   const homes = resolveAgentHomes(home, context.env)
   const requested = parseAgentSelection(options.agents)
-  const selected =
-    requested ??
-    (() => {
-      const detected = detectAgents(homes, exists, runClaudeCli)
-      return AGENT_IDS.filter((agent) => detected[agent])
-    })()
+  let selected: AgentId[]
+  if (requested !== undefined) {
+    // Explicit selection: an explicit `--agents` list without `claude` must not
+    // trigger the (subprocess) launcher probe at all.
+    selected = requested
+  } else {
+    // Auto-detect: Claude is not a directory check — its launcher must be
+    // resolved and probed, otherwise a Bun shim would be reported as working.
+    const claudeProbe = getClaudeInspection().probe
+    const detected = detectAgents(homes, exists, claudeProbe.ok)
+    selected = AGENT_IDS.filter((agent) => detected[agent])
+    if (!claudeProbe.ok && claudeProbe.reason !== 'not-found') {
+      // `not-found` means "not installed" (normal for non-Claude users); every
+      // other reason means a broken install the user should know about.
+      warnings.push(
+        `检测到 claude 命令但无法确认是 Claude Code：${describeClaudeProbe(claudeProbe)}；${claudeFixHint(claudeProbe)}（本次不自动注册 Claude Code，可运行 ctx doctor 查看详情）`
+      )
+    }
+  }
 
   const plans: AgentPlan[] = []
   if (selected.includes('dsh')) {
@@ -167,7 +197,9 @@ export async function runInit(
   const actions: InitAction[] = []
   if (dryRun) {
     for (const file of files) actions.push(toAction(file, 'planned'))
-    if (selected.includes('claude')) actions.push(previewClaudeRegistration(runtime))
+    if (selected.includes('claude')) {
+      actions.push(previewClaudeRegistration(runtime, getClaudeInspection().probe))
+    }
   } else {
     const stamp = formatBackupStamp(now())
     for (const file of files) {
@@ -184,8 +216,12 @@ export async function runInit(
       writeFile(file.path, file.content)
       actions.push(toAction(file, undefined, backupPath))
     }
+    // Files are written first on purpose: a broken `claude` launcher must not
+    // roll back CLAUDE.md / skills / rules — the probe only gates MCP
+    // registration, and a failed probe degrades to `manual-required`.
     if (selected.includes('claude')) {
-      actions.push(applyClaudeRegistration(runtime, runClaudeCli))
+      const inspection = getClaudeInspection()
+      actions.push(applyClaudeRegistration(runtime, inspection.probe, inspection.run))
     }
   }
 
@@ -294,29 +330,12 @@ function paintStatus(status: InitActionStatus, colors: ColorOptions): string {
   }
 }
 
-/** Production `claude` probe/spawn: shell on Windows resolves `claude.cmd`. */
-function defaultRunClaudeCli(args: string[]): ReturnType<ClaudeCliRunner> {
-  try {
-    const result = spawnSync(process.platform === 'win32' ? 'claude.cmd' : 'claude', args, {
-      encoding: 'utf8',
-      windowsHide: true,
-      shell: process.platform === 'win32',
-      timeout: 20_000
-    })
-    return {
-      status: result.status,
-      stdout: result.stdout ?? '',
-      stderr: result.stderr ?? '',
-      error: result.error
-    }
-  } catch (error) {
-    return { status: null, error }
-  }
-}
-
 export function registerInitCommand(cli: CAC, context?: CliContext): void {
   cli
-    .command('init', '一键接入 Agent：stdio MCP 配置 + 四个 Skill + 系统级强制规则')
+    .command(
+      'init',
+      '一键接入 Agent：stdio MCP 配置 + 四个 Skill + 系统级强制规则（claude 经 where.exe/which 解析；Bun shim 不会误注册，详见 ctx doctor）'
+    )
     .option('--dry-run', '只展示将修改的文件与 diff，不写任何文件')
     .option('--yes', '跳过交互确认，直接写入')
     .option('--agents <agents>', '限定 Agent，逗号分隔：dsh,codex,claude,cursor,workbuddy,zcode（默认自动检测）')

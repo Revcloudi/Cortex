@@ -37,13 +37,14 @@ export function Sidebar({ page, onNavigate, databasePath }: SidebarProps) {
         <p className="px-2.5 pb-2 pt-2 text-[10.5px] font-medium text-muted-foreground">
           {t('nav.workbench')}
         </p>
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.filter((item) => !IS_WEB_RUNTIME || item.page !== 'ai-config').map((item) => {
           const active = item.page === page
           const Icon = item.icon
           return (
             <button
               key={item.page}
               type="button"
+              data-testid={`nav-${item.page}`}
               onClick={() => onNavigate(item.page)}
               aria-current={active ? 'page' : undefined}
               className={cn(

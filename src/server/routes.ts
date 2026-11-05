@@ -18,7 +18,9 @@ import {
   SnapshotArchiveIpcSchema,
   SnapshotSessionIdIpcSchema,
   UpdateStatusIpcSchema,
-  VulnerabilityIdsIpcSchema
+  VulnerabilityIdsIpcSchema,
+  SavePocConfigIpcSchema,
+  RepeaterSendIpcSchema
 } from '../main/ipc/schemas'
 import {
   buildReportFilename,
@@ -49,6 +51,8 @@ import type {
   Vulnerability,
   VulnerabilityListItem
 } from '../shared/types'
+import type { PocConfigView } from '../shared/poc'
+import { parsePocError } from '../shared/poc'
 import type { WebConfigInfo, WebExportResponse } from '../shared/web'
 import { WEB_API_PATHS } from '../shared/web'
 import { WebApiError, invalidInput, notFound } from './errors'
@@ -134,6 +138,40 @@ function numberQuery(
   return value
 }
 
+/** Strip server-local paths and AI provider details from the Web retest view. */
+function sanitizeRetestConfigForWeb(view: PocConfigView): PocConfigView {
+  return {
+    ...view,
+    path: basename(view.path),
+    providers: [],
+    activeProviderId: null,
+    enabled: false,
+    executionEnabled: false,
+    overriddenByEnv: [],
+    permissionWarning: null
+  }
+}
+
+/** Map a machine-readable POC error to a safe HTTP response. */
+function throwRetestHttpError(error: unknown): never {
+  if (error instanceof WebApiError) throw error
+  const raw = error instanceof Error ? error.message : String(error)
+  const parsed = parsePocError(raw)
+  if (parsed.code !== null) {
+    const status =
+      parsed.code === 'POC_ARTIFACT_NOT_FOUND'
+        ? 404
+        : parsed.code === 'POC_TARGET_NOT_ALLOWED'
+          ? 403
+          : 400
+    throw new WebApiError(status, parsed.message || raw)
+  }
+  if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET/i.test(raw)) {
+    throw new WebApiError(502, '目标不可达或连接被拒绝，请确认目标服务和复测代理设置。')
+  }
+  throw error
+}
+
 /** Boolean query flag accepting `true`/`false`/`1`/`0`; anything else is a 400. */
 function booleanQuery(
   query: URLSearchParams,
@@ -208,6 +246,49 @@ export function createRoutes(deps: WebServerDeps): RouteDefinition[] {
         const updated = db.updateStatus(parsed.data.id, parsed.data.status)
         deps.notifyDataChanged()
         return updated
+      }
+    },
+
+    // GET /api/retest/config — retest-scoped proxy configuration (sanitized).
+    {
+      method: 'GET',
+      pattern: createPattern(WEB_API_PATHS.retestConfig),
+      handler: (): PocConfigView => sanitizeRetestConfigForWeb(deps.pocConfig.view())
+    },
+
+    // POST /api/retest/config — update only the retest proxy from the Web UI.
+    {
+      method: 'POST',
+      pattern: createPattern(WEB_API_PATHS.retestConfig),
+      handler: (request: RouteRequest): PocConfigView => {
+        const parsed = SavePocConfigIpcSchema.safeParse({
+          proxy: bodyField(request.body, 'proxy')
+        })
+        if (!parsed.success) {
+          throw invalidInput('Invalid retest proxy payload', parsed.error)
+        }
+        try {
+          return sanitizeRetestConfigForWeb(deps.pocConfig.save(parsed.data))
+        } catch (error) {
+          throwRetestHttpError(error)
+        }
+      }
+    },
+
+    // POST /api/retest/repeater — send a raw HTTP request for one Web finding.
+    {
+      method: 'POST',
+      pattern: createPattern(WEB_API_PATHS.retestRepeater),
+      handler: async (request: RouteRequest) => {
+        const parsed = RepeaterSendIpcSchema.safeParse(request.body)
+        if (!parsed.success) {
+          throw invalidInput('Invalid repeater payload', parsed.error)
+        }
+        try {
+          return await deps.repeater.send(parsed.data)
+        } catch (error) {
+          throwRetestHttpError(error)
+        }
       }
     },
 

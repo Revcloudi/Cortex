@@ -14,6 +14,7 @@ import { registerInternalTools } from './tools/internal'
 import { registerSnapshotTools } from './tools/snapshot'
 import { registerVulnerabilityTools } from './tools/vulnerability'
 import type { ToolRegistrar } from './tools/registrar'
+import { sanitizeMcpResult } from './pocSanitize'
 
 export const MCP_SERVER_NAME = 'cortex'
 
@@ -135,7 +136,7 @@ export function createCortexServer(options: CortexServerOptions): Server {
         ]
       } satisfies CallToolResult
     }
-    return tool.handler(request.params.arguments ?? {})
+    return sanitizeMcpResult(await tool.handler(request.params.arguments ?? {}), logger)
   })
 
   return server

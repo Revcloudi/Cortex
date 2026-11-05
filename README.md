@@ -74,6 +74,7 @@ Startup prints one or more login URLs containing a per-run ephemeral token (`htt
 - **Connect agents** and first-run setup write agent configs on the machine running `ctx web`, not on the browser's machine; Web mode asks for confirmation first.
 - `GET /api/events` (SSE) refreshes the UI when an agent, the CLI or the desktop app writes the database.
 - If the SQLite file is not writable, the server starts in **read-only mode** (`/api/config` reports `readOnly: true`) and write APIs return 403 with a clear message.
+- The **Re-test lab** (manual HTTP repeater) and **Model configuration** pages are desktop-only in v1: both sidebar entries are hidden in `ctx web`, their IPC calls fail closed, and the HTTP server serves no `/api/poc/*` routes.
 
 ### Optional intranet reverse proxy
 
@@ -140,6 +141,53 @@ The database is created on first launch at `%USERPROFILE%\.cortex\data.db` (macO
 | `ctx open [--dev] [--path <exe>] [--software]` | Launch or focus the desktop app (Windows install or source build); `--software` forces software rendering for GPU-less / VM / remote-desktop machines |
 | `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | Serve the same dashboard in a browser (loopback or trusted intranet only) |
 
+### Troubleshooting: `claude` opens Bun instead of Claude Code
+
+Running `claude` prints Bun's help instead of starting Claude Code:
+
+```text
+C:\Users\you>claude
+Bun is a fast JavaScript runtime, package manager, bundler, and test runner...
+```
+
+The `claude` on `PATH` is resolving to a Bun global shim, not to Claude Code. Cortex does not create or replace the `claude` command — `ctx init` only writes `~/.claude/CLAUDE.md`, copies the skills and runs `claude mcp add` — so this is a PATH / alias problem, not an MCP or database problem. `ctx init` detects the Bun shim and skips `claude mcp add` / `remove` instead of registering against the wrong CLI.
+
+Check what `claude` really resolves to:
+
+```powershell
+where.exe claude          # every claude on PATH
+Get-Command claude -All   # PowerShell: aliases and functions too
+ctx doctor                # resolved path, kind (exe / cmd / bat) and probe result
+```
+
+`ctx doctor` shows the resolved command path, its kind (`exe` / `cmd` / `bat`) and the probe result, and calls out the Bun shim explicitly.
+
+To fix it, remove the Bun global package and install Claude Code from the official installer (or npm):
+
+```bash
+bun remove -g @anthropic-ai/claude-code
+```
+
+```powershell
+irm https://claude.ai/install.ps1 | iex   # Windows official installer
+```
+
+```bash
+npm install -g @anthropic-ai/claude-code  # or npm, any platform
+```
+
+Reopen the terminal so `PATH` is re-read, re-register Cortex and verify:
+
+```bash
+ctx init --agents claude --yes
+claude --version    # should contain "Claude Code"
+claude mcp list     # should contain "cortex"
+```
+
+- Do **not** delete `~/.claude`: Cortex's rules and skills live there.
+- PowerShell aliases/functions are invisible to Cortex subprocesses. If `where.exe claude` finds nothing but running `claude` by hand still opens Bun, install the real CLI and reopen the terminal.
+- `CORTEX_CLAUDE_BIN` overrides the resolved command path for tests or unusual installs.
+
 ## Daily workflow
 
 Once installed, Cortex is the memory layer for every engagement:
@@ -160,6 +208,7 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 - Vulnerability model: host, entry point, type, severity, URL, description, impact, affected interfaces, Markdown reproduction, remediation, crypto notes, test boundaries, append-only retests, related IDs and status.
 - Asset context: full URLs, project, tech stack, structured interfaces (`path` / `method` / `params` / raw request), leaked info, non-secret `test_parameters` and related vulnerabilities. Legacy `interface_dir` arrays are normalized automatically.
 - Internal operations domain (Plan B, schema v3): Web and internal findings are logically isolated, and the main dashboard splits into "Web vulnerabilities" (default) and "Internal operations" tabs; footholds bridge entry assets to internal hosts / services / credentials / pivots, and the internal page provides an overview, subnet heatmap, credential-service matrix, proxy route view and local Loot import.
+- **Re-test lab** (manual HTTP repeater, desktop only): a sidebar page for Web findings with a raw request editor, editable headers/body, send/follow-redirect controls, raw response viewer and a retest-scoped proxy. AI model configuration is a separate main-sidebar page; the old generated-JS sandbox, `poc_artifacts` and `poc_runs` were removed in schema v5. MCP never returns retest traffic; keys and proxy passwords stay in the main process.
 - One MCP server with exactly seven tools: `save_vulnerability`, `query_vulnerabilities`, `update_vulnerability`, `sync_asset_info`, `query_asset_context`, `manage_snapshot`, `sync_internal_scope` (internal operations: register footholds, internal hosts / services, credentials and pivots).
 - `ctx init` detects installed agents and writes their MCP config, the four skills and system-level hard rules idempotently (with backups, a dry-run mode and JSON / TOML / YAML validation).
 - GUI: vulnerability dashboard with server-side filtering/pagination, asset library with interface explorer, cognitive snapshot sessions (project → child hierarchy), Markdown report export, and a compact bilingual MCP page with a one-click **Connect agents** action and the seven-tool reference.
@@ -175,6 +224,26 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 
 ![Memory Nebula: project/target/host/vulnerability graph generated from the local Cortex database](assets/readme-nebula.png)
 
+### Vulnerability retest (manual HTTP repeater, desktop only)
+
+The **Re-test lab** is a normal sidebar entry that opens a dedicated workbench for Web findings (`realm='web'`, empty `service_host` / `internal_service_id`). Internal-realm findings are hidden and the main process rejects them even when IPC is called directly. The lab is deliberately separate from `VulnDetail`, which keeps its existing five tabs.
+
+![Re-test lab: Web finding list and raw HTTP repeater](assets/readme-retest.png)
+
+1. **Pick a finding** — the left list is read from the existing vulnerability table; no PoC artifacts or generated code are involved.
+2. **Edit the raw request** — the right pane extracts every raw HTTP request step from the finding's Markdown reproduction and selects the best matching exploit step; the step selector switches between login/setup/exploit requests. The editor preserves the original method, path, headers, Cookie placeholders and body, all editable.
+3. **Send** — the request goes through the main process with an optional follow-redirect toggle. The raw status, headers and body are shown in the response pane. Requests are restricted to the finding's target origin.
+4. **Retest proxy** — the top-right **Retest proxy** button configures an HTTP proxy used only by repeater traffic. It is independent from any global proxy or the AI model configuration.
+
+**AI model configuration** is no longer part of the retest lab. The main sidebar **Model configuration** page configures provider presets, Base URL, API key and active model; keys are write-only, and there is still **no built-in default model**.
+
+Safety and isolation:
+
+- The retest proxy only applies to repeater traffic; proxy passwords never reach the renderer and `config.json` is plaintext next to `data.db` with best-effort ACL hardening.
+- The old generated-JS sandbox, `poc_artifacts` and `poc_runs` storage were removed. Schema **v5** drops those tables; existing vulnerability evidence and the schema-v3 internal operations tables are untouched.
+- The seven MCP tools are unchanged. `ctx web` hides the desktop-only retest/model pages and rejects repeater/config IPC; no `/api/poc/*` route is served.
+
+
 ## Requirements
 
 - Node.js **≥ 22.12** for the CLI and source builds. The Windows desktop installer bundles its own Node runtime, so Windows end users do not need Node.
@@ -189,7 +258,7 @@ The MCP server is **stdio only**: the agent starts it in its own process; there 
 | Source build | `node <repo>/out/mcp/stdio.cjs` |
 | Windows install | `<install>\bin\node.exe <install>\bin\mcp-stdio.cjs` |
 
-DeepSeek Harness (`~/.dsh/profiles/<profile>/cordis.patch.yml`):
+DeepSeek Harness (`$DSH_HOME/cordis.patch.yml`, i.e. `~/.dsh/cordis.patch.yml` — the home-level patch layer that DSH applies to **every** profile and keeps across profile recovery):
 
 ```yaml
 - insert:
@@ -203,6 +272,8 @@ DeepSeek Harness (`~/.dsh/profiles/<profile>/cordis.patch.yml`):
           - "<repo>/out/mcp/stdio.cjs"
         toolCallTimeoutMs: 120000
 ```
+
+> Upgrading from an older Cortex? Earlier releases wrote this block into `~/.dsh/profiles/<profile>/cordis.patch.yml`. Re-run `ctx init --agents dsh --yes`: it writes the home-level layer and strips the old per-profile block (DSH rejects a duplicate `serverName: cortex`), so the registration survives profile resets and applies to every DSH surface.
 
 Codex CLI (`~/.codex/config.toml`):
 
@@ -330,14 +401,15 @@ The installed layout (per-user on Windows):
 
 ```text
 src/
-  shared/      shared contracts (types, IPC channels, Zod schemas, MCP config generator)
-  core/        Electron-free database, paths, logging, version
+  shared/      shared contracts (types, IPC channels, AI config/repeater types, MCP config generator)
+  core/        Electron-free database, paths, logging, version; core/poc (provider presets)
   mcp/         pure stdio MCP server and the seven tools
   cli/         ctx commands and agent config writers
-  server/      ctx web HTTP server (auth, security, static SPA, REST/SSE routes)
-  main/        Electron main process (IPC, file watcher, database switching, no MCP server)
-  preload/     contextBridge API
-  renderer/    React UI + lightweight zh/en i18n (messages in renderer/src/i18n)
+  server/      ctx web HTTP server (auth, security, static SPA, REST/SSE routes; no /api/poc/*)
+  main/        Electron main process (IPC, watcher, database switching); main/services
+               (PocConfigService, RepeaterService, HttpBridge)
+  preload/     contextBridge API (no eval/runCode surface)
+  renderer/    React UI + lightweight zh/en i18n; pages/RetestPage and pages/AiConfigPage
 skills/        bilingual agent skills (zh / en)
 scripts/       build, runtime, packaging and legacy install scripts
 build/         NSIS customizations
@@ -348,12 +420,14 @@ build/         NSIS customizations
 - Default database: `%USERPROFILE%\.cortex\data.db` (Windows) or `~/.cortex/data.db`; override with `CTX_DB_PATH` (legacy `PDH_DB_PATH` is still honoured).
 - `PRAGMA journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL`, `foreign_keys=ON`; write transactions use `BEGIN IMMEDIATE` with bounded SQLITE_BUSY retries; schema version lives in `PRAGMA user_version`.
 - Migrations run in one immediate transaction, so concurrent agent processes cannot partially migrate a database.
+- Schema **v5** drops the abandoned `poc_artifacts` / `poc_runs` tables; the v3 vulnerability / asset / internal-operation tables and all original vulnerability evidence fields are untouched. The AI/retest config file `config.json` lives next to the active `data.db`.
 - The database is plaintext, including credentials in `leaked_infos` — an explicit trade-off of this version.
 
 ## Security and engineering constraints
 
 - **MCP is stdio only**: the MCP server has no listening port; the agent starts it and it lives and dies with that agent. stdout carries JSON-RPC frames only; logs go to stderr or `CTX_MCP_LOG`. The optional Web UI (`ctx web`) is a separate token-authenticated HTTP server that is off unless started, loopback-only unless `--allow-intranet` is passed.
 - **Process isolation**: `contextIsolation` + `sandbox`, no `nodeIntegration`; the desktop renderer talks only to `window.api` and the main process re-validates every IPC payload (the browser Web build uses same-origin HTTP instead, see [Web UI](#web-ui-intranet-only)).
+- **Re-test isolation**: the renderer never executes retest code. Repeater requests are built in the main process and restricted to the finding's target origin via `HttpBridge` (redirects re-validated, request/response caps, retest proxy credentials never reach the renderer). The retest proxy only applies to repeater traffic; AI keys and proxy passwords remain in the main process.
 - **Zod validation** at MCP and IPC boundaries; parameterized SQL everywhere.
 - **Concurrency**: WAL, busy timeout, immediate transactions and retries keep transient lock contention away from tool calls.
 

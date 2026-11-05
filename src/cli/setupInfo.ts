@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +13,7 @@ import type {
   UiLanguage
 } from '../shared/types'
 import { detectAgents, resolveAgentHomes } from './agents'
+import { inspectClaudeCommand, type ClaudeInspection } from './agents/claudeCommand'
 import { runInit } from './commands/init'
 import { createCliContext } from './context'
 import { resolveCliRuntime, type CliRuntime } from './runtime'
@@ -28,10 +28,12 @@ import { resolveCliRuntime, type CliRuntime } from './runtime'
  * every entry point writes exactly the same files. This module must never
  * import `electron`; the desktop wrapper supplies the packaged/dev runtime and
  * the OS locale.
+ *
+ * Claude Code detection also reuses the CLI's `claudeCommand` resolver/probe
+ * (the same logic `ctx init` / `ctx doctor` use), so the GUI and CLI agree: a
+ * launcher that is not really Claude Code — notably a Bun shim that still exits
+ * 0 on `--version` — is reported as "not detected", never as installed.
  */
-
-/** `claude --version` is the only reliable Claude Code installation signal. */
-const CLAUDE_PROBE_TIMEOUT_MS = 10_000
 
 interface AgentCatalogEntry {
   id: AgentId
@@ -45,8 +47,8 @@ const AGENT_CATALOG: readonly AgentCatalogEntry[] = [
     id: 'dsh',
     name: 'DeepSeek Harness',
     description: {
-      zh: '通过 profiles 下的 cordis.patch.yml 以 stdio 方式加载 Cortex 的 MCP 服务。',
-      en: 'Loads the Cortex MCP server over stdio from its profile cordis.patch.yml.'
+      zh: '在 DSH 根目录 patch 层（$DSH_HOME/cordis.patch.yml，对所有 profile 生效）写入 cortex 的 stdio 服务。',
+      en: 'Writes the Cortex stdio server into the DSH home patch layer ($DSH_HOME/cordis.patch.yml, applied to every profile).'
     }
   },
   {
@@ -109,6 +111,11 @@ function installationHome(env: NodeJS.ProcessEnv): string {
 export interface BuildSetupInfoOptions {
   /** Locale-derived default for the wizard language; defaults to `zh`. */
   defaultUiLanguage?: UiLanguage
+  /**
+   * Overridable for tests: default resolves the real `claude` launcher
+   * (`where.exe` / `which`) and probes it via `inspectClaudeCommand`.
+   */
+  inspectClaude?: () => ClaudeInspection
 }
 
 /**
@@ -121,7 +128,10 @@ export function buildSetupInfo(
 ): SetupInfo {
   const home = installationHome(env)
   const homes = resolveAgentHomes(home, env)
-  const detected = detectAgents(homes, existsSync, runClaudeCliProbe)
+  const inspectClaude =
+    options.inspectClaude ??
+    (() => inspectClaudeCommand({ env, platform: process.platform }))
+  const detected = detectAgents(homes, existsSync, claudeDetected(inspectClaude))
   const agents: SetupAgentOption[] = AGENT_CATALOG.map((agent) => ({
     id: agent.id,
     name: agent.name,
@@ -248,31 +258,15 @@ function resolveDefaultSkillLanguage(env: NodeJS.ProcessEnv): SkillLanguage {
 }
 
 /**
- * `claude --version` runner used only for detection. Mirrors the CLI's
- * production runner (the shell resolves `claude.cmd` on Windows) with a shorter
- * timeout because this call runs while the wizard opens.
+ * Claude Code counts as detected only when the resolved launcher actually proves
+ * it is Claude Code (the same verdict `ctx doctor` shows). A failed or throwing
+ * probe means "not detected" — the wizard must still open and offer `ctx init`.
  */
-function runClaudeCliProbe(args: string[]): {
-  status: number | null
-  stdout: string
-  stderr: string
-  error?: unknown
-} {
+function claudeDetected(inspectClaude: () => ClaudeInspection): boolean {
   try {
-    const result = spawnSync(process.platform === 'win32' ? 'claude.cmd' : 'claude', args, {
-      encoding: 'utf8',
-      windowsHide: true,
-      shell: process.platform === 'win32',
-      timeout: CLAUDE_PROBE_TIMEOUT_MS
-    })
-    return {
-      status: result.status,
-      stdout: result.stdout ?? '',
-      stderr: result.stderr ?? '',
-      error: result.error
-    }
-  } catch (error) {
-    return { status: null, stdout: '', stderr: '', error }
+    return inspectClaude().probe.ok
+  } catch {
+    return false
   }
 }
 
@@ -294,15 +288,27 @@ function directoryNames(dir: string): string[] {
   }
 }
 
-/** DSH: any profile patch file carries the Cortex stdio loader entry. */
+/**
+ * DSH: Cortex registers in the home-level patch layer
+ * (`$DSH_HOME/cordis.patch.yml`), which applies to every profile and survives
+ * DSH's profile recovery. The per-profile patch layer is still recognized as a
+ * legacy location (an old Cortex release wrote it there); `ctx init` migrates
+ * it, so the wizard reports such an installation as configured.
+ */
 function dshConfigured(dshHome: string): boolean {
+  const homePatch = readTextFile(join(dshHome, 'cordis.patch.yml'))
+  if (homePatch !== null && isCortexPatchContent(homePatch)) return true
   const profilesRoot = join(dshHome, 'profiles')
   for (const profile of directoryNames(profilesRoot)) {
     const content = readTextFile(join(profilesRoot, profile, 'cordis.patch.yml'))
     if (content === null) continue
-    if (content.includes('mcp-cortex') || /serverName:\s*cortex\b/.test(content)) return true
+    if (isCortexPatchContent(content)) return true
   }
   return false
+}
+
+function isCortexPatchContent(content: string): boolean {
+  return content.includes('mcp-cortex') || /serverName:\s*cortex\b/.test(content)
 }
 
 /** Codex: a `[mcp_servers.cortex]` table exists. */

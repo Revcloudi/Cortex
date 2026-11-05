@@ -51,6 +51,10 @@ export const WEB_API_PATHS = {
   loot: '/api/loot',
   setup: '/api/setup',
   seedDemoData: '/api/demo/seed',
+  /** Retest repeater (raw HTTP request execution; target-origin allowlist only). */
+  retestRepeater: '/api/retest/repeater',
+  /** Retest-scoped proxy configuration (no AI provider changes over Web). */
+  retestConfig: '/api/retest/config',
   events: '/api/events'
 } as const
 

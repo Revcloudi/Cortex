@@ -11,6 +11,14 @@ export default defineConfig({
         '@core': resolve('src/core'),
         '@main': resolve('src/main')
       }
+    },
+    build: {
+      rollupOptions: {
+        input: {
+          // Electron main process entry (unchanged name/path).
+          index: resolve('src/main/index.ts')
+        }
+      }
     }
   },
   preload: {

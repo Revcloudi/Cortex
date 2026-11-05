@@ -3,6 +3,22 @@ import { envOverride } from '../env'
 import { CliError } from '../errors'
 
 /**
+ * Re-exported so existing callers can keep importing the runner/probe types
+ * from the agent barrel; the `claude` launcher logic itself lives in
+ * `./claudeCommand`.
+ */
+export type {
+  ClaudeCliRunner,
+  ClaudeCommandKind,
+  ClaudeCommandResolution,
+  ClaudeInspection,
+  ClaudeProbeMethod,
+  ClaudeProbeReason,
+  ClaudeProbeResult,
+  ClaudeSpawnResult
+} from './claudeCommand'
+
+/**
  * `ctx init` building blocks: agent ids, target home resolution, detection and
  * the report/plan types shared by the per-agent writers.
  *
@@ -51,17 +67,6 @@ export interface InitReport {
   actions: InitAction[]
   warnings: string[]
   restartHint: string
-}
-
-/**
- * Injectable `claude` CLI runner. Mirrors the shape of `spawnSync`, so a missing
- * CLI yields `{ status: null, error }` instead of throwing.
- */
-export type ClaudeCliRunner = (args: string[]) => {
-  status: number | null
-  stdout?: string
-  stderr?: string
-  error?: unknown
 }
 
 /** A file the init run may create/overwrite. `content` is absent when skipped. */
@@ -166,30 +171,26 @@ export interface AgentDetection {
 /**
  * Detect which agents are installed locally.
  *
- * DSH, Codex and Cursor are directory probes; Claude Code owns its registration
- * inside the CLI, so `claude --version` is the only reliable signal. A spawn
- * error (CLI not installed) simply means "not detected".
+ * DSH lives under its home directory (`$DSH_HOME` / `~/.dsh`); the Cortex MCP
+ * registration is written to the home-level patch layer, so a profile directory
+ * is not required for the integration to be useful. Codex, WorkBuddy and ZCode
+ * stay directory probes. Claude Code keeps its state in the user's home too, but
+ * a missing directory is not proof either way — its `claude` launcher must be
+ * resolved and probed (`probeClaudeCommand`), so the caller passes the
+ * already-computed verdict. A Bun shim is therefore reported as "not detected"
+ * instead of looking like a working installation.
  */
 export function detectAgents(
   homes: AgentHomes,
   exists: (filePath: string) => boolean,
-  runClaudeCli: ClaudeCliRunner
+  claudeDetected: boolean
 ): AgentDetection {
   return {
-    dsh: exists(join(homes.dsh, 'profiles')),
+    dsh: exists(homes.dsh),
     codex: exists(homes.codex),
     cursor: exists(homes.cursor),
     workbuddy: exists(homes.workbuddy),
     zcode: exists(join(homes.zcode, 'cli')) || exists(homes.zcode),
-    claude: probeClaudeCli(runClaudeCli)
-  }
-}
-
-export function probeClaudeCli(runClaudeCli: ClaudeCliRunner): boolean {
-  try {
-    const result = runClaudeCli(['--version'])
-    return result.error === undefined && result.status === 0
-  } catch {
-    return false
+    claude: claudeDetected
   }
 }

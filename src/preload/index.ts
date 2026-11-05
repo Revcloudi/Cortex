@@ -36,6 +36,15 @@ import type {
   VulnStatus
 } from '../shared/types'
 import type { MemoryGraphData, MemoryGraphQuery } from '../shared/graph'
+import type {
+  ListPocModelsInput,
+  ListPocModelsResult,
+  PocConfigView,
+  SavePocConfigInput,
+  TestPocProviderResult,
+  UpsertPocProviderInput
+} from '../shared/poc'
+import type { RepeaterSendInput, RepeaterSendResult } from '../shared/repeater'
 
 const api: CortexApi = {
   listVulnerabilities(query?: VulnListQuery): Promise<PaginatedVulnerabilities> {
@@ -170,6 +179,38 @@ const api: CortexApi = {
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.dataChanged, listener)
     }
+  },
+
+  /*
+   * AI model configuration + retest HTTP repeater (desktop only).
+   * The old generated-JS sandbox/artifact/run API was removed in schema v5.
+   */
+  getPocConfig(): Promise<PocConfigView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getPocConfig) as Promise<PocConfigView>
+  },
+  savePocConfig(input: SavePocConfigInput): Promise<PocConfigView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.savePocConfig, input) as Promise<PocConfigView>
+  },
+  reloadPocConfig(): Promise<PocConfigView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.reloadPocConfig) as Promise<PocConfigView>
+  },
+  upsertPocProvider(input: UpsertPocProviderInput): Promise<PocConfigView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.upsertPocProvider, input) as Promise<PocConfigView>
+  },
+  removePocProvider(id: string): Promise<PocConfigView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.removePocProvider, id) as Promise<PocConfigView>
+  },
+  listPocModels(input: ListPocModelsInput): Promise<ListPocModelsResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.listPocModels, input) as Promise<ListPocModelsResult>
+  },
+  testPocProvider(input: { id: string }): Promise<TestPocProviderResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.testPocProvider, input) as Promise<TestPocProviderResult>
+  },
+  sendRepeaterRequest(input: RepeaterSendInput): Promise<RepeaterSendResult> {
+    return ipcRenderer.invoke(
+      IPC_CHANNELS.sendRepeaterRequest,
+      input
+    ) as Promise<RepeaterSendResult>
   }
 }
 

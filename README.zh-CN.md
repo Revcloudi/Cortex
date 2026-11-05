@@ -74,6 +74,7 @@ ctx web --no-open --json                     # 不打开浏览器；输出含 to
 - 「接入 Agent」与首次配置写入的是运行 `ctx web` 那台机器的 Agent 配置，而不是浏览器所在设备；Web 模式会先二次确认。
 - Agent、CLI 或桌面端写入数据库后，前端通过 `GET /api/events`（SSE）自动刷新。
 - SQLite 文件无写权限时服务以**只读模式**启动（`/api/config` 返回 `readOnly: true`），写接口返回 403 并给出明确提示。
+- **复测实验室**（手动 HTTP 重放）与**模型配置**第一版仅桌面端：`ctx web` 隐藏两个侧边栏入口，相关 IPC 直接失败，HTTP 服务端不提供 `/api/poc/*`。
 
 ### 可选：内网反向代理
 
@@ -140,6 +141,53 @@ ctx doctor               # 检查数据库、MCP 运行时与 Agent 配置
 | `ctx open [--dev] [--path <exe>] [--software]` | 启动/聚焦桌面端（Windows 安装版或源码构建）；`--software` 在无 GPU / 虚拟机 / 远程桌面环境强制软件渲染 |
 | `ctx web [--port <port>] [--host <host>] [--db <path>] [--allow-intranet] [--no-open]` | 在浏览器中使用同一套看板（仅回环或受信任内网） |
 
+### 故障排查：`claude` 打开的是 Bun
+
+运行 `claude` 时没有启动 Claude Code，而是打印了 Bun 的帮助：
+
+```text
+C:\Users\you>claude
+Bun is a fast JavaScript runtime, package manager, bundler, and test runner...
+```
+
+这说明 `PATH` 上的 `claude` 实际解析到了 Bun 的全局 shim，而不是 Claude Code。Cortex 不会创建或替换 `claude` 命令——`ctx init` 只写入 `~/.claude/CLAUDE.md`、复制 Skill 并调用 `claude mcp add`——所以这是 PATH / 别名解析问题，不是 MCP 配置或数据库问题。`ctx init` 检测到 Bun shim 时会跳过 `claude mcp add` / `remove`，不会向错误的 CLI 注册。
+
+先确认 `claude` 真正解析到了哪里：
+
+```powershell
+where.exe claude          # PATH 上所有 claude
+Get-Command claude -All   # PowerShell：连同别名与函数
+ctx doctor                # 解析到的路径、kind（exe / cmd / bat）与探测结果
+```
+
+`ctx doctor` 会显示 `claude` 的解析路径、kind（`exe` / `cmd` / `bat`）与探测结果，遇到 Bun shim 会明确指出。
+
+修复：卸载 Bun 全局包，改用官方安装器（或 npm）安装 Claude Code：
+
+```bash
+bun remove -g @anthropic-ai/claude-code
+```
+
+```powershell
+irm https://claude.ai/install.ps1 | iex   # Windows 官方安装器
+```
+
+```bash
+npm install -g @anthropic-ai/claude-code  # 或用 npm，任意平台
+```
+
+重开终端（让 PATH 重新生效），重新接入 Cortex 并验证：
+
+```bash
+ctx init --agents claude --yes
+claude --version    # 输出应包含 "Claude Code"
+claude mcp list     # 输出应包含 "cortex"
+```
+
+- 不要删除 `~/.claude`：Cortex 的规则与 Skill 存放在这里。
+- PowerShell 的 alias / function 对 Cortex 子进程不可见。如果 `where.exe claude` 找不到结果、但手动运行 `claude` 仍是 Bun，请安装真实 CLI 后重开终端。
+- 测试或特殊安装场景可用 `CORTEX_CLAUDE_BIN` 覆盖解析路径。
+
 ## 日常使用
 
 安装完成后，Cortex 就是每个测试任务的“记忆层”：
@@ -160,6 +208,7 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 - 漏洞模型：Host、入口、类型、等级、URL、描述、影响、受影响接口、Markdown 复现步骤、修复建议、加解密说明、测试边界、只追加的复测历史、关联漏洞与状态流转。
 - 资产上下文：完整 URL、项目、技术栈、结构化 `interfaces`（`path` / `method` / `params` / 原始请求）、敏感泄露、非密 `test_parameters` 与关联漏洞；旧版 `interface_dir` 自动规范化。
 - 内网作战域（Plan B，schema v3）：Web 与内网逻辑隔离，主看板分「Web 漏洞」（默认）与「内网作战」两个 tab；入口资产通过 foothold 桥接内网主机 / 服务 / 凭据 / pivot，内网作战页提供概览、网段热力图、凭据-服务矩阵、代理路由视图与 Loot 本地导入。
+- **漏洞复测**（手动 HTTP 重放，仅桌面端）：面向 Web 漏洞，提供原始请求编辑、Headers/Body 修改、发送/跟随重定向、原始响应查看和复测专用代理。AI 模型配置已独立为主侧边栏的「模型配置」页面；旧的生成式 JS 沙箱与 `poc_artifacts` / `poc_runs` 已在 schema v5 删除。MCP 不返回重放流量，Key 与代理密码只留在主进程。
 - 固定 7 个 MCP 工具：`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`、`sync_internal_scope`（内网作战域：登记 foothold / 内网主机 / 服务 / 凭据 / pivot）。
 - `ctx init` 自动检测 Agent，幂等写入 MCP 配置、4 个 Skill 与系统级强制规则（带备份、`--dry-run`、JSON/TOML/YAML 校验）。
 - 桌面端：漏洞看板（服务端过滤/分页）、资产库（接口浏览器）、认知快照（项目 → 子会话层级）、Markdown 报告导出、双语 MCP 接入页（一键「接入 Agent」+ 精简工具表）。
@@ -175,6 +224,26 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 
 ![记忆星云：由本地 Cortex 数据库生成的项目/目标/资产/漏洞关系图](assets/readme-nebula.png)
 
+### 漏洞复测（手动 HTTP 重放，仅桌面端）
+
+「复测实验室」是主侧边栏的普通入口，打开一个面向 Web 漏洞（`realm='web'` 且 `service_host` / `internal_service_id` 为空）的工作台；内网作战域漏洞不显示入口，主进程即使被直接 IPC 调用也会拒绝。该工作台与 `VulnDetail` 分离：漏洞详情保持原有 5 个 Tab。
+
+![复测实验室：Web 漏洞列表与原始 HTTP 请求重放](assets/readme-retest.png)
+
+1. **选择漏洞**——左侧列表直接读取现有漏洞表，不再涉及 PoC artifact 或生成代码。
+2. **编辑原始请求**——右侧从漏洞 Markdown 复现步骤中提取全部 HTTP 请求，并默认选中与漏洞入口最匹配的利用步骤；步骤下拉框可切换登录/准备/利用请求。方法、路径、Headers、Cookie 占位符与 Body 均保留并可编辑。
+3. **发送**——请求经主进程发送，可切换「跟随重定向」；响应区展示原始状态码、Headers 与 Body。请求仅限该漏洞的目标 origin。
+4. **复测代理**——右上角「复测代理」只配置重放流量使用的 HTTP 代理，与全局代理、AI 模型配置均无关。
+
+**AI 模型配置**已移到主侧边栏的「模型配置」页面：配置厂商、Base URL、API Key 与当前模型；Key 只写不回显，**仍不内置默认模型**。
+
+安全与隔离：
+
+- 复测代理只作用于重放流量；代理密码不进入 renderer，`config.json` 与 `data.db` 同目录且为明文（与数据库同一威胁边界），尽最大努力收紧 ACL 并显示权限警告。
+- 旧的生成式 JS 沙箱、`poc_artifacts` / `poc_runs` 存储已删除；schema **v5** 会移除这两张表，现有漏洞原始证据与 v3 内网作战表不变。
+- 7 个 MCP 工具保持不变；`ctx web` 隐藏桌面端复测/模型页面并拒绝相关 IPC，不提供 `/api/poc/*`。
+
+
 ## 环境要求
 
 - CLI 与源码构建需要 Node.js **≥ 22.12**；Windows 桌面安装包内置 Node 运行时，最终用户无需安装 Node。
@@ -189,7 +258,7 @@ MCP Server 只使用 **stdio**：由 Agent 在自己的进程里拉起，不监�
 | 源码构建 | `node <repo>/out/mcp/stdio.cjs` |
 | Windows 安装版 | `<install>\bin\node.exe <install>\bin\mcp-stdio.cjs` |
 
-DeepSeek Harness（`~/.dsh/profiles/<profile>/cordis.patch.yml`）：
+DeepSeek Harness（`$DSH_HOME/cordis.patch.yml`，即 `~/.dsh/cordis.patch.yml` —— DSH 的根目录 patch 层，对**所有** profile 生效，且 profile 重置后仍保留）：
 
 ```yaml
 - insert:
@@ -203,6 +272,8 @@ DeepSeek Harness（`~/.dsh/profiles/<profile>/cordis.patch.yml`）：
           - "<repo>/out/mcp/stdio.cjs"
         toolCallTimeoutMs: 120000
 ```
+
+> 从旧版 Cortex 升级：早期版本把该块写进 `~/.dsh/profiles/<profile>/cordis.patch.yml`。重新运行 `ctx init --agents dsh --yes`，会把注册迁移到根目录 patch 层并删除旧 profile 层块（DSH 遇到重复 `serverName: cortex` 会拒绝加载），从而对每个 DSH 表面生效并扛住 profile 重置。
 
 Codex CLI（`~/.codex/config.toml`）：
 
@@ -330,14 +401,15 @@ npm run build:runtime      # 只生成 runtime/（手动/高级打包用）
 
 ```text
 src/
-  shared/      共享契约（类型、IPC、Zod schema、MCP 配置生成器）
-  core/        Electron-free 数据库、路径、日志、版本
+  shared/      共享契约（类型、IPC、AI 配置/重放类型、MCP 配置生成器）
+  core/        Electron-free 数据库、路径、日志、版本；core/poc（厂商预设）
   mcp/         纯 stdio MCP Server 与 7 个工具
   cli/         ctx 命令与 Agent 配置写入
-  server/      ctx web HTTP 服务端（鉴权、安全、静态 SPA、REST/SSE 路由）
-  main/        Electron 主进程（IPC、文件监听、数据库切换，不启动 MCP）
-  preload/     contextBridge API
-  renderer/    React 界面 + 轻量 zh/en i18n（消息在 renderer/src/i18n）
+  server/      ctx web HTTP 服务端（鉴权、安全、静态 SPA、REST/SSE 路由；无 /api/poc/*）
+  main/        Electron 主进程（IPC、文件监听、数据库切换）；main/services
+               （PocConfigService、RepeaterService、HttpBridge）
+  preload/     contextBridge API（不暴露 eval/runCode）
+  renderer/    React 界面 + 轻量 zh/en i18n；pages/RetestPage 与 pages/AiConfigPage
 skills/        双语 Agent Skill（zh / en）
 scripts/       构建、运行时、打包与兼容安装脚本
 build/         NSIS 自定义脚本
@@ -348,12 +420,14 @@ build/         NSIS 自定义脚本
 - 默认数据库：Windows `%USERPROFILE%\.cortex\data.db`，macOS/Linux `~/.cortex/data.db`；可用 `CTX_DB_PATH`（旧的 `PDH_DB_PATH` 仍兼容）覆盖。
 - `PRAGMA journal_mode=WAL`、`busy_timeout=5000`、`synchronous=NORMAL`、`foreign_keys=ON`；写事务使用 `BEGIN IMMEDIATE` 并对 SQLITE_BUSY 有限重试；schema 版本记录在 `PRAGMA user_version`。
 - 迁移在单个 immediate 事务中执行，多个 Agent 进程并发启动也只会成功迁移一次。
+- schema **v5** 删除已废弃的 `poc_artifacts` / `poc_runs` 表；v3 的漏洞/资产/内网作战表与漏洞原始证据字段不变。AI/复测配置文件 `config.json` 与当前 `data.db` 同目录。
 - 数据库为明文（含 `leaked_infos` 中的凭据），是本版本明确接受的权衡。
 
 ## 安全与工程约束
 
 - **MCP 仅 stdio**：MCP Server 不监听端口，由 Agent 拉起并随其退出而销毁；stdout 只输出 JSON-RPC，日志写 stderr 或 `CTX_MCP_LOG`。可选的 Web 端（`ctx web`）是另一个需要 token 鉴权的 HTTP 服务，不启动就不存在，默认只监听回环地址，非回环必须显式传 `--allow-intranet`。
 - **进程隔离**：`contextIsolation` + `sandbox`，关闭 `nodeIntegration`；桌面端渲染进程只通过 `window.api` 访问数据，主进程对每个 IPC 入参再次校验（浏览器 Web 端改用同源 HTTP，见 [Web 端（仅内网）](#web-端仅内网)）。
+- **复测隔离**：renderer 不执行任何复测代码。重放请求由主进程构造并通过 `HttpBridge` 限制在漏洞目标 origin（逐跳复检重定向、请求/响应大小上限，复测代理凭据不进入 renderer）。复测代理只作用于重放流量；AI Key 与代理密码只留在主进程。
 - **Zod 双层校验**：MCP 与 IPC 边界均校验；SQL 全部参数绑定。
 - **并发**：WAL + busy timeout + immediate 事务 + 重试，避免瞬时锁冲突暴露为工具错误。
 

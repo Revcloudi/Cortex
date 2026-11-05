@@ -1,10 +1,16 @@
-import { spawnSync } from 'node:child_process'
-import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs'
+import { accessSync, constants, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import type { Dirent } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { CAC } from 'cac'
 import { readSchemaVersion } from '../../core/db/DatabaseService'
 import { CORTEX_VERSION } from '../../core/version'
 import { DATABASE_SCHEMA_VERSION } from '../../shared/types'
+import {
+  claudeFixHint,
+  describeClaudeProbe,
+  inspectClaudeCommand,
+  type ClaudeInspection
+} from '../agents/claudeCommand'
 import {
   cliDatabasePath,
   createCliContext,
@@ -46,25 +52,11 @@ export interface DoctorDeps {
   exists?: (filePath: string) => boolean
   readText?: (filePath: string) => string
   resolveUi?: () => UiResolution | null
-  /** Overridable for tests: default probes the real `claude` CLI. */
-  probeClaude?: () => boolean
-}
-
-function probeClaudeCli(): boolean {
-  try {
-    const result = spawnSync(
-      process.platform === 'win32' ? 'claude.cmd' : 'claude',
-      ['mcp', 'get', 'cortex'],
-      {
-        encoding: 'utf8',
-        windowsHide: true,
-        timeout: 10_000
-      }
-    )
-    return result.status === 0
-  } catch {
-    return false
-  }
+  /**
+   * Overridable for tests: default resolves the real launcher (`where.exe` /
+   * `which`, never a hardcoded `claude.cmd`) and proves it is Claude Code.
+   */
+  inspectClaude?: () => ClaudeInspection
 }
 
 function readIfExists(readText: (filePath: string) => string, filePath: string): string {
@@ -102,6 +94,39 @@ function directoryWritable(directory: string): boolean {
   }
 }
 
+/**
+ * Profile patch layers that still carry a Cortex-owned MCP registration.
+ *
+ * Current Cortex writes the DSH home-level patch layer
+ * (`$DSH_HOME/cordis.patch.yml`) only; a leftover registration in a profile
+ * patch would make DSH see `serverName: cortex` twice and reject the load, so
+ * `ctx doctor` reports it as a migration that `ctx init --agents dsh` performs.
+ */
+function legacyDshProfilePatches(
+  dshHome: string,
+  exists: (filePath: string) => boolean,
+  readText: (filePath: string) => string
+): string[] {
+  const profilesRoot = join(dshHome, 'profiles')
+  let entries: Dirent[] = []
+  try {
+    entries = readdirSync(profilesRoot, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const matches: string[] = []
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const patchPath = join(profilesRoot, entry.name, 'cordis.patch.yml')
+    if (!exists(patchPath)) continue
+    const content = readIfExists(readText, patchPath)
+    if (/mcp-cortex|mcp-pentest-data-hub|CORTEX BEGIN|PENTEST-DATA-HUB BEGIN/.test(content)) {
+      matches.push(patchPath)
+    }
+  }
+  return matches
+}
+
 function agentChecks(deps: DoctorDeps, context: CliContext, runtime: CliRuntime): DoctorCheck[] {
   const home = resolveHomeDirectory(context)
   const exists = deps.exists ?? existsSync
@@ -110,34 +135,44 @@ function agentChecks(deps: DoctorDeps, context: CliContext, runtime: CliRuntime)
   const expectedEntry = runtime.mcpEntry.replace(/\\/g, '/')
 
   const dshHome = context.env['DSH_HOME'] || join(home, '.dsh')
-  const profilesRoot = join(dshHome, 'profiles')
-  const profile = context.env['DSH_PROFILE'] || 'desktop'
-  const dshFile = [
-    join(profilesRoot, profile, 'cordis.patch.yml'),
-    join(profilesRoot, 'desktop', 'cordis.patch.yml')
-  ].find((filePath) => exists(filePath))
-  if (dshFile === undefined) {
+  const dshHomePatch = join(dshHome, 'cordis.patch.yml')
+  const legacyDshPatches = legacyDshProfilePatches(dshHome, exists, readText)
+  if (!exists(dshHomePatch)) {
     checks.push({
       category: 'agent',
       label: 'DeepSeek Harness',
-      value: '未检测到 cordis.patch.yml',
+      value:
+        legacyDshPatches.length > 0
+          ? `未写入 DSH 根目录 patch 层（${dshHomePatch}）；检测到 ${legacyDshPatches.length} 个旧 profile 层注册`
+          : `未检测到 DSH 根目录 patch 层（${dshHomePatch}）`,
       ok: false,
-      hint: '运行 ctx init --agents dsh 接入'
+      hint:
+        legacyDshPatches.length > 0
+          ? '运行 ctx init --agents dsh 迁移到 DSH 根目录（清理旧 profile 层）'
+          : '运行 ctx init --agents dsh 写入 DSH 根目录 patch 层（对所有 profile 生效）'
+    })
+  } else if (legacyDshPatches.length > 0) {
+    checks.push({
+      category: 'agent',
+      label: 'DeepSeek Harness',
+      value: `${dshHomePatch}（根目录已写入，但 ${legacyDshPatches.length} 个旧 profile 层仍有 Cortex 注册：${legacyDshPatches[0] ?? ''}）`,
+      ok: false,
+      hint: '运行 ctx init --agents dsh 清理旧 profile 层（重复 serverName 会导致 DSH 加载失败）'
     })
   } else {
-    const content = readIfExists(readText, dshFile)
+    const content = readIfExists(readText, dshHomePatch)
     const hasEntry = content.includes('mcp-cortex')
     const pointsAtEntry = content.includes(expectedEntry) || content.includes(runtime.mcpEntry)
     checks.push({
       category: 'agent',
       label: 'DeepSeek Harness',
       value: !hasEntry
-        ? `${dshFile}（缺少 mcp-cortex 条目）`
+        ? `${dshHomePatch}（缺少 mcp-cortex 条目）`
         : pointsAtEntry
-          ? dshFile
-          : `${dshFile}（不是当前 stdio 入口）`,
+          ? dshHomePatch
+          : `${dshHomePatch}（不是当前 stdio 入口）`,
       ok: hasEntry && pointsAtEntry,
-      hint: hasEntry && pointsAtEntry ? undefined : '运行 ctx init --agents dsh 重写 MCP 条目'
+      hint: hasEntry && pointsAtEntry ? undefined : '运行 ctx init --agents dsh 重写 DSH 根目录 patch 层'
     })
   }
 
@@ -190,22 +225,107 @@ function agentChecks(deps: DoctorDeps, context: CliContext, runtime: CliRuntime)
     })
   }
 
-  const probe = deps.probeClaude ?? probeClaudeCli
-  let claudeOk = false
-  try {
-    claudeOk = probe()
-  } catch {
-    claudeOk = false
-  }
-  checks.push({
-    category: 'agent',
-    label: 'Claude Code',
-    value: claudeOk ? '已注册 cortex（stdio）' : '未检测到 Claude Code 注册',
-    ok: claudeOk,
-    hint: claudeOk ? undefined : '运行 ctx init --agents claude 接入（需已安装 claude CLI）'
-  })
+  checks.push(...claudeChecks(deps, context))
 
   return checks
+}
+
+/**
+ * Claude Code is special: the launcher may be a `.exe` (official native install),
+ * a `.cmd` (npm global install) or even a Bun shim that answers `--version` with
+ * exit code 0 while printing Bun's help. Show what was resolved, what the probe
+ * concluded, and only then the MCP registration state (B.4.5).
+ *
+ * `inspectClaude` is injectable and may throw (it spawns external processes), so
+ * a failure degrades to failed checks instead of crashing `ctx doctor`.
+ */
+function claudeChecks(deps: DoctorDeps, context: CliContext): DoctorCheck[] {
+  const inspect =
+    deps.inspectClaude ??
+    (() => inspectClaudeCommand({ env: context.env, platform: process.platform }))
+
+  let inspection: ClaudeInspection
+  try {
+    inspection = inspect()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return [
+      {
+        category: 'agent',
+        label: 'Claude Code 命令',
+        value: `解析 claude 命令失败：${message}`,
+        ok: false,
+        hint: '确认 claude --version 可正常运行（where.exe claude / Get-Command claude -All 查看路径）'
+      },
+      {
+        category: 'agent',
+        label: 'Claude Code 探测',
+        value: `探测失败：${message}`,
+        ok: false,
+        hint: '重开终端后重试；安装 Claude Code 后运行 ctx init --agents claude 接入'
+      }
+    ]
+  }
+
+  const probe = inspection.probe
+  const checks: DoctorCheck[] = [
+    {
+      category: 'agent',
+      label: 'Claude Code 命令',
+      value:
+        probe.command === null
+          ? '未找到 claude 命令（where.exe / which 均无结果）'
+          : `${probe.command}（kind: ${probe.kind ?? 'unknown'}，source: ${probe.resolution.source}）`,
+      ok: probe.ok,
+      hint: probe.ok ? undefined : claudeFixHint(probe, { platform: process.platform })
+    },
+    {
+      category: 'agent',
+      label: 'Claude Code 探测',
+      value: probe.ok
+        ? `ok · ${describeClaudeProbe(probe)}${
+            probe.method === undefined ? '' : `（method: ${probe.method}）`
+          }`
+        : `${probe.reason ?? 'error'} · ${describeClaudeProbe(probe)}`,
+      ok: probe.ok,
+      hint: probe.ok ? undefined : claudeFixHint(probe, { platform: process.platform })
+    }
+  ]
+
+  // Only a launcher that actually runs as Claude Code may be asked for its MCP
+  // registrations; a Bun shim would just print its own help again.
+  if (probe.ok) checks.push(claudeRegistrationCheck(inspection))
+  return checks
+}
+
+/** `claude mcp get cortex` — registration state, or an explicit "cannot run". */
+function claudeRegistrationCheck(inspection: ClaudeInspection): DoctorCheck {
+  let status: number | null = null
+  try {
+    status = inspection.run(['mcp', 'get', 'cortex']).status
+  } catch {
+    status = null
+  }
+
+  if (status === null) {
+    return {
+      category: 'agent',
+      label: 'Claude Code',
+      value: '无法执行 claude mcp get cortex（命令未返回状态，可能被安全策略拦截）',
+      ok: false,
+      hint: '在终端手动运行 claude mcp get cortex 确认；随后运行 ctx init --agents claude 接入'
+    }
+  }
+  if (status === 0) {
+    return { category: 'agent', label: 'Claude Code', value: '已注册 cortex（stdio）', ok: true }
+  }
+  return {
+    category: 'agent',
+    label: 'Claude Code',
+    value: '未注册 cortex（stdio）',
+    ok: false,
+    hint: '运行 ctx init --agents claude 接入'
+  }
 }
 
 export function collectDoctorReport(context: CliContext, deps: DoctorDeps = {}): DoctorReport {

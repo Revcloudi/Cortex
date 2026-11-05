@@ -72,11 +72,11 @@ export function buildAgentMcpSnippets(target: StdioLaunchTarget): AgentMcpSnippe
     {
       id: 'dsh',
       name: 'DeepSeek Harness',
-      target: '~/.dsh/profiles/<profile>/cordis.patch.yml',
+      target: '$DSH_HOME/cordis.patch.yml (~/.dsh/cordis.patch.yml)',
       format: 'yaml',
       description: {
-        zh: '把 Cortex MCP 条目追加到 insert: 列表，DSH 重启后自动以 stdio 拉起。',
-        en: 'Append the Cortex MCP entry to the insert: list; DSH launches it over stdio after a restart.'
+        zh: '把 Cortex MCP 条目写入 DSH 根目录 patch 层（对所有 profile 生效）；新增插件必须放在 insert: 列表里。',
+        en: 'Write the Cortex MCP entry into the DSH home patch layer (applies to every profile); new plugins must go inside the insert: list.'
       },
       value: `- insert:
     - id: mcp-cortex

@@ -1029,7 +1029,15 @@ export interface SeedDemoResult {
 }
 
 /** Current on-disk schema version; bump when DatabaseService.migrate changes. */
-export const DATABASE_SCHEMA_VERSION = 3
+/**
+ * Current on-disk schema.
+ *
+ * v4 adds the desktop-only Exploit-as-Code retest tables (`poc_artifacts`,
+ * `poc_runs`). They are intentionally NOT joined into `Vulnerability` /
+ * `VulnerabilityListItem` and are never read by MCP tools (see `shared/poc.ts`
+ * and design doc §11.5).
+ */
+export const DATABASE_SCHEMA_VERSION = 5
 
 export interface DatabaseInfo {
   dbPath: string
@@ -1138,3 +1146,6 @@ export interface SetupRunResult {
   warnings: string[]
   restartHint: string
 }
+
+/** Exploit-as-Code PoC types live in ./poc; re-exported for existing call sites. */
+export * from './poc'

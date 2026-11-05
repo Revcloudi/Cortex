@@ -1,5 +1,8 @@
 import type { MemoryGraphData, MemoryGraphQuery } from '@shared/graph'
-import type { CortexApi, DashboardStatsQuery } from '@shared/ipc'
+import type { CortexApi, DashboardStatsQuery, PocApi } from '@shared/ipc'
+import { POC_ERROR_CODES } from '@shared/poc'
+import type { PocConfigView, SavePocConfigInput } from '@shared/poc'
+import type { RepeaterSendInput, RepeaterSendResult } from '@shared/repeater'
 import type {
   AppInfo,
   AssetContext,
@@ -416,6 +419,48 @@ export function createHttpApi(): CortexApi {
     isWindowMaximized: () => Promise.resolve(false),
     onWindowMaximizedChanged: () => () => {},
 
+    /**
+     * Retest repeater is available in Web mode: raw requests are sent by the
+     * server with the same target-origin allowlist and retest proxy. AI model
+     * provider management remains desktop-only (the Web UI hides it).
+     */
+    ...createPocDesktopOnlyStubs(),
+    getPocConfig: () => request<PocConfigView>(WEB_API_PATHS.retestConfig),
+    savePocConfig: (input: SavePocConfigInput) =>
+      request<PocConfigView>(WEB_API_PATHS.retestConfig, {
+        method: 'POST',
+        body: { proxy: input.proxy }
+      }),
+    reloadPocConfig: () => request<PocConfigView>(WEB_API_PATHS.retestConfig),
+    sendRepeaterRequest: (input: RepeaterSendInput) =>
+      request<RepeaterSendResult>(WEB_API_PATHS.retestRepeater, {
+        method: 'POST',
+        body: input
+      }),
+
     onDataChanged
+  }
+}
+
+/**
+ * Desktop-only AI provider methods: fail closed, never fake success. The retest
+ * config/repeater methods are overridden with real Web routes above.
+ */
+function createPocDesktopOnlyStubs(): PocApi {
+  const reject = (method: string): Promise<never> =>
+    Promise.reject(
+      new Error(
+        `${POC_ERROR_CODES.DESKTOP_ONLY}: AI 模型配置仅桌面端可用，Web 模式不支持 ${method}。`
+      )
+    )
+  return {
+    getPocConfig: () => reject('getPocConfig'),
+    savePocConfig: () => reject('savePocConfig'),
+    reloadPocConfig: () => reject('reloadPocConfig'),
+    upsertPocProvider: () => reject('upsertPocProvider'),
+    removePocProvider: () => reject('removePocProvider'),
+    listPocModels: () => reject('listPocModels'),
+    testPocProvider: () => reject('testPocProvider'),
+    sendRepeaterRequest: () => reject('sendRepeaterRequest')
   }
 }
