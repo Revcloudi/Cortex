@@ -628,7 +628,7 @@ export async function runCortexUiSmoke(options = {}) {
     }
     assert.equal(moduleLoaderCalls, 1, 'client.js must call window.__ModuleLoader__.load exactly once')
     assert.ok(moduleDef && typeof moduleDef.factory === 'function', 'ModuleLoader definition has no factory')
-    assert.equal(moduleDef.id, 'dsh-cortex')
+    assert.equal(moduleDef.id, '@lievclouds/dsh-cortex')
 
     React = nodeRequire('react')
     assert.equal(React.version, '18.3.1', `expected platform React 18.3.1, got ${React.version}`)

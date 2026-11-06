@@ -9,7 +9,7 @@
  * the platform module table; the bundled UI shares that instance.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-cortex',
+  id: __CORTEX_PACKAGE_NAME__,
   factory: (require) => {
     'use strict'
     const React = require('react')

@@ -136,7 +136,7 @@ test('every exports / files path exists on disk', () => {
   // The generated client bundle is loadable by the DSH module loader.
   const clientSource = read('client.js')
   assert.match(clientSource, /window\.__ModuleLoader__\.load\(/)
-  assert.match(clientSource, /id:\s*["']dsh-cortex["']/)
+  assert.match(clientSource, /id:\s*["']@lievclouds\/dsh-cortex["']/)
   assert.ok(Buffer.byteLength(clientSource) > 5 * 1024, 'client.js is a real built bundle')
 })
 

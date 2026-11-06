@@ -54,7 +54,7 @@ function loadBundleDefinition() {
 /** Instantiate the plugin; only the platform-provided `react` may be required. */
 function instantiatePlugin() {
   const entry = loadBundleDefinition()
-  assert.equal(entry.id, 'dsh-cortex')
+  assert.equal(entry.id, '@lievclouds/dsh-cortex')
   assert.equal(typeof entry.factory, 'function')
   const required = []
   const plugin = entry.factory((spec) => {

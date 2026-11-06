@@ -183,9 +183,13 @@ const logo = readFileSync(logoPath, 'utf8')
 const logoUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(logo)}`
 
 const template = readFileSync(join(uiRoot, 'dsh', 'wrapper.template.js'), 'utf8')
+// The Client module loader registers a lazy factory whose id must equal the
+// package name, otherwise the browser half never mounts (no panel / icon).
+const packageName = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name
 const probeEnabled = process.env.CORTEX_UI_PROBE === '1'
 const probeCode = probeEnabled ? readFileSync(join(uiRoot, 'dsh', 'probe.template.js'), 'utf8') : ''
 const client = template
+  .replace('__CORTEX_PACKAGE_NAME__', () => JSON.stringify(packageName))
   .replace('__CORTEX_UI_STYLES__', () => JSON.stringify(panelStyles))
   .replace('__CORTEX_FONT_FACES__', () => JSON.stringify(fontFaces.join('\n')))
   .replace('__CORTEX_LOGO_DATA_URL__', JSON.stringify(logoUrl))
