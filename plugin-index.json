@@ -1,0 +1,60 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Cortex",
+    "zh": "Cortex"
+  },
+  "description": {
+    "en": "Local-first pentest intelligence memory as a native DeepSeek Harness panel: vulnerability board, internal operations, 3D Memory Nebula, assets, snapshots and retest, plus 12 native agent tools that use the local Cortex SQLite without MCP.",
+    "zh": "本地优先的渗透测试情报记忆，作为 DeepSeek Harness 原生面板：漏洞看板、内网作战、3D 记忆星云、资产库、认知快照与漏洞复测，并内置 12 个原生 Agent 工具，直接读写本地 Cortex SQLite，无需 MCP。"
+  },
+  "plugins": [
+    {
+      "name": "@lievclouds/dsh-cortex",
+      "title": {
+        "en": "Cortex",
+        "zh": "Cortex"
+      },
+      "description": {
+        "en": "Cortex workbench for DSH: the original Cortex UI (vulnerabilities, assets, internal operations, Memory Nebula, snapshots, retest) as a native panel, plus 12 cortex_* agent tools and an injected usage prompt.",
+        "zh": "DSH 版 Cortex 工作台：原版 Cortex UI（漏洞、资产、内网作战、记忆星云、快照、复测）原生面板，外加 12 个 cortex_* Agent 工具与自动注入的使用提示。"
+      },
+      "icon": "https://raw.githubusercontent.com/Revcloudi/Cortex/main/dsh-cortex/icon.svg",
+      "author": "Revcloudi",
+      "homepage": "https://github.com/Revcloudi/Cortex/tree/main/dsh-cortex#readme",
+      "repository": {
+        "url": "https://github.com/Revcloudi/Cortex",
+        "directory": "dsh-cortex"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh-plugin",
+          "deepseek-harness",
+          "dsh",
+          "cortex",
+          "pentest",
+          "vulnerability-management",
+          "asset-management",
+          "snapshot",
+          "sqlite",
+          "nebula"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.3.0",
+          "publishTimestamp": 1793998930,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/Revcloudi/Cortex",
+            "commit": "b0329b41067e1fd144c7e729b7d9908503c39264",
+            "path": "dsh-cortex"
+          },
+          "engines": {
+            "dsh": "^0.2.2-rc.1"
+          }
+        }
+      ]
+    }
+  ]
+}

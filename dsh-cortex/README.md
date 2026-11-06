@@ -56,6 +56,23 @@
 链接安装时重建 `client.js` 会被 DSH `client-hmr` 自动热替换，无需刷新页面；
 Host 代码（`index.js` / `src/host/**`）变更需要 DSH 重载或插件 recomposition。
 
+## 插件市场生态
+
+仓库根目录的 `plugin-index.json` 是 **format 1** DSH 插件市场索引（官方校验器通过），在 DSH 中
+「插件 → Discover → Add index source」填入：
+
+```text
+https://raw.githubusercontent.com/Revcloudi/Cortex/main/plugin-index.json
+```
+
+即可搜索 `Cortex` 一键安装（当前版本以 git commit + `dsh-cortex/` 子目录固定，npm 发布后可把
+`source` 换成 `{ "type": "npm" }`）。想加入社区索引/awesome 列表，可向
+[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)、
+[polang233/dsh-plugin-index](https://github.com/polang233/dsh-plugin-index)、
+[Aily-DSH/dsh-plugin-index](https://github.com/Aily-DSH/dsh-plugin-index)、
+[shutongX/dsh-plugins-index](https://github.com/shutongX/dsh-plugins-index)、
+[dsh-plugin-lab/market](https://github.com/dsh-plugin-lab/market) 提交 format-1 条目 PR。
+
 ## 卸载
 
 ```text
