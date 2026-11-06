@@ -42,12 +42,12 @@
       },
       "versions": [
         {
-          "version": "0.3.0",
-          "publishTimestamp": 1793998930,
+          "version": "0.3.1",
+          "publishTimestamp": 1793999810,
           "source": {
             "type": "git",
             "url": "https://github.com/Revcloudi/Cortex",
-            "commit": "b0329b41067e1fd144c7e729b7d9908503c39264",
+            "commit": "edb10f7b370a019bfc81d1369c6d64bb4f0d4113",
             "path": "dsh-cortex"
           },
           "engines": {
