@@ -27,7 +27,8 @@ local SQLite database **without any MCP server**.
 Requirements: DeepSeek Harness **≥ 0.2.2-rc.1**, Node.js **≥ 22.19** (bundled with the DSH desktop app) and a
 Cortex database with schema **v5**.
 
-Install from the DSH Plugin Market (Plugins → Market, search `dsh-cortex`), or run:
+Install from the DSH Plugin Market (Plugins → Market, search `@lievclouds/dsh-cortex` — the unscoped
+`dsh-cortex` is a different third-party plugin), or run:
 
 ```text
 dsh plugin --profile desktop add @lievclouds/dsh-cortex   # from npm
