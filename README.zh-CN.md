@@ -15,7 +15,34 @@ Cortex 是本地优先的渗透测试情报中枢。Agent（纯 stdio MCP server
 
 > **仅限授权测试。** Cortex 仅用于你拥有或已获得明确书面授权的系统；使用者需自行遵守相关法律、合同与测试范围约束。
 
-**简体中文** · [English](README.md) · [Web 端（仅内网）](#web-端仅内网) · [Windows 桌面端](#windows-桌面端) · [CLI (ctx)](#cli-ctx) · [MCP 工具](#mcp-接入)
+**简体中文** · [English](README.md) · [DSH 插件](#dsh-插件推荐) · [Web 端（仅内网）](#web-端仅内网) · [Windows 桌面端](#windows-桌面端) · [CLI (ctx)](#cli-ctx) · [MCP 工具](#mcp-接入)
+
+## DSH 插件（推荐）
+
+Cortex 同时提供原生 **DeepSeek Harness** 插件（位于本仓库 `dsh-cortex/`）：把完整 Cortex 工作台——漏洞看板、
+内网作战、3D 记忆星云、资产库、认知快照与漏洞复测——变成 DSH 面板，并注册 **12 个原生 Agent 工具**，
+让 DSH 对话直接读写同一份本地 SQLite，**不需要任何 MCP server**。
+
+环境要求：DeepSeek Harness **≥ 0.2.2-rc.1**、Node.js **≥ 22.19**（DSH 桌面端已内置）以及 Cortex 数据库
+schema **v5**。
+
+```text
+# 1) DSH 插件市场（一键）：插件 → 市场，搜索 `dsh-cortex`，安装
+# 2) DSH 命令，一行安装（写入 desktop profile）：
+dsh plugin --profile desktop add @lievclouds/dsh-cortex
+# 3) 本仓库本地开发：
+dsh plugin --profile desktop add ./dsh-cortex
+```
+
+安装后 DSH 左侧全局面板出现 Cortex 入口，点开即为完整工作台。同一次安装还会注册
+`cortex_list_vulns`、`cortex_get_vuln`、`cortex_save_vuln`、`cortex_update_vuln_status`、
+`cortex_append_retest`、`cortex_list_assets`、`cortex_get_asset`、`cortex_sync_asset_info`、
+`cortex_list_snapshots`、`cortex_get_snapshot`、`cortex_internal_overview`、`cortex_graph_summary`
+共 12 个工具，并向系统提示注入一段使用说明——对话里直接说"把刚才确认的漏洞写入 Cortex"即可生效。
+不再需要 MCP；插件与 MCP 共用同一个数据库，写入建议只固定走其中一套入口。
+
+安装细节、配置（`CORTEX_DB_PATH`、只读模式）、安全模型、Agent 工具参考与架构见
+[dsh-cortex/README.md](dsh-cortex/README.md)。
 
 ## Web 端（仅内网）
 

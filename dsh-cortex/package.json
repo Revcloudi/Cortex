@@ -1,20 +1,35 @@
 {
-  "name": "dsh-cortex",
-  "version": "0.2.0",
-  "description": "Cortex workbench in DeepSeek Harness: the original Cortex UI (vulnerabilities, assets, internal operations, knowledge nebula, snapshots, retest, MCP) ported as a native panel.",
+  "name": "@lievclouds/dsh-cortex",
+  "version": "0.3.0",
+  "description": "Cortex workbench for DeepSeek Harness: the original Cortex UI (vulnerabilities, assets, internal operations, Memory Nebula, snapshots, retest) as a native DSH panel, plus 12 native agent tools so DSH conversations use the local Cortex SQLite without MCP.",
   "type": "module",
   "main": "index.js",
   "license": "MIT",
   "author": {
-    "name": "DSH Cortex plugin"
+    "name": "Revcloudi",
+    "url": "https://github.com/Revcloudi"
+  },
+  "homepage": "https://github.com/Revcloudi/Cortex/tree/main/dsh-cortex#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Revcloudi/Cortex.git",
+    "directory": "dsh-cortex"
+  },
+  "bugs": {
+    "url": "https://github.com/Revcloudi/Cortex/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",
+    "dsh",
+    "cordis",
     "cortex",
-    "vulnerability",
-    "asset",
     "pentest",
+    "vulnerability-management",
+    "asset-management",
     "sqlite",
     "nebula"
   ],
@@ -33,7 +48,8 @@
     "cordis.patch.yml",
     "locale",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=22.19.0"
@@ -45,7 +61,8 @@
     "smoke": "node scripts/smoke-cortex-ui.mjs",
     "test": "node --test",
     "test:host": "node --test \"test/host/**/*.test.mjs\"",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "publish:npm": "npm publish --access public"
   },
   "dsh": {
     "bundle": {

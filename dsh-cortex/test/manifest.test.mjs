@@ -81,7 +81,7 @@ before(() => {
 // ---------------------------------------------------------------- package.json
 
 test('package.json: identity, exports, files and engines match the DSH bundle contract', () => {
-  assert.equal(pkg.name, 'dsh-cortex')
+  assert.equal(pkg.name, '@lievclouds/dsh-cortex')
   assert.equal(pkg.type, 'module')
   assert.match(pkg.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
   assert.match(pkg.description, /\S/)
@@ -212,7 +212,7 @@ test('cordis.patch.yml inserts exactly one dsh-cortex bundle row', () => {
 test('npm pack --dry-run --json succeeds and includes the runtime artifacts', () => {
   assert.equal(packResult.status, 0, `npm pack failed: ${packResult.stderr}`)
   assert.ok(Array.isArray(packResult.parsed) && packResult.parsed.length === 1, 'npm pack returns exactly one entry')
-  assert.equal(packResult.raw.name, 'dsh-cortex')
+  assert.equal(packResult.raw.name, '@lievclouds/dsh-cortex')
   assert.equal(packResult.raw.version, pkg.version)
   assert.ok(packResult.files.length >= 20, `packed ${packResult.files.length} files (expected >= 20)`)
 
@@ -244,7 +244,7 @@ test('npm pack excludes dev-only trees (tests, fixtures, recon, node_modules, sc
     assert.ok(!/(^|\/)\.env(\.|$)/.test(packed), `npm pack must not include .env (${packed})`)
   }
   // Sanity: the dev tree really is present locally (otherwise the assertions above are vacuous).
-  for (const dir of ['test', 'fixtures', 'recon', 'scripts', 'docs']) {
+  for (const dir of ['test', 'fixtures', 'scripts', 'docs']) {
     assert.ok(exists(dir), `dev tree ${dir}/ exists locally but is not packed`)
   }
   const relativeToRoot = relative(root, join(root, 'test', 'manifest.test.mjs'))

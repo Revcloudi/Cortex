@@ -1,14 +1,18 @@
-# dsh-cortex（原版 Cortex UI 移植）
+# dsh-cortex（Cortex 的 DeepSeek Harness 插件）
 
 把本地 **Cortex** 桌面端工作台**原样移植**进 **DeepSeek Harness** 的原生全局面板：
-漏洞看板、内网作战、**记忆星云（Nebula）知识图谱**、资产库、认知快照、复测实验室、MCP 接入。
+漏洞看板、内网作战、**记忆星云（Nebula）知识图谱**、资产库、认知快照、漏洞复测。
+插件同时注册 **12 个原生 Agent 工具**，DSH 对话可直接读写同一份 Cortex SQLite，**不需要 MCP**。
 
-- **1:1 移植**：直接复用 Cortex 原渲染层源码（React 19 源码 / Tailwind / Radix / lucide /
+- **1:1 移植**：直接复用 Cortex 原渲染层源码（React / Tailwind / Radix / lucide /
   react-markdown / three.js + ForceGraph），原 App 组件、页面、i18n、样式**未做视觉重设计**。
 - **无 Electron 依赖**：数据由插件 Host 用 `node:sqlite` 直读 `~/.cortex/data.db`（schema v5），
   通过 `/cortex-api/cortex/**` 暴露给浏览器；Cortex 桌面端 / CLI / Web 均可关闭。
-- **无 MCP 依赖**：不启动 Cortex MCP server，不注册 MCP 工具。
+- **无 MCP 依赖**：内置 `cortex_*` Agent 工具 + 系统提示注入，替代原 MCP 工作流。
 - 只监听 loopback（仅本机可访问）；凭据 secret 永不出库；不自动迁移数据库。
+
+> 本插件是 Cortex 仓库的一部分（`dsh-cortex/`），与 Cortex 同源发布；Cortex 桌面端 / Web / CLI 的
+> 安装方式见仓库根目录 [README](../README.md)（DSH 插件章节之后）。
 
 ## 环境要求
 
@@ -22,32 +26,33 @@
 > schema 不是 v5 时：所有数据接口返回 `409 SCHEMA_INCOMPATIBLE`，界面显示不兼容提示，
 > **不写库、不自动迁移**。
 
-## 安装
+## 在 DSH 中安装（推荐）
 
-Agent / 内置管理工具（推荐，DSH 维护 profile，不要手写 profile 的 `package.json` / `cordis.patch.yml`）：
+插件包名 **`@lievclouds/dsh-cortex`**，位于 Cortex 仓库 `dsh-cortex/`，与 Cortex 同源发布。
+三种安装方式任选：
 
-```text
-plugin_manager action=install_bundle target="C:\absolute\path\to\dsh-cortex"
-```
+1. **DSH 插件市场（一键）**：打开 DSH 桌面端 → 插件 / Plugin Manager → 市场（Market）→ 搜索
+   `dsh-cortex` → 安装。需要该版本已发布到 npm（发布流程见仓库
+   [`.github/workflows/publish-dsh-cortex.yml`](../.github/workflows/publish-dsh-cortex.yml)）。
+2. **DSH 命令（一行）**：
 
-或 DSH CLI：
+   ```bash
+   dsh plugin --profile desktop add @lievclouds/dsh-cortex
+   ```
 
-```bash
-dsh plugin --profile desktop add link:C:\absolute\path\to\dsh-cortex
-```
+3. **本仓库本地开发（link）**：
 
-发布到 registry 后：
-
-```bash
-dsh plugin add dsh-cortex
-```
+   ```bash
+   dsh plugin --profile desktop add ./dsh-cortex
+   # 或使用 DSH Agent 的内置管理工具：
+   plugin_manager action=install_bundle target="<repo>/dsh-cortex"
+   ```
 
 安装后左侧全局面板出现 **Cortex** 图标（`sidebar.panellist`，order 5，位于「插件 / 自动化任务」之间），
-点击进入整页工作台。面板内部采用 **DSH 外壳适配布局**：顶部一行横向卡片导航（漏洞看板 / 内网作战 / 记忆星云 /
-资产库 / 认知快照 / 漏洞复测，图标与激活色沿用原侧栏），右端为中英文切换；不再渲染原 236px
-侧栏、Cortex 品牌与 data.db 卡片（DSH 左栏已承担会话卡片，避免出现两组左侧卡片）。
-原 MCP 接入页已移除（插件本身不依赖 MCP）；Inter / JetBrains Mono 字体在文档层注入，
-确保 Shadow DOM 内也能真正使用原始字体。
+点击进入整页工作台。面板内部采用 **DSH 外壳适配布局**：顶部一行横向卡片导航（漏洞看板 / 内网作战 /
+记忆星云 / 资产库 / 认知快照 / 漏洞复测，图标与激活色沿用原侧栏），右端为中英文切换；不渲染原
+236px 侧栏、Cortex 品牌与 data.db 卡片（DSH 左栏已承担会话卡片）。
+原 MCP 接入页已移除；Inter / JetBrains Mono 字体在文档层注入，确保 Shadow DOM 内真正使用原始字体。
 链接安装时重建 `client.js` 会被 DSH `client-hmr` 自动热替换，无需刷新页面；
 Host 代码（`index.js` / `src/host/**`）变更需要 DSH 重载或插件 recomposition。
 
@@ -55,6 +60,8 @@ Host 代码（`index.js` / `src/host/**`）变更需要 DSH 重载或插件 reco
 
 ```text
 plugin_manager action=remove_bundle target="dsh-cortex"
+# 或 CLI：
+dsh plugin --profile desktop remove @lievclouds/dsh-cortex
 ```
 
 只移除插件注册，**不会删除** Cortex 数据库。
@@ -145,7 +152,7 @@ DSH Web (page, dsh-app://app/)
 ```powershell
 npm run build          # 重新编译记忆星云构建器 + 原 UI client.js（Tailwind + esbuild）
 npm test               # node --test（204 用例：Host / 集成 / jsdom 忠实度 / manifest）
-npm run smoke          # jsdom 忠实度冒烟（236px 侧栏 / 7 导航 / 数据渲染 / 0 console.error）
+npm run smoke          # jsdom 忠实度冒烟（顶部导航行 / 6 导航 / 数据渲染 / 字体注入 / 0 console.error）
 node scripts/build-cortex-ui.mjs     # 只重建 client.js
 node scripts/build-host-graph.mjs    # 只重建 Nebula 图构建器
 node scripts/verify-cortex-api.mjs   # 对运行中的 DSH 校验 /cortex-api/cortex/**
@@ -167,11 +174,13 @@ fixtures/ test/           # 合成 schema-v5 fixture 与测试
 
 1. **仅 loopback**：其他机器访问 403（页面显示「仅本机可用」）。
 2. **DSH 版本适配面**：实测 DSH 0.2.2-rc.1 + Node 24.21.0；平台 React 18.3.1。
-3. **schema 只认 v5**：不迁移、不写库。
+3. **schema 只认 v5**：不迁移、默认不创建数据库（`CORTEX_DB_PATH` 可指向副本）。
 4. **AI 配置页**：与 Cortex `ctx web` 一致隐藏（桌面端专属）；MCP 接入页已移除。
-5. **星云全屏**为页面内覆盖层（内嵌 DSH 视图里原生 Fullscreen API 的退出由宿主接管），再点一次或 Esc 恢复。
-5. **无浏览器控制**：交付验证覆盖 slot/HTTP/jsdom 结构 + 真实页面离屏挂载探针（7 页面 0 错误、
+5. **星云全屏**：优先 Browser Fullscreen API（Electron 真全屏，隐藏任务栏/窗口按钮）；API 被拒绝时
+   降级为页内覆盖层，Esc / 右下角按钮退出。
+6. **无浏览器控制**：交付验证覆盖 slot/HTTP/jsdom 结构 + 真实页面离屏挂载探针（7 页面 0 错误、
    Nebula canvas 已渲染）；无截图级像素比对。
-6. **Nebula 3D**：真实页面 WebGL2 可用已实测；jsdom 无 WebGL，测试只断言懒加载路由与打包内容。
-7. **删除/归档写操作**：按原 UI 行为实现，仅用合成 fixture 测试；真实库未做破坏性验证。
-8. **未发布 npm**：`dsh plugin add dsh-cortex` 需先发布 registry（本机以 link 安装验证）。
+7. **Nebula 3D**：真实页面 WebGL2 可用已实测；jsdom 无 WebGL，测试只断言懒加载路由与打包内容。
+8. **删除/归档写操作**：按原 UI 行为实现，仅用合成 fixture 测试；真实库未做破坏性验证。
+9. **npm 发布**：包名 `@lievclouds/dsh-cortex`。首次发布前，插件市场与 `dsh plugin add` 需等
+   `npm publish` 完成；本地仓库可直接用安装方式 3（link）安装。

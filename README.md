@@ -15,7 +15,36 @@ Cortex: local-first pentest intelligence hub. Agents (pure stdio MCP server), th
 
 > **Authorized testing only.** Cortex is built for systems you own or have explicit written permission to test. You are responsible for complying with applicable laws, contracts and scope boundaries.
 
-**English** · [简体中文](README.zh-CN.md) · [Web UI (intranet only)](#web-ui-intranet-only) · [Windows desktop app](#windows-desktop-app) · [CLI (ctx)](#cli-ctx) · [MCP tools](#mcp-access)
+**English** · [简体中文](README.zh-CN.md) · [DSH plugin](#dsh-plugin-recommended) · [Web UI (intranet only)](#web-ui-intranet-only) · [Windows desktop app](#windows-desktop-app) · [CLI (ctx)](#cli-ctx) · [MCP tools](#mcp-access)
+
+## DSH plugin (recommended)
+
+Cortex also ships as a native **DeepSeek Harness** plugin (`dsh-cortex/` in this repository): the full Cortex
+workbench — vulnerability board, internal operations, 3D Memory Nebula, asset library, snapshots and the retest
+repeater — as a DSH panel, plus **12 native agent tools** so DSH conversations can read and update the same
+local SQLite database **without any MCP server**.
+
+Requirements: DeepSeek Harness **≥ 0.2.2-rc.1**, Node.js **≥ 22.19** (bundled with the DSH desktop app) and a
+Cortex database with schema **v5**.
+
+```text
+# 1) DSH Plugin Market (one click): Plugins → Market, search `dsh-cortex`, Install
+# 2) DSH CLI, one command (installs into the desktop profile):
+dsh plugin --profile desktop add @lievclouds/dsh-cortex
+# 3) Local development from this repository:
+dsh plugin --profile desktop add ./dsh-cortex
+```
+
+After installation a Cortex entry appears in the DSH left panel; opening it mounts the full workbench. The same
+install registers `cortex_list_vulns`, `cortex_get_vuln`, `cortex_save_vuln`, `cortex_update_vuln_status`,
+`cortex_append_retest`, `cortex_list_assets`, `cortex_get_asset`, `cortex_sync_asset_info`,
+`cortex_list_snapshots`, `cortex_get_snapshot`, `cortex_internal_overview` and `cortex_graph_summary`, and
+injects a short usage guide into the system prompt — prompts such as "把刚才确认的漏洞写入 Cortex" work out of
+the box. No MCP server is required; the plugin and MCP share the same database, so use one write path
+consistently.
+
+See [dsh-cortex/README.md](dsh-cortex/README.md) for installation details, configuration (`CORTEX_DB_PATH`,
+read-only mode), the security model, the agent-tool reference and architecture.
 
 ## Web UI (intranet only)
 

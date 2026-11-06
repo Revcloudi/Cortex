@@ -1,0 +1,47 @@
+name: publish dsh-cortex plugin
+
+# Publish the DeepSeek Harness plugin (`dsh-cortex/`) to npm so users can install
+# it from the DSH Plugin Market (search `dsh-cortex`) or with:
+#   dsh plugin --profile desktop add @lievclouds/dsh-cortex
+#
+# Trigger: push a `dsh-plugin-v*` tag, or run the workflow manually.
+# Required repository secret: NPM_TOKEN (an npm automation token with publish
+# rights for the @lievclouds scope).
+on:
+  push:
+    tags:
+      - 'dsh-plugin-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish @lievclouds/dsh-cortex
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: dsh-cortex
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Host graph builder + client bundle
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
