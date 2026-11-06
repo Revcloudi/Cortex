@@ -171,6 +171,9 @@ repository.js + dto.js ── db.js（node:sqlite DatabaseSync，PRAGMA user_ver
    本机已用 link 方式完整验证安装/卸载/热更新。registry 上 `dsh-cortex` 名称是否可用未查询。
 9. **写操作范围**：仅 `status` 与 `retest_results` 追加；不做删除/批量编辑/快照写。
 10. **真实 DB 的 internal 表为空**：内网页当前显示空态（逻辑与合成 fixture 已覆盖全量表格与 masked 凭据）。
+11. **测试文件命名**：`test/client/aux-pages.test.mjs` 原名 `aux.test.mjs`；Windows 保留设备名 `AUX`
+    导致 Git for Windows 无法索引该文件，已重命名（内容与 13 个用例不变，全套 174/174 仍绿）。
+12. 仓库已 `git init` 并提交初始版本（`026ae0b`，64 个文件；`node_modules/`、`*.log`、`*.tgz` 已忽略）。
 
 ## 10. 发布步骤（用户侧）
 
