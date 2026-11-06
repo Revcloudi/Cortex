@@ -1,0 +1,66 @@
+{
+  "name": "dsh-cortex",
+  "version": "0.1.0",
+  "description": "Cortex workbench in DeepSeek Harness: local vulnerabilities, assets, internal operations, snapshots and retests as a native panel.",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "author": {
+    "name": "DSH Cortex plugin"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "cortex",
+    "vulnerability",
+    "asset",
+    "pentest",
+    "sqlite"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "smoke": "node scripts/smoke-client.mjs && node scripts/smoke-host.mjs",
+    "test": "node --test",
+    "test:host": "node --test \"test/host/**/*.test.mjs\"",
+    "pack:check": "npm pack --dry-run"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  }
+}

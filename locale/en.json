@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Cortex",
+    "description": "Read and work on the local Cortex database from DeepSeek Harness: vulnerabilities, assets, internal operation scope, snapshots and retests."
+  }
+}
