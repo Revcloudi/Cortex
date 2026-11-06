@@ -15,7 +15,8 @@ const REALMS = ['web', 'internal', 'all']
 const OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  properties: { text: { type: 'string', required: true } },
+  properties: { text: { type: 'string' } },
+  required: ['text'],
 }
 
 const renderText = (_args, value) => [{ type: 'text', text: String(value && value.text !== undefined ? value.text : value) }]
@@ -42,6 +43,67 @@ function jsonArray(raw) {
   } catch {
     return []
   }
+}
+
+function parseJsonList(raw) {
+  try {
+    const value = JSON.parse(String(raw ?? '[]'))
+    return Array.isArray(value) ? value : []
+  } catch {
+    return []
+  }
+}
+
+function todayStamp() {
+  const now = new Date()
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+}
+
+function nextVulnId(db) {
+  const stamp = todayStamp()
+  const prefix = `VULN-${stamp}-`
+  const rows = db.prepare('SELECT id FROM vulnerabilities WHERE id LIKE ?').all(`${prefix}%`)
+  let max = 0
+  for (const row of rows) {
+    const suffix = Number(String(row.id).slice(prefix.length))
+    if (Number.isFinite(suffix) && suffix > max) max = suffix
+  }
+  return `${prefix}${String(max + 1).padStart(3, '0')}`
+}
+
+function runWrite(db, work) {
+  return withBusyRetry(() => {
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      const result = work()
+      db.exec('COMMIT')
+      return result
+    } catch (error) {
+      try {
+        db.exec('ROLLBACK')
+      } catch {
+        /* ignore */
+      }
+      throw error
+    }
+  })
+}
+
+function jsonColumn(value) {
+  return JSON.stringify(Array.isArray(value) ? value : [])
+}
+
+function uniqueJsonMerge(existingRaw, additions) {
+  const merged = [...parseJsonList(existingRaw)]
+  const seen = new Set(merged.map((entry) => JSON.stringify(entry)))
+  for (const entry of Array.isArray(additions) ? additions : []) {
+    const key = JSON.stringify(entry)
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(entry)
+  }
+  return merged
 }
 
 function text(value) {
@@ -248,6 +310,156 @@ export function createCortexToolDefinitions({ holder, config }) {
     },
   )
 
+  const saveVuln = defineTool(
+    'cortex_save_vuln',
+    'Insert or update a local Cortex vulnerability record (dedupe with cortex_list_vulns first). Omit id to auto-assign VULN-YYYYMMDD-NNN; passing an existing id overwrites the provided fields. reproduction_steps is Markdown (### 步骤 / **请求** / **响应** / **判据** + http code block).',
+    {
+      id: { type: 'string', description: 'Existing id to update; omit for a new record' },
+      host: { type: 'string', description: 'Entry asset host, e.g. 127.0.0.1:8080 or https://example.com' },
+      vuln_name: { type: 'string' },
+      vuln_type: { type: 'string', description: 'e.g. SQL Injection / IDOR (default Unclassified)' },
+      severity: { type: 'string', enum: SEVERITIES },
+      target_url: { type: 'string' },
+      realm: { type: 'string', enum: ['web', 'internal'] },
+      service_host: { type: 'string', description: 'Internal service label, e.g. 10.0.1.10:6379 (realm=internal)' },
+      internal_service_id: { type: 'string' },
+      entry_point: { type: 'string' },
+      description: { type: 'string' },
+      impact: { type: 'string' },
+      affected_interfaces: { type: 'array', items: { type: 'string' } },
+      reproduction_steps: { type: 'string' },
+      remediation: { type: 'array', items: { type: 'string' } },
+      crypto_details: { type: 'string' },
+      test_boundaries: { type: 'string' },
+      status: { type: 'string', enum: STATUSES },
+      related_vuln_ids: { type: 'array', items: { type: 'string' } },
+    },
+    ['host', 'vuln_name', 'severity', 'target_url'],
+    async (args) => {
+      assertWritable(holder)
+      const db = ensureDb(holder)
+      const severity = text(args.severity)
+      if (!SEVERITIES.includes(severity)) throw new Error(`severity must be one of ${SEVERITIES.join(', ')}`)
+      const status = text(args.status) || 'Confirmed'
+      if (!STATUSES.includes(status)) throw new Error(`status must be one of ${STATUSES.join(', ')}`)
+      const realm = text(args.realm) || 'web'
+      if (realm !== 'web' && realm !== 'internal') throw new Error('realm must be web or internal')
+      const existingId = text(args.id).trim()
+      const existing = existingId ? db.prepare('SELECT id FROM vulnerabilities WHERE id = ?').get(existingId) : null
+      if (existingId && !existing) throw new Error(`id ${existingId} does not exist; omit id to create a new record`)
+      const id = existingId || nextVulnId(db)
+      const now = new Date().toISOString()
+      const fields = {
+        host: text(args.host).trim(),
+        entry_point: text(args.entry_point),
+        vuln_name: text(args.vuln_name).trim(),
+        vuln_type: text(args.vuln_type) || 'Unclassified',
+        severity,
+        target_url: text(args.target_url).trim(),
+        description: text(args.description),
+        impact: text(args.impact),
+        affected_interfaces: jsonColumn(args.affected_interfaces),
+        reproduction_steps: text(args.reproduction_steps),
+        remediation: jsonColumn(args.remediation),
+        crypto_details: text(args.crypto_details),
+        test_boundaries: text(args.test_boundaries),
+        related_vuln_ids: jsonColumn(args.related_vuln_ids),
+        status,
+        realm,
+        service_host: text(args.service_host),
+        internal_service_id: text(args.internal_service_id),
+      }
+      for (const key of ['host', 'vuln_name', 'target_url']) {
+        if (!fields[key]) throw new Error(`${key} is required`)
+      }
+      runWrite(db, () => {
+        if (existing) {
+          const columns = Object.keys(fields)
+          db.prepare(`UPDATE vulnerabilities SET ${columns.map((column) => `${column} = ?`).join(', ')} WHERE id = ?`).run(
+            ...columns.map((column) => fields[column]),
+            id,
+          )
+        } else {
+          const columns = ['id', ...Object.keys(fields), 'created_at']
+          const values = [id, ...Object.keys(fields).map((column) => fields[column]), now]
+          db.prepare(`INSERT INTO vulnerabilities (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`).run(
+            ...values,
+          )
+        }
+      })
+      holder.refreshFileStamp()
+      return { text: `${LOG} ${existing ? 'updated' : 'saved'} ${id} | ${fields.severity} | ${fields.host} | ${fields.vuln_name}` }
+    },
+  )
+
+  const syncAsset = defineTool(
+    'cortex_sync_asset_info',
+    'Insert or update local Cortex asset context (fingerprints, structured interfaces, leaked info, test parameters, related vulns). mode=merge (default) appends new array entries and only overwrites provided scalars; mode=replace replaces the whole asset snapshot.',
+    {
+      host_port: { type: 'string', description: 'Full URL/authority, e.g. http://127.0.0.1:8080/' },
+      project_name: { type: 'string' },
+      host: { type: 'string' },
+      tech_stack: { type: 'string' },
+      auth_required: { type: 'boolean' },
+      status: { type: 'string', enum: ['Alive', 'Dead', 'WAF_Blocked'] },
+      interfaces: { type: 'array', items: { type: 'object' } },
+      leaked_infos: { type: 'array', items: { type: 'object' } },
+      test_parameters: { type: 'array', items: { type: 'object' } },
+      related_vuln_ids: { type: 'array', items: { type: 'string' } },
+      mode: { type: 'string', enum: ['merge', 'replace'] },
+    },
+    ['host_port', 'project_name'],
+    async (args) => {
+      assertWritable(holder)
+      const db = ensureDb(holder)
+      const hostPort = text(args.host_port).trim()
+      const project = text(args.project_name).trim()
+      if (!hostPort || !project) throw new Error('host_port and project_name are required')
+      const merge = args.mode !== 'replace'
+      const existing = db.prepare('SELECT * FROM assets WHERE host_port = ?').get(hostPort)
+      const now = new Date().toISOString()
+      const arrayField = (name) => {
+        const value = Array.isArray(args[name]) ? args[name] : undefined
+        if (merge && existing) return jsonColumn(uniqueJsonMerge(existing[name], value))
+        if (merge && !existing) return jsonColumn(value)
+        return jsonColumn(value)
+      }
+      const scalar = (name, fallback) =>
+        args[name] !== undefined ? args[name] : merge && existing ? existing[name].valueOf() : fallback
+      const values = {
+        host: merge && existing ? existing.host : text(args.host) || text(new URL(hostPort.startsWith('http') ? hostPort : `http://${hostPort}`).host),
+        project_name: project,
+        tech_stack: args.tech_stack !== undefined ? text(args.tech_stack) : merge && existing ? existing.tech_stack : '',
+        auth_required: scalar('auth_required', false) ? 1 : 0,
+        status: scalar('status', 'Alive'),
+        interfaces: arrayField('interfaces'),
+        leaked_infos: arrayField('leaked_infos'),
+        test_parameters: arrayField('test_parameters'),
+        related_vuln_ids: arrayField('related_vuln_ids'),
+        last_seen: now,
+      }
+      runWrite(db, () => {
+        if (existing) {
+          const columns = Object.keys(values)
+          db.prepare(`UPDATE assets SET ${columns.map((column) => `${column} = ?`).join(', ')} WHERE host_port = ?`).run(
+            ...columns.map((column) => values[column]),
+            hostPort,
+          )
+        } else {
+          const columns = ['host_port', ...Object.keys(values)]
+          db.prepare(`INSERT INTO assets (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`).run(
+            hostPort,
+            ...Object.keys(values).map((column) => values[column]),
+          )
+        }
+      })
+      holder.refreshFileStamp()
+      return {
+        text: `${LOG} ${existing ? (merge ? 'merged' : 'replaced') : 'created'} asset ${hostPort} (project ${project})`,
+      }
+    },
+  )
+
   const listAssets = defineTool(
     'cortex_list_assets',
     'List local Cortex assets (host_port, project, tech stack, interface/leak/test-parameter counts). Optional search/status/project filters.',
@@ -441,9 +653,11 @@ export function createCortexToolDefinitions({ holder, config }) {
   const tools = [
     listVulns,
     getVuln,
+    saveVuln,
     updateStatus,
     appendRetest,
     listAssets,
+    syncAsset,
     getAsset,
     listSnapshots,
     getSnapshot,

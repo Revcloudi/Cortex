@@ -68,22 +68,37 @@ plugin_manager action=remove_bundle target="dsh-cortex"
 
 ## 对话内访问（非 MCP）
 
-插件不再需要 MCP：Host 半边通过 `ctx.tools.register` 向 DSH 注册 10 个原生 Agent 工具，
-对话中可直接读写本地 Cortex 库：
+插件不再需要 MCP，也不需要手动写 skill 注入：Host 半边通过 `ctx.tools.register` 注册 12 个原生
+Agent 工具，并通过 `ctx.systemPrompt.section` **自动注入使用说明**（常驻系统提示，作用等同原 MCP
+skill 注入，但由插件自身维护）。对话里正常描述目标即可触发：
 
 | 工具 | 说明 |
 |---|---|
-| `cortex_list_vulns` | 漏洞列表（realm/search/severity/status/分页） |
-| `cortex_get_vuln` | 读取单条漏洞完整证据（描述/影响/复现/修复/复测） |
+| `cortex_list_vulns` / `cortex_get_vuln` | 漏洞列表（realm/search/severity/status/分页）/ 完整证据 |
+| `cortex_save_vuln` | 新增或更新漏洞（省略 id 自动分配 VULN-YYYYMMDD-NNN） |
 | `cortex_update_vuln_status` | 更新漏洞状态（只改 status 列） |
 | `cortex_append_retest` | 追加复测结论（append-only，不改原始证据） |
 | `cortex_list_assets` / `cortex_get_asset` | 资产列表 / 详情（结构化接口、泄露、测试参数） |
+| `cortex_sync_asset_info` | 同步资产上下文（mode=merge 增量 / replace 全量） |
 | `cortex_list_snapshots` / `cortex_get_snapshot` | 认知快照列表 / 详情（九字段） |
 | `cortex_internal_overview` | 内网作战范围汇总（footholds/hosts/services/credentials/pivots） |
 | `cortex_graph_summary` | 记忆星云派生图规模与高连接节点 |
 
+**提示词写法**（自然语言即可，明确「动作 + 对象」最稳）：
+
+- 查询：`列出 Cortex 漏洞库里 127.0.0.1:8080 的所有高危漏洞`、`查一下 VULN-20261102-007 的详情`
+- 写入：`把刚才确认的 SSRF 漏洞写入 Cortex：host 127.0.0.1:8080，severity High，target ...`
+- 状态：`把 VULN-20261102-007 标记为已确认`
+- 复测：`给 VULN-20261102-007 追加一条复测结论：2026-11-07 复测仍可复现，...`
+- 资产：`把 127.0.0.1:8080 的接口/泄露/技术栈同步到资产库（merge）`
+- 内网/星云：`汇总一下内网作战范围`、`星云图里哪些节点连接最多`
+- 若模型没自动触发，可直接点名：`用 cortex_list_vulns 查 ...`
+
 同一套能力也以 `/cortex-api/cortex/**` HTTP 路由暴露（loopback），
 `node scripts/verify-agent-access.mjs` 可对运行中的 DSH 做非 MCP 读写验证。
+
+> 旧的 `mcp__cortex__*` 工具仍可用但不再必需；插件工具与 MCP 共用同一 SQLite，
+> 两套入口可混用（写入建议只走其中一套，避免重复记录）。
 
 ---
 
@@ -129,7 +144,7 @@ DSH Web (page, dsh-app://app/)
 
 ```powershell
 npm run build          # 重新编译记忆星云构建器 + 原 UI client.js（Tailwind + esbuild）
-npm test               # node --test（195+ 用例：Host / 集成 / jsdom 忠实度 / manifest）
+npm test               # node --test（204 用例：Host / 集成 / jsdom 忠实度 / manifest）
 npm run smoke          # jsdom 忠实度冒烟（236px 侧栏 / 7 导航 / 数据渲染 / 0 console.error）
 node scripts/build-cortex-ui.mjs     # 只重建 client.js
 node scripts/build-host-graph.mjs    # 只重建 Nebula 图构建器

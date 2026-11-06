@@ -28,9 +28,11 @@ test('registers the Cortex agent tool surface without MCP', () => {
   assert.deepEqual(names, [
     'cortex_list_vulns',
     'cortex_get_vuln',
+    'cortex_save_vuln',
     'cortex_update_vuln_status',
     'cortex_append_retest',
     'cortex_list_assets',
+    'cortex_sync_asset_info',
     'cortex_get_asset',
     'cortex_list_snapshots',
     'cortex_get_snapshot',
@@ -114,11 +116,76 @@ test('asset, snapshot, internal and graph tools return data', async () => {
   assert.match(graph.text, /nodes \/ \d+ links/)
 })
 
+test('cortex_save_vuln inserts and updates records', async () => {
+  const created = await call('cortex_save_vuln', {
+    host: 'example.test:8080',
+    vuln_name: 'Tool-created finding',
+    severity: 'High',
+    target_url: 'http://example.test:8080/tool',
+    vuln_type: 'IDOR',
+    description: 'created by the agent tool test',
+    reproduction_steps: '### 步骤 1\n\n- request\n\n**判据**: 200',
+  })
+  const id = created.text.match(/VULN-\d{8}-\d{3}/)[0]
+  assert.match(created.text, /saved/)
+  const list = await call('cortex_list_vulns', { search: 'Tool-created finding' })
+  assert.match(list.text, new RegExp(id))
+  const updated = await call('cortex_save_vuln', {
+    id,
+    host: 'example.test:8080',
+    vuln_name: 'Tool-created finding (updated)',
+    severity: 'Critical',
+    target_url: 'http://example.test:8080/tool',
+    description: 'second write',
+  })
+  assert.match(updated.text, /updated/)
+  const detail = await call('cortex_get_vuln', { id })
+  assert.match(detail.text, /Tool-created finding \(updated\)/)
+  assert.match(detail.text, /second write/)
+})
+
+test('cortex_sync_asset_info merges and replaces asset snapshots', async () => {
+  const hostPort = 'http://example.test:9000/'
+  const created = await call('cortex_sync_asset_info', {
+    host_port: hostPort,
+    project_name: 'tool-test',
+    tech_stack: 'nginx, PHP',
+    interfaces: [{ path: '/a', method: 'GET' }],
+    leaked_infos: [{ info_type: 'API_Key', value: 'demo-key', source: '/js/app.js', potential_impact: 'demo' }],
+    test_parameters: [{ name: 'tenantId', endpoint: '/api', location: 'query', values: ['1'], source: 'js' }],
+  })
+  assert.match(created.text, /created asset/)
+  await call('cortex_sync_asset_info', {
+    host_port: hostPort,
+    project_name: 'tool-test',
+    interfaces: [{ path: '/b', method: 'POST' }],
+    mode: 'merge',
+  })
+  let asset = await call('cortex_get_asset', { hostPort })
+  assert.match(asset.text, /\/a/)
+  assert.match(asset.text, /\/b/)
+  await call('cortex_sync_asset_info', {
+    host_port: hostPort,
+    project_name: 'tool-test',
+    interfaces: [{ path: '/c', method: 'GET' }],
+    mode: 'replace',
+  })
+  asset = await call('cortex_get_asset', { hostPort })
+  assert.match(asset.text, /## interfaces \(1\)\n\[\n  \{\n    "path": "\/c"/)
+})
+
 test('read-only host rejects the write tools', async () => {
   const readOnlyHost = createCortexHost({ config: { dbPath, readOnly: true } })
   const readOnlyTools = createCortexToolDefinitions(readOnlyHost.dataAccess)
   const update = readOnlyTools.find((tool) => tool.name === 'cortex_update_vuln_status')
   await assert.rejects(update.execute({ id: 'VULN-20260101-001', status: 'Confirmed' }), /read-only/i)
+  const save = readOnlyTools.find((tool) => tool.name === 'cortex_save_vuln')
+  await assert.rejects(
+    save.execute({ host: 'example.test', vuln_name: 'x', severity: 'Low', target_url: 'http://example.test/' }),
+    /read-only/i,
+  )
+  const sync = readOnlyTools.find((tool) => tool.name === 'cortex_sync_asset_info')
+  await assert.rejects(sync.execute({ host_port: 'http://example.test/', project_name: 'p' }), /read-only/i)
   await readOnlyHost.dispose()
 })
 

@@ -126,10 +126,14 @@ esbuild IIFE（React shim + react-dom 18.3.1 + Radix + lucide + react-markdown +
     实测 retest 页真实列出 9 条 Web 漏洞，无错误。
 11. **星云左侧命令栏默认缩回**：`hudCollapsed` 初始值改为 `true`；实测 `aria-hidden=true`、`transform` 位移
     -328px（完全滑出画布），需要时点左侧箭头展开。
-12. **对话内非 MCP 访问**：Host 通过 `ctx.tools.register` 注册 10 个 Agent 工具（漏洞列表/详情/状态更新/
-    复测追加/资产/快照/内网/星云摘要），对话不再依赖 MCP。单测 7/7；本地用真实入口注册到 fake registry
-    验证 10 个工具；对运行中 DSH 的 `/cortex-api/cortex/**` 做非 MCP 读写验证 **14/14**（含真实状态修改
-    后恢复、资产/快照/内网/星云读取）。运行 `node scripts/verify-agent-access.mjs` 可复验。
+12. **对话内非 MCP 访问**：Host 通过 `ctx.tools.register` 注册**12 个** Agent 工具（列表/详情/保存/
+    状态/复测/资产列表与同步/快照/内网/星云摘要），并新增 `cortex_save_vuln`、`cortex_sync_asset_info`
+    两项写入工具；系统提示由 `ctx.systemPrompt.section` 自动注入（等同原 MCP skill 注入）。
+14. **工具一度对 Agent 不可见（已修）**：根因是 `output.schema` 里把 `required` 写成属性级布尔值，
+    DSH 使用标准 JSON Schema → 注册校验失败、工具被整体拒绝。改为 `required: ['text']` 后恢复正常；
+    实测"更新工具列表"中出现全部 12 个 `cortex_*`，并在真实对话中调用成功
+    （`cortex_list_vulns` 返回 13 条漏洞、`cortex_list_assets` 返回资产）。工具单测 9/9。
+    另新增只读模式拒写、ID 自动分配、资产 merge/replace 的测试；总测试数 204。
 
 1. **漏洞列表加载失败**（`severity must be one of …`）：原 UI 用字面量 `all` 表示不过滤，
    Host 枚举校验拒绝 → `/cortex/vulns`、`/cortex/assets` 现接受 `severity/status=all` 等同缺省。
