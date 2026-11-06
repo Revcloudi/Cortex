@@ -18,10 +18,6 @@ window.__ModuleLoader__.load({
     const UI_CSS = __CORTEX_UI_STYLES__
     const FONT_FACES_CSS = __CORTEX_FONT_FACES__
     const LOGO_DATA_URL = __CORTEX_LOGO_DATA_URL__
-    const PROBE_ENABLED = __CORTEX_UI_PROBE_FLAG__
-    globalThis.__DSH_CORTEX_CSS__ = UI_CSS
-
-    /*__CORTEX_UI_PROBE__*/
 
     /*
      * Chromium ignores @font-face rules that live inside a Shadow DOM
@@ -137,13 +133,6 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'cortex' }, CortexPanel))
       } catch (error) {
         console.error('[dsh-cortex] main panel registration failed', error)
-      }
-      if (PROBE_ENABLED) {
-        try {
-          window.setTimeout(runAcceptanceProbe, 1500)
-        } catch (error) {
-          /* probe optional */
-        }
       }
     }
 

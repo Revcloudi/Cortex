@@ -627,16 +627,8 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     }
   }, [setFullscreenModeSafe])
 
-  // Escape leaves either mode (native also exits itself; calling exit is safe).
-  useEffect(() => {
-    if (fullscreenMode === 'off') return undefined
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') leaveFullscreen()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [fullscreenMode, leaveFullscreen])
-
+  // Declared before the Escape effect below: referencing it in that effect's
+  // dependency array from a later `const` is a temporal-dead-zone ReferenceError.
   const leaveFullscreen = useCallback((): void => {
     const doc = document as any
     // Always attempt the native exit even when fullscreenElement is not exposed:
@@ -649,6 +641,16 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     }
     setFullscreenModeSafe('off')
   }, [setFullscreenModeSafe])
+
+  // Escape leaves either mode (native also exits itself; calling exit is safe).
+  useEffect(() => {
+    if (fullscreenMode === 'off') return undefined
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') leaveFullscreen()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [fullscreenMode, leaveFullscreen])
 
   const handleToggleFullscreen = useCallback(() => {
     const element = sectionRef.current

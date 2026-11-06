@@ -922,6 +922,30 @@ export async function runCortexUiSmoke(options = {}) {
       return 'lazy NebulaPage + THREE.js bundled, canvas intentionally not rendered'
     })
 
+    await check('nebula page renders without crashing (TDZ regression guard)', async () => {
+      // jsdom has no WebGL, but the React page shell must still mount: a
+      // temporal-dead-zone bug in NebulaPage used to throw during render and
+      // blank the whole panel when the user opened 记忆星云.
+      const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
+      const windowBefore = windowErrors.length
+      await act(async () => {
+        byTestId('nav-nebula').click()
+      })
+      await waitFor(act, () => shadow.querySelector('section'), { label: 'nebula section', timeoutMs: 10_000 })
+      assert.ok(byTestId('hud-column'), 'nebula HUD column missing')
+      assert.equal(
+        consoleErrors.filter(isFatalConsoleMessage).length,
+        fatalBefore,
+        'React error while rendering the nebula page',
+      )
+      assert.equal(
+        windowErrors.length,
+        windowBefore,
+        `page error while rendering the nebula page: ${windowErrors.slice(windowBefore).join(' | ')}`,
+      )
+      return 'NebulaPage mounts its HUD/section without a render crash'
+    })
+
     await check('other original pages mount without React errors (internal / snapshots / mcp / retest)', async () => {
       const targets = [
         { nav: 'nav-internal', selector: '[data-testid="internal-page"]', label: 'internal' },
