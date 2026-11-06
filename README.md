@@ -34,29 +34,6 @@ dsh plugin --profile desktop add @lievclouds/dsh-cortex   # from npm
 dsh plugin --profile desktop add ./dsh-cortex             # local development
 ```
 
-### Plugin Market ecosystem (GitHub)
-
-`plugin-index.json` in the repository root is a **format 1** DSH plugin-market index for this plugin
-(validated with the official `@deepseek-ai/dsh-plugin-market-index` validator). Add its raw URL in DSH:
-
-1. Enable the **Experimental Plugin Market** bundle in DSH.
-2. Plugins → **Discover** → **Add index source**:
-   `https://raw.githubusercontent.com/Revcloudi/Cortex/main/plugin-index.json`
-3. Search `Cortex` and install. The current version is pinned to a git commit/path, so this works before
-   the npm package is published; after publishing, switch the version's `source` to `{ "type": "npm" }`.
-
-To join the wider ecosystem:
-
-- Add GitHub topics **`dsh-plugin`**, **`deepseek-harness`**, **`dsh`** to this repository so indexes and
-  awesome lists can find it.
-- Tag releases `dsh-plugin-v*`: `.github/workflows/publish-dsh-cortex.yml` publishes the npm package.
-- Open a PR adding this plugin to community format-1 indexes / awesome lists:
-  [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin),
-  [polang233/dsh-plugin-index (Open Plugin Market)](https://github.com/polang233/dsh-plugin-index),
-  [Aily-DSH/dsh-plugin-index](https://github.com/Aily-DSH/dsh-plugin-index),
-  [shutongX/dsh-plugins-index](https://github.com/shutongX/dsh-plugins-index),
-  [dsh-plugin-lab/market](https://github.com/dsh-plugin-lab/market).
-
 See [dsh-cortex/README.md](dsh-cortex/README.md) for installation details, configuration (`CORTEX_DB_PATH`,
 read-only mode), the security model, the agent-tool reference and architecture.
 

@@ -33,29 +33,6 @@ dsh plugin --profile desktop add @lievclouds/dsh-cortex   # 从 npm 安装
 dsh plugin --profile desktop add ./dsh-cortex             # 本仓库本地开发
 ```
 
-### 插件市场生态（GitHub）
-
-仓库根目录的 `plugin-index.json` 是本插件的 **format 1** DSH 插件市场索引（已用官方
-`@deepseek-ai/dsh-plugin-market-index` 校验器验证）。在 DSH 中添加：
-
-1. 启用 DSH 的 **Experimental Plugin Market** bundle。
-2. 插件 → **Discover** → **Add index source**：
-   `https://raw.githubusercontent.com/Revcloudi/Cortex/main/plugin-index.json`
-3. 搜索 `Cortex` 安装。当前版本固定到 git commit + 子目录，因此 npm 发布前也可安装；npm 发布后把该
-   版本的 `source` 改为 `{ "type": "npm" }` 即可。
-
-加入更广的生态：
-
-- 给仓库加上 GitHub topics：**`dsh-plugin`**、**`deepseek-harness`**、**`dsh`**，便于索引与
-  awesome 列表收录。
-- 发布 tag `dsh-plugin-v*`：`.github/workflows/publish-dsh-cortex.yml` 会自动发布 npm 包。
-- 向社区 format-1 索引 / awesome 列表提交 PR：
-  [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)、
-  [polang233/dsh-plugin-index（Open Plugin Market）](https://github.com/polang233/dsh-plugin-index)、
-  [Aily-DSH/dsh-plugin-index](https://github.com/Aily-DSH/dsh-plugin-index)、
-  [shutongX/dsh-plugins-index](https://github.com/shutongX/dsh-plugins-index)、
-  [dsh-plugin-lab/market](https://github.com/dsh-plugin-lab/market)。
-
 安装细节、配置（`CORTEX_DB_PATH`、只读模式）、安全模型、Agent 工具参考与架构见
 [dsh-cortex/README.md](dsh-cortex/README.md)。
 
