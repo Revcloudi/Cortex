@@ -1,0 +1,6 @@
+# dsh-cortex bundle patch.
+# Inserts the Host half; the browser half is declared by package.json dsh.client
+# and mounted by the Harness Client module loader.
+- insert:
+    - id: dsh-cortex
+      name: '@lievclouds/dsh-cortex'
