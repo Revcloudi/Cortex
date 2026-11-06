@@ -103,6 +103,16 @@
 /* DSH shell adaptations                                                     */
 /* ------------------------------------------------------------------------- */
 
+/* Nebula "fullscreen": the embedded DSH view cannot reliably exit the Browser
+ * Fullscreen API (the host shell owns the exit), so the page uses an in-page
+ * full-viewport overlay. Clicking the button again (or Escape) restores it. */
+.dshc-cortex-root section[data-dsh-fullscreen='true'] {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+
 /*
  * DeepSeek Harness already owns the left column (conversation cards), so the
  * ported app's 236px sidebar card column and its frameless-window Titlebar are

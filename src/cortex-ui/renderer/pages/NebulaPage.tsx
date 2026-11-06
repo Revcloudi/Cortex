@@ -163,7 +163,9 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
    */
   const [motionEnabled, setMotionEnabled] = useState<boolean>(() => {
     try {
-      const stored = window.localStorage.getItem('cortex.nebula.motion')
+      // v2 key: an older persisted "off" from the previous HUD toggle must not
+      // turn the default slow auto-rotation off for new users of the port.
+      const stored = window.localStorage.getItem('cortex.nebula.motion.v2')
       return stored === null ? true : stored === '1'
     } catch {
       return true
@@ -178,7 +180,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     setMotionEnabled((current) => {
       const next = !current
       try {
-        window.localStorage.setItem('cortex.nebula.motion', next ? '1' : '0')
+        window.localStorage.setItem('cortex.nebula.motion.v2', next ? '1' : '0')
       } catch {
         /* private mode / storage disabled: the toggle still works for this session */
       }
@@ -589,25 +591,20 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     setSearch('')
   }, [])
 
-  // Keep the fullscreen button in sync with browser-initiated exits (Esc).
+  // DSH embedded view: the Browser Fullscreen API enters fullscreen but its exit
+  // is routed by the host shell, so the page could never restore its layout.
+  // Use an in-page full-viewport overlay instead; Escape also restores it.
   useEffect(() => {
-    const onChange = (): void => setIsFullscreen(document.fullscreenElement !== null)
-    document.addEventListener('fullscreenchange', onChange)
-    return () => document.removeEventListener('fullscreenchange', onChange)
-  }, [])
+    if (!isFullscreen) return undefined
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setIsFullscreen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isFullscreen])
 
   const handleToggleFullscreen = useCallback(() => {
-    const element = sectionRef.current
-    if (element === null) return
-    // Inside a Shadow DOM, `document.fullscreenElement` can be the shadow host
-    // rather than this element, so decide on any active fullscreen instead of
-    // comparing identities; otherwise the second click requests fullscreen again
-    // and the page can never return to its normal layout.
-    if (document.fullscreenElement !== null) {
-      void document.exitFullscreen().catch(() => undefined)
-      return
-    }
-    void element.requestFullscreen().catch(() => undefined)
+    setIsFullscreen((value) => !value)
   }, [])
 
   const handleExportPng = useCallback(() => {
@@ -742,6 +739,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     <section
       ref={sectionRef}
       aria-label={t('nebula.title')}
+      data-dsh-fullscreen={isFullscreen ? 'true' : undefined}
       className="relative h-full w-full overflow-hidden"
       style={{ backgroundColor: NEBULA_BACKGROUND }}
     >

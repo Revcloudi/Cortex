@@ -111,6 +111,11 @@ esbuild IIFE（React shim + react-dom 18.3.1 + Radix + lucide + react-markdown +
    `exitFullscreen` 调用 1 次、空闲态下 `requestFullscreen` 调用 1 次。
 7. **移除 MCP 接入**：导航项、Dashboard 空态入口与页面路由全部删除（插件直接读 SQLite，不需要 MCP）；
    顶部卡片行现为 6 项，左侧历史实体不再出现。实测 `navCount=6`、`hasMcpEntry=false`。
+8. **星云默认旋转恢复**：motion 开关此前持久化到 `cortex.nebula.motion`，历史 "off" 值会让默认不旋转；
+   改用 `cortex.nebula.motion.v2` 新键（默认 ON）。原逻辑里交互（含点节点）后 4s 自动恢复旋转。
+   实测 `motion-toggle aria-pressed=true`、新键为空（默认开）。
+9. **星云全屏可进可退**：内嵌 DSH 视图里 Browser Fullscreen API 的退出被宿主接管，无法恢复布局；
+   改为页面内全屏覆盖层 + Esc/再次点击恢复。实测 section `relative → fixed(0,0,1920×1032) → relative`。
 
 1. **漏洞列表加载失败**（`severity must be one of …`）：原 UI 用字面量 `all` 表示不过滤，
    Host 枚举校验拒绝 → `/cortex/vulns`、`/cortex/assets` 现接受 `severity/status=all` 等同缺省。

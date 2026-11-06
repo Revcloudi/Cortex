@@ -132,7 +132,8 @@ fixtures/ test/           # 合成 schema-v5 fixture 与测试
 1. **仅 loopback**：其他机器访问 403（页面显示「仅本机可用」）。
 2. **DSH 版本适配面**：实测 DSH 0.2.2-rc.1 + Node 24.21.0；平台 React 18.3.1。
 3. **schema 只认 v5**：不迁移、不写库。
-4. **AI 配置页**：与 Cortex `ctx web` 一致隐藏（桌面端专属）。
+4. **AI 配置页**：与 Cortex `ctx web` 一致隐藏（桌面端专属）；MCP 接入页已移除。
+5. **星云全屏**为页面内覆盖层（内嵌 DSH 视图里原生 Fullscreen API 的退出由宿主接管），再点一次或 Esc 恢复。
 5. **无浏览器控制**：交付验证覆盖 slot/HTTP/jsdom 结构 + 真实页面离屏挂载探针（7 页面 0 错误、
    Nebula canvas 已渲染）；无截图级像素比对。
 6. **Nebula 3D**：真实页面 WebGL2 可用已实测；jsdom 无 WebGL，测试只断言懒加载路由与打包内容。

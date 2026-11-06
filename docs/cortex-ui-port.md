@@ -48,7 +48,10 @@ src/host/cortex/           插件 Host 的 CortexApi 兼容层 + Nebula 图适�
 | 漏洞列表报 `severity must be one of …` | 原 UI 用字面量 `all` 表示"不过滤"，Host 严格枚举校验拒绝 | `/cortex/vulns` 与 `/cortex/assets` 接受 `severity/status=all`（等同缺省），非法值仍 400 |
 | Markdown 排版与桌面端差很多 | 打包时漏掉原 `renderer/index.css`（`.markdown-body` 标题/列表/表格/行内码/代码块/动画等全在这里） | Tailwind 入口改为原 `renderer/index.css`；实测 `.markdown-body` 12.5px/21.25 行高、行内码底色恢复 |
 | 漏洞详情无法滚轮上下滑动 | Radix Dialog 的 modal 滚动锁在 Shadow DOM 下无法识别滚轮目标 | Sheet 改非 modal；实测 drawer 可滚动区 1194 > 897、`body` 无 scroll-lock、`scrollTop` 可写 |
-| 左侧出现两组卡片（DSH 对话卡 + 插件侧栏卡） | 移植保留原 236px 侧栏，与 DSH 左侧栏重复 | 删除插件内 236px 侧栏/品牌/标题栏，改为顶部一行横向导航卡（7 项）+ 右端语言切换；删除 data.db 卡片 |
+| 左侧出现两组卡片（DSH 对话卡 + 插件侧栏卡） | 移植保留原 236px 侧栏，与 DSH 左侧栏重复 | 删除插件内 236px 侧栏/品牌/标题栏，改为顶部一行横向导航卡（6 项）+ 右端语言切换；删除 data.db 卡片与 MCP 页 |
+| 字体/代码字体与桌面版差距大 | Chromium 不加载 Shadow DOM 样式表里的 @font-face | 构建抽出 13 个 face，`apply()` 注入 document.head；实测 Inter/JetBrains 均加载 |
+| 星云全屏按钮无法退出 | 内嵌 DSH 视图里 Browser Fullscreen API 的退出由宿主接管 | 改为页面内全屏覆盖层（`section[data-dsh-fullscreen]` fixed inset-0）+ Esc 恢复；探针验证 relative → fixed → relative |
+| 星云默认不旋转 / 选节点后不恢复 | 旧版 motion 开关持久化键可能残留 "off" | 换 `cortex.nebula.motion.v2` 键，默认 ON；交互后 4s 恢复旋转（原逻辑） |
 
 
 ## 运行时结构
