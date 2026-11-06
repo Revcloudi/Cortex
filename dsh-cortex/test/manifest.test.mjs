@@ -196,11 +196,15 @@ test('cordis.patch.yml inserts exactly one dsh-cortex bundle row', () => {
   const normalized = yaml.replace(/['"]/g, '')
   assert.match(normalized, /^-\s*insert:/m)
   assert.match(normalized, /^\s+-\s+id:\s*dsh-cortex\s*$/m, 'patch row id is dsh-cortex')
-  assert.match(normalized, /^\s+name:\s*dsh-cortex\s*$/m, 'patch row name is dsh-cortex')
+  assert.match(
+    normalized,
+    /^\s+name:\s*@lievclouds\/dsh-cortex\s*$/m,
+    'patch row name is the published package name',
+  )
 
   const insertIndex = normalized.search(/^-\s*insert:/m)
   const idIndex = normalized.search(/id:\s*dsh-cortex/m)
-  const nameIndex = normalized.search(/name:\s*dsh-cortex/m)
+  const nameIndex = normalized.search(/name:\s*@lievclouds\/dsh-cortex/m)
   assert.ok(idIndex > insertIndex && nameIndex > insertIndex, 'id/name live under the insert block')
   assert.ok(nameIndex > idIndex, 'patch row defines id before name')
   // No absolute local paths / secrets in the published patch.

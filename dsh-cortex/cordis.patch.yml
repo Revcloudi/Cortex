@@ -3,4 +3,4 @@
 # and mounted by the Harness Client module loader.
 - insert:
     - id: dsh-cortex
-      name: 'dsh-cortex'
+      name: '@lievclouds/dsh-cortex'

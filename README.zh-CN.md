@@ -34,6 +34,9 @@ dsh plugin --profile desktop add @lievclouds/dsh-cortex
 dsh plugin --profile desktop add ./dsh-cortex
 ```
 
+> 插件市场与 `dsh plugin add` 命令解析的是 npm 包：首次使用前需在 `dsh-cortex/` 下执行一次
+> `npm publish --access public`（或运行仓库的 publish workflow）。发布前请用第 3 种本地 link 安装。
+
 安装后 DSH 左侧全局面板出现 Cortex 入口，点开即为完整工作台。同一次安装还会注册
 `cortex_list_vulns`、`cortex_get_vuln`、`cortex_save_vuln`、`cortex_update_vuln_status`、
 `cortex_append_retest`、`cortex_list_assets`、`cortex_get_asset`、`cortex_sync_asset_info`、

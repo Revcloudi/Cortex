@@ -35,6 +35,10 @@ dsh plugin --profile desktop add @lievclouds/dsh-cortex
 dsh plugin --profile desktop add ./dsh-cortex
 ```
 
+> The Plugin Market entry and the `dsh plugin add` command resolve the npm package: publish it once with
+> `npm publish --access public` from `dsh-cortex/` (or run the publish workflow) before first use. Until then
+> install from a local checkout (option 3).
+
 After installation a Cortex entry appears in the DSH left panel; opening it mounts the full workbench. The same
 install registers `cortex_list_vulns`, `cortex_get_vuln`, `cortex_save_vuln`, `cortex_update_vuln_status`,
 `cortex_append_retest`, `cortex_list_assets`, `cortex_get_asset`, `cortex_sync_asset_info`,
