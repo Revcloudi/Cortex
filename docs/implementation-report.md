@@ -93,6 +93,7 @@ esbuild IIFE（React shim + react-dom 18.3.1 + Radix + lucide + react-markdown +
 | 真实页面离屏巡视 | 临时探针（已移除） | **7 页面 0 错误**：dashboard/internal/nebula/assets/snapshots/mcp/retest 全部渲染；**nebula canvas=1**；internal 5 行表、assets 1 行、snapshots 1 行、mcp 7 行 |
 | 真实 API | `node scripts/verify-cortex-api.mjs` | **25 / 25**：rev/stats/vulns(13)/detail/assets(1)/asset detail interfaces/snapshots/db·app info/graph(30/51)/internal projects·overview（无 secret） |
 | 安装 | `plugin_manager install_bundle` | `application:"applied"`；slot occupant `dsh-cortex/cortex(5, active)`；profile `link:` 依赖 |
+| 卸载/重装（最终版复验） | `remove_bundle` → `install_bundle` | 卸载后：profile `dependencies` 恢复原状（无 `dsh-cortex`）、bundles 列表移除、`cordis.patch.yml` 无残留、`/cortex-api/cortex/rev` → 404；重装后：`applied`、live API 25/25、client bundle 3,570,002 B 正常下发、slot active |
 | 热更新 | `client-hmr` | 重建 client.js → 页面收到 `rebuilt frame` 并热替换（已实测） |
 | 只读保护 | graph/nebula 测试 | live DB 仅 readOnly 连接；测试全部使用临时 fixture；未做真实库破坏性写 |
 
