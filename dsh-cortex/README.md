@@ -44,9 +44,9 @@
 
    ```bash
    dsh plugin --profile desktop add ./dsh-cortex
-   # 或使用 DSH Agent 的内置管理工具：
-   plugin_manager action=install_bundle target="<repo>/dsh-cortex"
    ```
+
+   也可使用 DSH Agent 的管理工具：`plugin_manager action=install_bundle target="<repo>/dsh-cortex"`。
 
 安装后左侧全局面板出现 **Cortex** 图标（`sidebar.panellist`，order 5，位于「插件 / 自动化任务」之间），
 点击进入整页工作台。面板内部采用 **DSH 外壳适配布局**：顶部一行横向卡片导航（漏洞看板 / 内网作战 /

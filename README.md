@@ -27,17 +27,12 @@ local SQLite database **without any MCP server**.
 Requirements: DeepSeek Harness **≥ 0.2.2-rc.1**, Node.js **≥ 22.19** (bundled with the DSH desktop app) and a
 Cortex database with schema **v5**.
 
-```text
-# 1) DSH Plugin Market (one click): Plugins → Market, search `dsh-cortex`, Install
-# 2) DSH CLI, one command (installs into the desktop profile):
-dsh plugin --profile desktop add @lievclouds/dsh-cortex
-# 3) Local development from this repository:
-dsh plugin --profile desktop add ./dsh-cortex
-```
+Install from the DSH Plugin Market (Plugins → Market, search `dsh-cortex`), or run:
 
-> The Plugin Market entry and the `dsh plugin add` command resolve the npm package: publish it once with
-> `npm publish --access public` from `dsh-cortex/` (or run the publish workflow) before first use. Until then
-> install from a local checkout (option 3).
+```text
+dsh plugin --profile desktop add @lievclouds/dsh-cortex   # from npm
+dsh plugin --profile desktop add ./dsh-cortex             # local development
+```
 
 ### Plugin Market ecosystem (GitHub)
 
@@ -61,14 +56,6 @@ To join the wider ecosystem:
   [Aily-DSH/dsh-plugin-index](https://github.com/Aily-DSH/dsh-plugin-index),
   [shutongX/dsh-plugins-index](https://github.com/shutongX/dsh-plugins-index),
   [dsh-plugin-lab/market](https://github.com/dsh-plugin-lab/market).
-
-After installation a Cortex entry appears in the DSH left panel; opening it mounts the full workbench. The same
-install registers `cortex_list_vulns`, `cortex_get_vuln`, `cortex_save_vuln`, `cortex_update_vuln_status`,
-`cortex_append_retest`, `cortex_list_assets`, `cortex_get_asset`, `cortex_sync_asset_info`,
-`cortex_list_snapshots`, `cortex_get_snapshot`, `cortex_internal_overview` and `cortex_graph_summary`, and
-injects a short usage guide into the system prompt — prompts such as "把刚才确认的漏洞写入 Cortex" work out of
-the box. No MCP server is required; the plugin and MCP share the same database, so use one write path
-consistently.
 
 See [dsh-cortex/README.md](dsh-cortex/README.md) for installation details, configuration (`CORTEX_DB_PATH`,
 read-only mode), the security model, the agent-tool reference and architecture.

@@ -26,16 +26,12 @@ Cortex 同时提供原生 **DeepSeek Harness** 插件（位于本仓库 `dsh-cor
 环境要求：DeepSeek Harness **≥ 0.2.2-rc.1**、Node.js **≥ 22.19**（DSH 桌面端已内置）以及 Cortex 数据库
 schema **v5**。
 
-```text
-# 1) DSH 插件市场（一键）：插件 → 市场，搜索 `dsh-cortex`，安装
-# 2) DSH 命令，一行安装（写入 desktop profile）：
-dsh plugin --profile desktop add @lievclouds/dsh-cortex
-# 3) 本仓库本地开发：
-dsh plugin --profile desktop add ./dsh-cortex
-```
+DSH 插件市场（一键）：插件 → 市场，搜索 `dsh-cortex` → 安装；或直接执行：
 
-> 插件市场与 `dsh plugin add` 命令解析的是 npm 包：首次使用前需在 `dsh-cortex/` 下执行一次
-> `npm publish --access public`（或运行仓库的 publish workflow）。发布前请用第 3 种本地 link 安装。
+```text
+dsh plugin --profile desktop add @lievclouds/dsh-cortex   # 从 npm 安装
+dsh plugin --profile desktop add ./dsh-cortex             # 本仓库本地开发
+```
 
 ### 插件市场生态（GitHub）
 
@@ -59,13 +55,6 @@ dsh plugin --profile desktop add ./dsh-cortex
   [Aily-DSH/dsh-plugin-index](https://github.com/Aily-DSH/dsh-plugin-index)、
   [shutongX/dsh-plugins-index](https://github.com/shutongX/dsh-plugins-index)、
   [dsh-plugin-lab/market](https://github.com/dsh-plugin-lab/market)。
-
-安装后 DSH 左侧全局面板出现 Cortex 入口，点开即为完整工作台。同一次安装还会注册
-`cortex_list_vulns`、`cortex_get_vuln`、`cortex_save_vuln`、`cortex_update_vuln_status`、
-`cortex_append_retest`、`cortex_list_assets`、`cortex_get_asset`、`cortex_sync_asset_info`、
-`cortex_list_snapshots`、`cortex_get_snapshot`、`cortex_internal_overview`、`cortex_graph_summary`
-共 12 个工具，并向系统提示注入一段使用说明——对话里直接说"把刚才确认的漏洞写入 Cortex"即可生效。
-不再需要 MCP；插件与 MCP 共用同一个数据库，写入建议只固定走其中一套入口。
 
 安装细节、配置（`CORTEX_DB_PATH`、只读模式）、安全模型、Agent 工具参考与架构见
 [dsh-cortex/README.md](dsh-cortex/README.md)。
