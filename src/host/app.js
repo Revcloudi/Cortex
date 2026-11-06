@@ -11,6 +11,10 @@
  * `handler(req, res)` never throws and never rejects: every failure is mapped
  * onto the JSON error envelope. `dispose()` closes the SQLite connection and is
  * idempotent. The database is opened lazily on the first request.
+ *
+ * Requests under `/cortex-api/cortex/**` are delegated by `router.js` to the
+ * ported Cortex UI dispatcher (`src/host/cortex/index.js`); this factory only
+ * wires the shared DatabaseHolder/Repository/config into both halves.
  */
 
 import { readFileSync } from 'node:fs'

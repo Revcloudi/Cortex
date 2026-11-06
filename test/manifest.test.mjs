@@ -34,21 +34,17 @@ const REQUIRED_PACKED = [
   'README.md',
   'locale/en.json',
   'locale/zh.json',
-  'src/client/index.js',
-  'src/client/styles.js',
-  'src/client/locales.js',
-  'src/client/lib/api.js',
-  'src/client/ui/kit.js',
-  'src/client/pages/overview.js',
-  'src/client/pages/vulns.js',
-  'src/client/pages/assets.js',
-  'src/client/pages/internal.js',
-  'src/client/pages/snapshots.js',
-  'src/client/pages/retest.js',
+  'src/cortex-ui/renderer/App.tsx',
+  'src/cortex-ui/dsh/entry.tsx',
+  'src/cortex-ui/dsh/api.ts',
+  'src/cortex-ui/dsh/wrapper.template.js',
+  'src/cortex-ui/shared/graph.ts',
   'src/host/app.js',
   'src/host/db.js',
   'src/host/repository.js',
   'src/host/router.js',
+  'src/host/cortex/index.js',
+  'src/host/cortex/graph-builder.js',
 ]
 
 /** Path prefixes that must NEVER be published. */
@@ -140,7 +136,7 @@ test('every exports / files path exists on disk', () => {
   // The generated client bundle is loadable by the DSH module loader.
   const clientSource = read('client.js')
   assert.match(clientSource, /window\.__ModuleLoader__\.load\(/)
-  assert.match(clientSource, /id:\s*"dsh-cortex"/)
+  assert.match(clientSource, /id:\s*["']dsh-cortex["']/)
   assert.ok(Buffer.byteLength(clientSource) > 5 * 1024, 'client.js is a real built bundle')
 })
 
@@ -231,7 +227,7 @@ test('npm pack --dry-run --json succeeds and includes the runtime artifacts', ()
   }
 
   // locale + src coverage by pattern (future pages/modules stay packaged).
-  assert.ok(packResult.files.some((path) => path.startsWith('src/client/')), 'src/client/** included')
+  assert.ok(packResult.files.some((path) => path.startsWith('src/cortex-ui/')), 'src/cortex-ui/** included')
   assert.ok(packResult.files.some((path) => path.startsWith('src/host/')), 'src/host/** included')
   assert.ok(packResult.files.filter((path) => /^locale\/.*\.json$/.test(path)).length >= 2, 'locale/*.json included')
   assert.ok(packResult.files.every((path) => !path.includes('\\')), 'packed paths use forward slashes')

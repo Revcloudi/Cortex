@@ -1,16 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Cortex">
-  <rect width="128" height="128" rx="28" fill="#0f1220"/>
-  <g fill="none" stroke="#7c8cf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M64 22 98 42v44L64 106 30 86V42z" opacity=".55"/>
-    <path d="M64 41 82 52v26L64 89 46 78V52z"/>
+  <rect width="128" height="128" rx="28" fill="#141a24"/>
+  <g transform="translate(24 24) scale(5)" fill="none">
+    <path d="M3 4.25h5.4M3 8h9.4M3 11.75h7" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    <circle cx="12.9" cy="4.25" r="1.1" fill="#ffffff"/>
   </g>
-  <g fill="#aab5ff">
-    <circle cx="64" cy="22" r="7"/>
-    <circle cx="98" cy="42" r="7"/>
-    <circle cx="98" cy="86" r="7"/>
-    <circle cx="64" cy="106" r="7"/>
-    <circle cx="30" cy="86" r="7"/>
-    <circle cx="30" cy="42" r="7"/>
-  </g>
-  <circle cx="64" cy="65" r="9" fill="#7c8cf8"/>
 </svg>

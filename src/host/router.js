@@ -2,6 +2,8 @@
  * Route table + dispatch for the `/cortex-api` prefix (contract §2.4/§2.5).
  *
  * Dispatch order:
+ *   0. `/cortex-api/cortex/**` -> `handleCortex` (ported Cortex UI; fences and
+ *      DB guards handled there, before the legacy table below)
  *   1. parse URL
  *   2. loopback peer fence
  *   3. loopback Host fence
@@ -40,6 +42,7 @@ import {
   sendMarkdown,
 } from './http.js'
 import * as dto from './dto.js'
+import { CORTEX_PREFIX, handleCortex } from './cortex/index.js'
 import { buildVulnReport, reportFilename } from './reports.js'
 import { sendRetest, validateSendRequest, ALLOWED_METHODS as RETEST_METHODS } from './retest.js'
 import { SEVERITIES, STATUSES, ASSET_STATUSES } from './repository.js'
@@ -297,13 +300,33 @@ export function createRouter(deps) {
   return async function route(req, res) {
     try {
       const { pathname, searchParams } = parseRequestUrl(req)
+      const method = String((req && req.method) || 'GET').toUpperCase()
+
+      // Ported Cortex desktop UI API. Delegated before the legacy route table
+      // (and before `stripPrefix`); `handleCortex` runs the loopback peer/Host
+      // fences, the same-origin write fence, DB guards and error envelope
+      // itself, so the old `/cortex-api` routes stay byte-for-byte unchanged.
+      if (pathname === CORTEX_PREFIX || pathname.startsWith(`${CORTEX_PREFIX}/`)) {
+        const cortexPath = pathname === CORTEX_PREFIX ? '/' : pathname.slice(CORTEX_PREFIX.length)
+        await handleCortex({
+          req,
+          res,
+          path: cortexPath,
+          method,
+          url: req.url,
+          holder,
+          repository,
+          config,
+        })
+        return
+      }
+
       assertLoopbackPeer(req)
       assertLoopbackHost(req)
 
       const raw = stripPrefix(pathname)
       if (raw === null) throw notFound('route not found')
 
-      const method = String((req && req.method) || 'GET').toUpperCase()
       if (method === 'OPTIONS') throw methodNotAllowed()
 
       const path = raw.length > 1 ? raw.replace(/\/+$/, '') : raw

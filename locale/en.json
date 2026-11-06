@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Cortex",
-    "description": "Read and work on the local Cortex database from DeepSeek Harness: vulnerabilities, assets, internal operation scope, snapshots and retests."
+    "description": "The original Cortex workbench inside DeepSeek Harness: vulnerability board, internal operations, memory nebula graph, assets, cognitive snapshots, retest lab and MCP access."
   }
 }

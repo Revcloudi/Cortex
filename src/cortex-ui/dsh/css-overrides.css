@@ -1,0 +1,100 @@
+/*
+ * Shadow-root adaptations for the ported Cortex UI.
+ *
+ * The original renderer index.css targets `:root`, `html`, `body` and `#root`;
+ * inside a Shadow DOM the design tokens and the base typography must live on the
+ * root element instead. The vendored copy keeps its Tailwind directives only;
+ * every `@apply`-based body rule is reproduced here for `.dshc-cortex-root`.
+ */
+.dshc-cortex-root {
+  --background: 0 0% 100%;
+  --foreground: 224 18% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 18% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 224 18% 10%;
+  --primary: 224 18% 10%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 16% 96%;
+  --secondary-foreground: 224 12% 20%;
+  --muted: 220 16% 96.5%;
+  --muted-foreground: 220 9% 46%;
+  --accent: 174 77% 25%;
+  --accent-foreground: 0 0% 100%;
+  --accent-soft: 174 55% 96%;
+  --destructive: 0 72% 46%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 14% 91%;
+  --input: 220 14% 87%;
+  --ring: 174 77% 25%;
+  --radius: 0.5rem;
+  --sidebar: 40 20% 98%;
+  --canvas: 40 16% 99%;
+  --code: 224 22% 9%;
+
+  height: 100%;
+  background: hsl(var(--canvas));
+  color: hsl(var(--foreground));
+  font-family:
+    'Inter Variable',
+    Inter,
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
+    'PingFang SC',
+    'Noto Sans SC',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-feature-settings:
+    'cv11' 1,
+    'ss01' 1;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dshc-cortex-root *,
+.dshc-cortex-root *::before,
+.dshc-cortex-root *::after {
+  border-color: hsl(var(--border));
+}
+
+.dshc-cortex-root h1,
+.dshc-cortex-root h2,
+.dshc-cortex-root h3,
+.dshc-cortex-root h4 {
+  text-wrap: balance;
+}
+
+.dshc-cortex-root p {
+  text-wrap: pretty;
+}
+
+.dshc-cortex-root ::selection {
+  background: hsl(var(--accent) / 0.16);
+  color: hsl(var(--foreground));
+}
+
+.dshc-cortex-root :focus-visible {
+  outline: 2px solid hsl(var(--ring) / 0.55);
+  outline-offset: 2px;
+}
+
+.dshc-cortex-root ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.dshc-cortex-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dshc-cortex-root ::-webkit-scrollbar-thumb {
+  background: hsl(220 10% 82%);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.dshc-cortex-root ::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 10% 68%);
+  background-clip: content-box;
+  border: 3px solid transparent;
+}
