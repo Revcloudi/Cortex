@@ -66,6 +66,27 @@ plugin_manager action=remove_bundle target="dsh-cortex"
 | `CORTEX_DB_PATH` | `~/.cortex/data.db` | Cortex SQLite 路径（可指向副本） |
 | `CORTEX_DB_READONLY` | 未设置 | 设为 `1` 强制只读（状态修改 / 复测发送等写操作 403） |
 
+## 对话内访问（非 MCP）
+
+插件不再需要 MCP：Host 半边通过 `ctx.tools.register` 向 DSH 注册 10 个原生 Agent 工具，
+对话中可直接读写本地 Cortex 库：
+
+| 工具 | 说明 |
+|---|---|
+| `cortex_list_vulns` | 漏洞列表（realm/search/severity/status/分页） |
+| `cortex_get_vuln` | 读取单条漏洞完整证据（描述/影响/复现/修复/复测） |
+| `cortex_update_vuln_status` | 更新漏洞状态（只改 status 列） |
+| `cortex_append_retest` | 追加复测结论（append-only，不改原始证据） |
+| `cortex_list_assets` / `cortex_get_asset` | 资产列表 / 详情（结构化接口、泄露、测试参数） |
+| `cortex_list_snapshots` / `cortex_get_snapshot` | 认知快照列表 / 详情（九字段） |
+| `cortex_internal_overview` | 内网作战范围汇总（footholds/hosts/services/credentials/pivots） |
+| `cortex_graph_summary` | 记忆星云派生图规模与高连接节点 |
+
+同一套能力也以 `/cortex-api/cortex/**` HTTP 路由暴露（loopback），
+`node scripts/verify-agent-access.mjs` 可对运行中的 DSH 做非 MCP 读写验证。
+
+---
+
 ## 页面（与原 UI 一致）
 
 | 页面 | 说明 |
@@ -75,7 +96,7 @@ plugin_manager action=remove_bundle target="dsh-cortex"
 | 记忆星云 | 3D 知识图谱（three.js + ForceGraph3D）：漏洞 / 资产 / 泄露 / 快照 / 内网实体；2D 降级；节点检查器；范围选择 |
 | 资产库 | 资产表 / 详情抽屉：技术栈、结构化接口（原始 HTTP 请求）、泄露信息、测试参数、关联漏洞 |
 | 认知快照 | 项目 → 父/子会话；九字段、测试接口、关联漏洞、归档/恢复/删除 |
-| 漏洞复测 | 原 Repeater 面板；Web 漏洞步骤、重定向、响应渲染；顶部状态修改 |
+| 漏洞复测 | 原 Repeater 面板；Web 漏洞列表、步骤、重定向、响应渲染；顶部状态修改 |
 | AI 配置 | 桌面端专属；Web/DSH 运行时按原逻辑隐藏 |
 
 > MCP 接入页已按需求移除：DSH 插件直接访问本地 SQLite，不需要 MCP。

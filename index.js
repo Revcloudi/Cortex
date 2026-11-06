@@ -7,11 +7,12 @@
  * on MCP, or on any Cortex source code.
  */
 import { createCortexHost } from './src/host/app.js'
+import { registerCortexTools } from './src/host/cortex/tools.js'
 
 export const name = 'dsh-cortex'
 
 /** The browser HTTP carrier is a hard dependency for the internal API route. */
-export const inject = ['webServer']
+export const inject = ['webServer', 'tools']
 
 export function apply(ctx, config) {
   let host
@@ -23,6 +24,13 @@ export function apply(ctx, config) {
     console.warn(`[dsh-cortex] host bootstrap failed: ${String(err && err.message ? err.message : err).slice(0, 200)}`)
     return
   }
+
+  // Agent tools: conversations can read/update the Cortex database without MCP.
+  ctx.inject(['tools'], (child) => {
+    child.effect(() => {
+      return registerCortexTools(child.tools, host.dataAccess)
+    }, 'dsh-cortex: agent tools (non-MCP Cortex access)')
+  })
 
   ctx.inject(['webServer'], (web) => {
     ctx.effect(() => {

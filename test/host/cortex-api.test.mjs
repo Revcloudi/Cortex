@@ -275,8 +275,13 @@ describe('cortex: GET /vulns', () => {
     assert.equal(body.page, 3)
     assert.equal(body.items.length, 1)
 
+    // The Cortex renderer's retest page asks for pageSize=200, so the cortex API
+    // ceiling is 500 (legacy DSH-style routes keep their own 100 ceiling).
+    body = expectOk(await readServer.request('/cortex-api/cortex/vulns?pageSize=200'))
+    assert.equal(body.pageSize, 200)
+
     expectCode(
-      await readServer.request('/cortex-api/cortex/vulns?pageSize=101'),
+      await readServer.request('/cortex-api/cortex/vulns?pageSize=501'),
       400,
       'BAD_REQUEST',
     )

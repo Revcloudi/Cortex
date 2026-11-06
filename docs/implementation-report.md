@@ -114,8 +114,15 @@ esbuild IIFE（React shim + react-dom 18.3.1 + Radix + lucide + react-markdown +
 8. **星云默认旋转恢复**：motion 开关此前持久化到 `cortex.nebula.motion`，历史 "off" 值会让默认不旋转；
    改用 `cortex.nebula.motion.v2` 新键（默认 ON）。原逻辑里交互（含点节点）后 4s 自动恢复旋转。
    实测 `motion-toggle aria-pressed=true`、新键为空（默认开）。
-9. **星云全屏可进可退**：内嵌 DSH 视图里 Browser Fullscreen API 的退出被宿主接管，无法恢复布局；
-   改为页面内全屏覆盖层 + Esc/再次点击恢复。实测 section `relative → fixed(0,0,1920×1032) → relative`。
+10. **漏洞复测页加载不到漏洞**：Retest 页请求 `pageSize=200`，而 cortex `/vulns` 沿用了旧路由 100 的上限 →
+    400 `pageSize must be between 1 and 100`。修复：cortex 路由上限提高到 500（旧 DSH 风格路由仍保持 100）；
+    实测 retest 页真实列出 9 条 Web 漏洞，无错误。
+11. **星云左侧命令栏默认缩回**：`hudCollapsed` 初始值改为 `true`；实测 `aria-hidden=true`、`transform` 位移
+    -328px（完全滑出画布），需要时点左侧箭头展开。
+12. **对话内非 MCP 访问**：Host 通过 `ctx.tools.register` 注册 10 个 Agent 工具（漏洞列表/详情/状态更新/
+    复测追加/资产/快照/内网/星云摘要），对话不再依赖 MCP。单测 7/7；本地用真实入口注册到 fake registry
+    验证 10 个工具；对运行中 DSH 的 `/cortex-api/cortex/**` 做非 MCP 读写验证 **14/14**（含真实状态修改
+    后恢复、资产/快照/内网/星云读取）。运行 `node scripts/verify-agent-access.mjs` 可复验。
 
 1. **漏洞列表加载失败**（`severity must be one of …`）：原 UI 用字面量 `all` 表示不过滤，
    Host 枚举校验拒绝 → `/cortex/vulns`、`/cortex/assets` 现接受 `severity/status=all` 等同缺省。

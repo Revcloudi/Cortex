@@ -21,7 +21,6 @@
  */
 
 import {
-  MAX_PAGE_SIZE,
   MAX_SEARCH_VALUE,
   badRequest,
   notFound,
@@ -41,6 +40,8 @@ const STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed']
 const REALM_FILTERS = ['web', 'internal', 'all']
 
 const DEFAULT_PAGE_SIZE = 10
+/** The Cortex renderer itself asks for pageSize=200 on the retest page. */
+const CORTEX_MAX_PAGE_SIZE = 500
 const MAX_ID_LENGTH = 100
 const MAX_BULK_IDS = 500
 const MAX_HOST_FILTER = 255
@@ -283,7 +284,7 @@ export function handleList({ res, searchParams, holder }) {
   const host = queryString(searchParams, 'host', { max: MAX_HOST_FILTER }) ?? ''
   const page = queryInt(searchParams, 'page', { min: 1, max: 100_000 }) ?? 1
   const pageSize =
-    queryInt(searchParams, 'pageSize', { min: 1, max: MAX_PAGE_SIZE }) ?? DEFAULT_PAGE_SIZE
+    queryInt(searchParams, 'pageSize', { min: 1, max: CORTEX_MAX_PAGE_SIZE }) ?? DEFAULT_PAGE_SIZE
   const sort = queryString(searchParams, 'sort', { max: 100 })
   const order = orderClause(sort)
 

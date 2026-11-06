@@ -183,11 +183,16 @@ const logo = readFileSync(logoPath, 'utf8')
 const logoUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(logo)}`
 
 const template = readFileSync(join(uiRoot, 'dsh', 'wrapper.template.js'), 'utf8')
+const probeEnabled = process.env.CORTEX_UI_PROBE === '1'
+const probeCode = probeEnabled ? readFileSync(join(uiRoot, 'dsh', 'probe.template.js'), 'utf8') : ''
 const client = template
   .replace('__CORTEX_UI_STYLES__', () => JSON.stringify(panelStyles))
   .replace('__CORTEX_FONT_FACES__', () => JSON.stringify(fontFaces.join('\n')))
   .replace('__CORTEX_LOGO_DATA_URL__', JSON.stringify(logoUrl))
   .replace('__CORTEX_UI_BUNDLE__', () => uiBundle)
+  .replace('__CORTEX_UI_PROBE_FLAG__', () => String(probeEnabled))
+  .replace('/*__CORTEX_UI_PROBE__*/', () => probeCode)
+if (probeEnabled) log('DEV probe injected (CORTEX_UI_PROBE=1)')
 
 const clientPath = join(root, 'client.js')
 writeFileSync(clientPath, client, 'utf8')

@@ -122,5 +122,14 @@ export function createCortexHost(options = {}) {
     return Promise.resolve()
   }
 
-  return { handler, dispose }
+  return {
+    handler,
+    dispose,
+    /**
+     * Data access handed to the plugin's agent tools (non-MCP access to the
+     * same Cortex database). The holder is shared with the HTTP half, so both
+     * transports see the same connection and compatibility state.
+     */
+    dataAccess: { holder, config: resolved, repository },
+  }
 }

@@ -155,7 +155,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   /** Legend starts collapsed; when opened the page moves it beside the panel. */
   const [legendOpen, setLegendOpen] = useState(false)
   /** Left command column can slide fully off-canvas for an unobstructed map. */
-  const [hudCollapsed, setHudCollapsed] = useState(false)
+  const [hudCollapsed, setHudCollapsed] = useState(true)
   /**
    * Motion switch: ON by default (breathing / slow rotation / flow particles)
    * and persisted across reloads. Users who prefer reduced motion can switch it
