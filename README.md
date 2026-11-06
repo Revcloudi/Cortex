@@ -43,7 +43,10 @@ dsh plugin add dsh-cortex
 ```
 
 安装后左侧全局面板出现 **Cortex** 图标（`sidebar.panellist`，order 5，位于「插件 / 自动化任务」之间），
-点击进入整页工作台。链接安装时重建 `client.js` 会被 DSH `client-hmr` 自动热替换，无需刷新页面；
+点击进入整页工作台。面板内部采用 **DSH 外壳适配布局**：顶部一行横向卡片导航（原 7 个入口，
+图标/顺序/激活色与原侧栏一致），右端为中英文切换；不再渲染原 236px 侧栏、Cortex 品牌与
+data.db 卡片（DSH 左栏已承担会话卡片，避免出现两组左侧卡片）。
+链接安装时重建 `client.js` 会被 DSH `client-hmr` 自动热替换，无需刷新页面；
 Host 代码（`index.js` / `src/host/**`）变更需要 DSH 重载或插件 recomposition。
 
 ## 卸载

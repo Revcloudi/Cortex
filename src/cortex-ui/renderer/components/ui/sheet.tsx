@@ -5,9 +5,16 @@ import { useI18n } from '@renderer/i18n'
 import { cn } from '@renderer/lib/utils'
 import { getPortalContainer } from '../../../dsh/portal'
 
-const Sheet = DialogPrimitive.Root
 const SheetTrigger = DialogPrimitive.Trigger
 const SheetClose = DialogPrimitive.Close
+// The DSH port renders the whole Cortex UI inside a Shadow DOM. Radix's modal
+// scroll lock listens on the outer document and cannot see wheel events
+// retargeted across the shadow boundary, so it blocks scrolling inside the
+// sheet. Non-modal dialogs keep Escape / overlay dismissal while leaving native
+// wheel scrolling intact.
+const Sheet = (props: ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) => (
+  <DialogPrimitive.Root modal={props.modal ?? false} {...props} />
+)
 // The DSH port renders the whole Cortex UI inside a Shadow DOM; Radix would
 // otherwise portal the sheet into document.body and lose every style.
 const SheetPortal = (props: ComponentPropsWithoutRef<typeof DialogPrimitive.Portal>) => (

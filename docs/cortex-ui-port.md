@@ -22,15 +22,30 @@ src/cortex-ui/tailwind.config.cjs
 src/host/cortex/           插件 Host 的 CortexApi 兼容层 + Nebula 图适配器
 ```
 
-## 与原渲染层的唯一差异（4 处 + 新增适配层）
+## 与原渲染层的差异（5 处 + 新增适配层）
 
 1. `renderer/lib/transport/index.ts`：`getApi()` 返回插件 `createCortexApi()`；`IS_WEB_RUNTIME=true`。
-2. `renderer/components/ui/sheet.tsx`：`SheetPortal` 传入 `getPortalContainer()`。
+2. `renderer/components/ui/sheet.tsx`：`SheetPortal` 传入 `getPortalContainer()`；**Sheet 改为非 modal**
+   （Radix 的 modal 滚动锁监听外层 document，跨 Shadow DOM 后事件 target 被重定向，会拦截滚轮；
+   非 modal 保留 Esc/遮罩关闭，滚轮恢复原生滚动）。
 3. `renderer/components/ui/select.tsx`：`SelectPrimitive.Portal` 传入 `getPortalContainer()`。
 4. `renderer/components/ui/tooltip.tsx`：`TooltipPrimitive.Portal` 传入 `getPortalContainer()`。
+5. `renderer/App.tsx`：外壳组合调整 —— 去掉 frameless 窗口 Titlebar 与本插件自己的 236px 侧栏，
+   改为单个横向卡片行 `dsh/TopNav.tsx`（原 7 个导航项的图标/顺序/激活色/中英文切换）；
+   数据库卡片删除（Host 固定单一数据库）。
 
-其余均为新增：`dsh/{entry.tsx,portal.ts,api.ts,sonner-shim.tsx,css-overrides.css,css-entry.css,wrapper.template.js}`、
+其余均为新增：`dsh/{TopNav.tsx,entry.tsx,portal.ts,api.ts,sonner-shim.tsx,css-overrides.css,css-entry.css,wrapper.template.js}`、
 `shims/{react.cjs,jsx-runtime.cjs,jsx-dev-runtime.cjs}`、`tailwind.config.cjs`。
+
+## 2026-11-07 用户反馈修复
+
+| 反馈 | 根因 | 修复 |
+|---|---|---|
+| 漏洞列表报 `severity must be one of …` | 原 UI 用字面量 `all` 表示"不过滤"，Host 严格枚举校验拒绝 | `/cortex/vulns` 与 `/cortex/assets` 接受 `severity/status=all`（等同缺省），非法值仍 400 |
+| Markdown 排版与桌面端差很多 | 打包时漏掉原 `renderer/index.css`（`.markdown-body` 标题/列表/表格/行内码/代码块/动画等全在这里） | Tailwind 入口改为原 `renderer/index.css`；实测 `.markdown-body` 12.5px/21.25 行高、行内码底色恢复 |
+| 漏洞详情无法滚轮上下滑动 | Radix Dialog 的 modal 滚动锁在 Shadow DOM 下无法识别滚轮目标 | Sheet 改非 modal；实测 drawer 可滚动区 1194 > 897、`body` 无 scroll-lock、`scrollTop` 可写 |
+| 左侧出现两组卡片（DSH 对话卡 + 插件侧栏卡） | 移植保留原 236px 侧栏，与 DSH 左侧栏重复 | 删除插件内 236px 侧栏/品牌/标题栏，改为顶部一行横向导航卡（7 项）+ 右端语言切换；删除 data.db 卡片 |
+
 
 ## 运行时结构
 
@@ -39,7 +54,9 @@ DSH main slot (key=cortex)
   └─ CortexPanel（wrapper.template.js，平台 React 18.3.1）
        └─ host.attachShadow() → <style>{Tailwind 全量 CSS（字体已内联）}</style>
             └─ .dshc-cortex-root → ReactDOM.createRoot（内置 react-dom@18.3.1）→ 原 Cortex <App/>
-                  └─ lib/transport → fetch('/cortex-api/cortex/**') → Host 插件
+                  ├─ TopNav（DSH 适配：7 个横向导航卡 + 右端中英文切换，替代原 236px 侧栏）
+                  └─ main（原页面：漏洞看板/内网作战/记忆星云/资产库/认知快照/MCP/复测）
+                       └─ lib/transport → fetch('/cortex-api/cortex/**') → Host 插件
 ```
 
 - 平台 React 18.3.1 由 `require('react')` 注入 `globalThis.__DSH_CORTEX_REACT__`，所有 vendor 模块经

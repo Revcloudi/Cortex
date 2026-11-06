@@ -25,6 +25,10 @@ function log(message) {
 }
 
 // ---------------------------------------------------------------- 1. Tailwind
+// The ORIGINAL renderer index.css is the Tailwind entry: besides the
+// @tailwind directives it carries the app's base layer, the `.markdown-body`
+// typography (description/reproduction rendering), sheet animations and the
+// web-runtime type scale. Dropping it was why Markdown looked plain.
 const tailwindBin = join(root, 'node_modules', 'tailwindcss', 'lib', 'cli.js')
 if (!existsSync(tailwindBin)) throw new Error(`tailwindcss CLI not found: ${tailwindBin}`)
 const tailwindOut = join(buildDir, 'tailwind.css')
@@ -35,7 +39,7 @@ const tailwindResult = spawnSync(
     '-c',
     join(uiRoot, 'tailwind.config.cjs'),
     '-i',
-    join(uiRoot, 'dsh', 'tailwind-entry.css'),
+    join(uiRoot, 'renderer', 'index.css'),
     '-o',
     tailwindOut,
     '--minify',

@@ -28,11 +28,11 @@ test('client: ported Cortex UI renders under platform React 18.3.1', { timeout: 
 
   // A few headline expectations restated at the test layer so the intent of the
   // gate is readable without opening the harness.
-  assert.equal(report.structural.sidebarClasses.includes('w-[236px]'), true, 'sidebar must keep the original 236px width')
+  assert.equal(report.structural.topNav, true, 'a single horizontal card row replaces the cloned 236px sidebar')
   assert.deepEqual(
     report.structural.navItems.map((item) => item.id),
     ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-mcp', 'nav-retest'],
-    'sidebar must show the original nav items (ai-config is hidden in the web runtime)'
+    'top nav must show the original nav items (ai-config is hidden in the web runtime)'
   )
   assert.deepEqual(report.structural.metrics, {
     'metric-total': '9',

@@ -180,6 +180,19 @@ function realmFilter(searchParams) {
 }
 
 /**
+ * The Cortex renderer's filter state uses the literal `all` for "no filter"
+ * (severity/status selects). Accept it as absence while keeping strict
+ * validation for every other value.
+ * @param {URLSearchParams} searchParams
+ * @param {string} key
+ * @param {readonly string[]} allowed
+ */
+function enumFilter(searchParams, key, allowed) {
+  const value = queryEnum(searchParams, key, [...allowed, 'all'])
+  return value === 'all' ? undefined : value
+}
+
+/**
  * Safe ORDER BY builder for the optional `sort` query parameter.
  * Accepted forms: `field` (ASC) / `-field` (DESC); whitelisted fields only.
  * @param {string|undefined} sort
@@ -264,8 +277,8 @@ function relatedByIds(db, rawIds) {
 /** GET /vulns -> PaginatedVulnerabilities */
 export function handleList({ res, searchParams, holder }) {
   const realm = realmFilter(searchParams)
-  const severity = queryEnum(searchParams, 'severity', SEVERITIES)
-  const status = queryEnum(searchParams, 'status', STATUSES)
+  const severity = enumFilter(searchParams, 'severity', SEVERITIES)
+  const status = enumFilter(searchParams, 'status', STATUSES)
   const search = queryString(searchParams, 'search', { max: MAX_SEARCH_VALUE }) ?? ''
   const host = queryString(searchParams, 'host', { max: MAX_HOST_FILTER }) ?? ''
   const page = queryInt(searchParams, 'page', { min: 1, max: 100_000 }) ?? 1

@@ -1,8 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Toaster } from 'sonner'
-import { Sidebar } from '@renderer/components/layout/Sidebar'
-import { Titlebar } from '@renderer/components/layout/Titlebar'
+import { TopNav } from '../dsh/TopNav'
 import { TooltipProvider } from '@renderer/components/ui/tooltip'
 import { DashboardPage } from '@renderer/pages/DashboardPage'
 import { InternalPage } from '@renderer/pages/InternalPage'
@@ -10,7 +9,6 @@ import { AssetPage } from '@renderer/pages/AssetPage'
 import { SnapshotPage } from '@renderer/pages/SnapshotPage'
 import { McpPage } from '@renderer/pages/McpPage'
 import { AiConfigPage } from '@renderer/pages/AiConfigPage'
-import { useAppInfo } from '@renderer/hooks/useAppInfo'
 import { I18nProvider, useI18n } from '@renderer/i18n'
 import { getApi, IS_WEB_RUNTIME } from '@renderer/lib/api'
 import type { AppDetailTarget, AppPage } from '@renderer/lib/navigation'
@@ -38,7 +36,6 @@ export default function App() {
   const [dataVersion, setDataVersion] = useState(0)
   /** Cross-page deep link opened by the nebula inspector. */
   const [detailTarget, setDetailTarget] = useState<AppDetailTarget | null>(null)
-  const { info } = useAppInfo()
 
   const navigate = (next: AppPage): void => {
     setDetailTarget(null)
@@ -68,18 +65,13 @@ export default function App() {
     <I18nProvider>
       <TooltipProvider delayDuration={200}>
         <div className="flex h-full flex-col overflow-hidden bg-canvas">
-          <Titlebar />
+          {/* DSH shell adaptation: one horizontal card row replaces the cloned
+              left card column and the frameless-window titlebar. */}
+          <TopNav page={page} onNavigate={navigate} />
 
-          <div className="flex min-h-0 flex-1 overflow-hidden">
-            <Sidebar
-              page={page}
-              onNavigate={navigate}
-              databasePath={info?.dbPath ?? null}
-            />
-
-            <div className="flex min-w-0 flex-1 flex-col">
-              <main className="min-h-0 flex-1 overflow-y-auto">
-                {page === 'dashboard' ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <main className="min-h-0 flex-1 overflow-y-auto">
+              {page === 'dashboard' ? (
                   <DashboardPage
                     dataVersion={dataVersion}
                     onOpenMcp={() => navigate('mcp')}
@@ -111,8 +103,7 @@ export default function App() {
                 ) : (
                   <McpPage />
                 )}
-              </main>
-            </div>
+            </main>
           </div>
 
           <Toaster

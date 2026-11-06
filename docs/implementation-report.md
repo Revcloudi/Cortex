@@ -95,6 +95,18 @@ esbuild IIFE（React shim + react-dom 18.3.1 + Radix + lucide + react-markdown +
 | 安装 | `plugin_manager install_bundle` | `application:"applied"`；slot occupant `dsh-cortex/cortex(5, active)`；profile `link:` 依赖 |
 | 卸载/重装（最终版复验） | `remove_bundle` → `install_bundle` | 卸载后：profile `dependencies` 恢复原状（无 `dsh-cortex`）、bundles 列表移除、`cordis.patch.yml` 无残留、`/cortex-api/cortex/rev` → 404；重装后：`applied`、live API 25/25、client bundle 3,570,002 B 正常下发、slot active |
 | 热更新 | `client-hmr` | 重建 client.js → 页面收到 `rebuilt frame` 并热替换（已实测） |
+| 2026-11-07 反馈修复（真实页面离屏探针） | — | 漏洞列表 9 行真实数据（`all` 过滤修复）；无 `<aside>`、仅 1 个 header；顶部卡片行 48px、7 导航；语言切换位于行右端（x 1848–1908）；`data.db` 卡片已移除；详情抽屉可滚动区 1194>897 且无 scroll-lock；`.markdown-body` 12.5px/21.25 行高 + 行内码底色恢复；0 console 错误 |
+
+### 2026-11-07 用户反馈修复
+
+1. **漏洞列表加载失败**（`severity must be one of …`）：原 UI 用字面量 `all` 表示不过滤，
+   Host 枚举校验拒绝 → `/cortex/vulns`、`/cortex/assets` 现接受 `severity/status=all` 等同缺省。
+2. **Markdown 排版与桌面端差异大**：打包漏掉原 `renderer/index.css`（`.markdown-body` 全部排版），
+   Tailwind 入口已改为该文件；实测标题/列表/表格/行内码/代码块样式恢复。
+3. **漏洞详情无法滚轮滚动**：Radix Dialog modal 滚动锁在 Shadow DOM 下拦截滚轮（事件 target 被重定向），
+   Sheet 改为非 modal（保留 Esc/遮罩关闭），实测抽屉可滚动且无 `body` scroll-lock。
+4. **左侧出现两组卡片**（DSH 对话卡 + 插件侧栏卡）：删除插件内 236px 侧栏、Cortex 品牌与标题栏、
+   data.db 卡片；改为顶部一行横向导航卡（原 7 项图标/顺序/激活色）+ 右端中英文切换。
 | 只读保护 | graph/nebula 测试 | live DB 仅 readOnly 连接；测试全部使用临时 fixture；未做真实库破坏性写 |
 
 ## 5. 与原桌面端的差异清单（诚实）

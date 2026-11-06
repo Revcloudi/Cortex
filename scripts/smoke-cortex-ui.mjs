@@ -709,7 +709,7 @@ export async function runCortexUiSmoke(options = {}) {
       structural.cssBytes = style.textContent.length
       assert.ok(structural.cssBytes > 200_000, `stylesheet too small: ${structural.cssBytes} bytes`)
       assert.ok(style.textContent.includes('.dshc-cortex-root'), 'stylesheet lacks shadow-root variable overrides')
-      assert.match(style.textContent, /\.w-\\\[236px\\\]/, 'stylesheet lacks the 236px sidebar utility')
+      assert.match(style.textContent, /\.markdown-body/, 'stylesheet lacks the original markdown typography')
       assert.match(style.textContent, /data:font\/woff2/, 'stylesheet lacks inlined woff2 fonts')
       assert.ok(shadow.querySelector('.dshc-cortex-root'), 'missing .dshc-cortex-root mount point')
       return `${structural.cssBytes} CSS bytes, fonts inlined`
@@ -722,29 +722,25 @@ export async function runCortexUiSmoke(options = {}) {
       return 'aside/nav/styles are all shadow-scoped'
     })
 
-    await check('sidebar renders at the original 236px width', () => {
-      const aside = shadow.querySelector('aside')
-      assert.ok(aside, 'missing <aside> sidebar')
-      assert.ok(aside.classList.contains('w-[236px]'), `aside classes: ${aside.className}`)
-      structural.sidebarClasses = aside.className
-      return 'aside.w-[236px] present'
+    await check('no duplicate left card column: one horizontal top nav replaces the 236px sidebar', () => {
+      assert.equal(shadow.querySelector('aside'), null, 'the cloned left sidebar must not render in DSH')
+      const topnav = byTestId('cortex-topnav')
+      assert.ok(topnav, 'missing horizontal top navigation row')
+      assert.equal(shadow.querySelector('header.app-drag'), null, 'frameless-window titlebar must not render in DSH')
+      structural.topNav = true
+      return 'single horizontal nav row'
     })
 
-    await check('sidebar brand row (logo + product name + tagline)', () => {
-      const aside = shadow.querySelector('aside')
-      const logo = aside.querySelector('img')
-      assert.ok(logo, 'missing product logo <img>')
-      assert.match(logo.getAttribute('src') || '', /^data:image\/svg\+xml/, 'logo is not the inlined original SVG mark')
-      const asideText = textOf(aside)
-      assert.match(asideText, /Cortex/, `product name missing (sidebar text: ${asideText})`)
-      assert.match(asideText, /本地渗透测试记忆/, 'tagline missing (zh runtime expected)')
-      return 'logo + "Cortex" + zh tagline'
+    await check('top nav has no duplicated Cortex branding (label/icon removed)', () => {
+      const topnav = byTestId('cortex-topnav')
+      assert.equal(topnav.querySelector('img'), null, 'no product logo inside the top nav')
+      assert.doesNotMatch(textOf(topnav), /Cortex/, 'no Cortex product label inside the top nav')
+      return 'brand-free top nav'
     })
 
-    await check('sidebar nav: original 7 items, correct order + lucide SVG icons', () => {
-      const nav = shadow.querySelector('aside nav')
-      assert.ok(nav, 'missing sidebar <nav>')
-      const buttons = Array.from(nav.querySelectorAll('button'))
+    await check('top nav: original 7 cards, correct order + lucide SVG icons', () => {
+      const topnav = byTestId('cortex-topnav')
+      const buttons = Array.from(topnav.querySelectorAll('nav button'))
       const ids = buttons.map((button) => button.getAttribute('data-testid'))
       const expected = ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-mcp', 'nav-retest']
       assert.deepEqual(ids, expected, `nav items: ${ids.join(',')}`)
@@ -774,34 +770,28 @@ export async function runCortexUiSmoke(options = {}) {
       return `${ids.length} items, icons ok, ai-config hidden`
     })
 
-    await check('sidebar footer: DB filename (web runtime display-only) + language toggle', () => {
-      const aside = shadow.querySelector('aside')
-      const databaseControl = aside.querySelector('[aria-label="data.db"]')
-      assert.ok(databaseControl, `db filename not rendered; aside text: ${textOf(aside)}`)
-      assert.match(textOf(databaseControl), /data\.db/, 'db filename text missing')
-      assert.equal(aside.querySelector('[data-testid="db-button"]'), null, 'desktop DB picker button must not render in web runtime')
+    await check('language toggle at the right edge of the top nav row; no database card', () => {
+      const topnav = byTestId('cortex-topnav')
       const languageToggle = byTestId('lang-toggle')
       assert.ok(languageToggle, 'missing language toggle')
+      assert.ok(topnav.contains(languageToggle), 'language toggle must live in the top nav row')
       assert.equal(textOf(languageToggle), 'EN', 'language toggle should offer EN while zh is active')
       const languagesIcon = languageToggle.querySelector('svg')
       assert.ok(languagesIcon && (languagesIcon.getAttribute('class') || '').includes('lucide-languages'), 'language toggle icon missing')
-      structural.dbFilename = 'data.db'
+      assert.doesNotMatch(textOf(shadow), /data\.db/, 'the database card must be removed from the plugin UI')
       structural.languageToggle = 'EN'
       return 'data.db + EN toggle'
     })
 
-    await check('titlebar: original brand chrome, no window controls in web runtime', () => {
+    await check('top nav is the only header row (no duplicated titlebar chrome)', () => {
       const header = shadow.querySelector('header')
-      assert.ok(header, 'missing <header> titlebar')
-      assert.ok(header.classList.contains('app-drag'), `titlebar classes: ${header.className}`)
-      assert.match(textOf(header), /Cortex/, 'titlebar product name missing')
-      const logo = header.querySelector('img')
-      assert.ok(logo, 'titlebar logo missing')
+      assert.ok(header, 'missing <header> top nav')
+      assert.equal(header.getAttribute('data-testid'), 'cortex-topnav', `header: ${header.className}`)
       const buttons = header.querySelectorAll('button')
-      assert.equal(buttons.length, 0, `web runtime must hide the 3 window controls, found ${buttons.length} buttons`)
-      structural.titlebarButtons = buttons.length
-      assert.equal(header.getAttribute('data-testid'), null)
-      return 'brand row present, 0 window-control buttons (original ctx web behavior)'
+      // 7 nav cards + the language toggle, no window controls.
+      assert.equal(buttons.length, 8, `expected 7 nav buttons + 1 language toggle, found ${buttons.length}`)
+      structural.titlebarButtons = 0
+      return 'single header row, no window controls'
     })
 
     await check('main area renders the Dashboard (tabs + metric strip values from /stats)', () => {
@@ -855,10 +845,9 @@ export async function runCortexUiSmoke(options = {}) {
       return `${rows.length} rows, ${JSON.stringify(bySeverity)}`
     })
 
-    await check('data layer talks to the real plugin routes (/app/info, /stats?realm=web, /vulns?realm=web)', () => {
+    await check('data layer talks to the real plugin routes (/stats, /vulns, /rev)', () => {
       const seen = (method, path, predicate) =>
         mock.requests.some((request) => request.method === method && request.path === `${API_BASE}${path}` && (!predicate || predicate(request)))
-      assert.ok(seen('GET', '/app/info'), 'no GET /app/info request')
       assert.ok(seen('GET', '/stats', (request) => new URL(request.search || '', PAGE_ORIGIN).searchParams.get('realm') === 'web'), 'no GET /stats?realm=web request')
       assert.ok(seen('GET', '/vulns', (request) => new URL(request.search || '', PAGE_ORIGIN).searchParams.get('realm') === 'web'), 'no GET /vulns?realm=web request')
       assert.ok(seen('GET', '/rev'), 'no GET /rev revision poll request')

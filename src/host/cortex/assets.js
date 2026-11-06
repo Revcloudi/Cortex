@@ -249,7 +249,9 @@ function relatedByIds(db, rawIds) {
 /** GET /assets?search=&status=&project=&sort= -> AssetListItem[] */
 export function handleList({ res, searchParams, holder }) {
   const search = queryString(searchParams, 'search', { max: MAX_SEARCH_VALUE }) ?? ''
-  const status = queryEnum(searchParams, 'status', ASSET_STATUSES)
+  // The renderer's status select uses `all` for "no filter"; accept it as absence.
+  const rawStatus = queryEnum(searchParams, 'status', [...ASSET_STATUSES, 'all'])
+  const status = rawStatus === 'all' ? undefined : rawStatus
   const project = queryString(searchParams, 'project', { max: MAX_PROJECT }) ?? ''
   const sort = queryString(searchParams, 'sort', { max: 100 })
   const order = orderClause(sort)

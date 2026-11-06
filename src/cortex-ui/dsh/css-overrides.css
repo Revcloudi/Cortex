@@ -98,3 +98,17 @@
   background-clip: content-box;
   border: 3px solid transparent;
 }
+
+/* ------------------------------------------------------------------------- */
+/* DSH shell adaptations                                                     */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * DeepSeek Harness already owns the left column (conversation cards), so the
+ * ported app's 236px sidebar card column and its frameless-window Titlebar are
+ * replaced by a single horizontal card row (see src/cortex-ui/dsh/TopNav.tsx).
+ * The database picker card is intentionally dropped: the plugin Host owns one
+ * database and DSH users do not switch it.
+ */
+
+
