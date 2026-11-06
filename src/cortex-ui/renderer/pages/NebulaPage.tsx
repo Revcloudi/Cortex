@@ -152,7 +152,20 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   const [focusMode, setFocusMode] = useState(false)
   const [focusDepth, setFocusDepth] = useState<1 | 2>(1)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  /** Legend starts collapsed; when opened the page moves it beside the panel. */
+  /**
+   * 'native'  = the Browser Fullscreen API is active: Electron covers the whole
+   *             screen (taskbar and window buttons included) — what the user
+   *             expects from "fullscreen".
+   * 'overlay' = the API was unavailable/denied, so the page covers the DSH
+   *             content viewport instead (still toggleable and Escape-exitable).
+   */
+  const [fullscreenMode, setFullscreenMode] = useState<'off' | 'native' | 'overlay'>('off')
+  const fullscreenModeRef = useRef<'off' | 'native' | 'overlay'>('off')
+  const setFullscreenModeSafe = useCallback((next: 'off' | 'native' | 'overlay') => {
+    fullscreenModeRef.current = next
+    setFullscreenMode(next)
+    setIsFullscreen(next !== 'off')
+  }, [])  /** Legend starts collapsed; when opened the page moves it beside the panel. */
   const [legendOpen, setLegendOpen] = useState(false)
   /** Left command column can slide fully off-canvas for an unobstructed map. */
   const [hudCollapsed, setHudCollapsed] = useState(true)
@@ -591,27 +604,83 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     setSearch('')
   }, [])
 
-  // DSH embedded view: the Browser Fullscreen API enters fullscreen but its exit
-  // is routed by the host shell, so the page could never restore its layout.
-  // Use an in-page full-viewport overlay instead; Escape also restores it.
+  // DSH embedded view: true fullscreen must use the Browser Fullscreen API so
+  // Electron hides the taskbar and its window chrome (an in-page overlay can
+  // never cover native chrome). Track the real state through fullscreenchange so
+  // host-initiated exits (Esc / window button) stay in sync.
   useEffect(() => {
-    if (!isFullscreen) return undefined
+    const sync = (): void => {
+      const active = Boolean(
+        document.fullscreenElement || (document as any).webkitFullscreenElement
+      )
+      if (active) {
+        setFullscreenModeSafe('native')
+      } else if (fullscreenModeRef.current === 'native') {
+        setFullscreenModeSafe('off')
+      }
+    }
+    document.addEventListener('fullscreenchange', sync)
+    document.addEventListener('webkitfullscreenchange', sync)
+    return () => {
+      document.removeEventListener('fullscreenchange', sync)
+      document.removeEventListener('webkitfullscreenchange', sync)
+    }
+  }, [setFullscreenModeSafe])
+
+  // Escape leaves either mode (native also exits itself; calling exit is safe).
+  useEffect(() => {
+    if (fullscreenMode === 'off') return undefined
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setIsFullscreen(false)
+      if (event.key === 'Escape') leaveFullscreen()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isFullscreen])
+  }, [fullscreenMode, leaveFullscreen])
+
+  const leaveFullscreen = useCallback((): void => {
+    const doc = document as any
+    // Always attempt the native exit even when fullscreenElement is not exposed:
+    // the host may own the window-level fullscreen state.
+    try {
+      if (document.exitFullscreen) void document.exitFullscreen().catch(() => undefined)
+      else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen()
+    } catch {
+      /* ignore: the UI state below still restores the normal layout */
+    }
+    setFullscreenModeSafe('off')
+  }, [setFullscreenModeSafe])
 
   const handleToggleFullscreen = useCallback(() => {
-    setIsFullscreen((value) => {
-      const next = !value
-      // Immersive view: the left command column starts collapsed (an edge arrow
-      // re-opens it), so the map owns the whole viewport on entry.
-      if (next) setHudCollapsed(true)
-      return next
-    })
-  }, [])
+    const element = sectionRef.current
+    if (element === null) return
+    if (fullscreenModeRef.current !== 'off') {
+      leaveFullscreen()
+      return
+    }
+    setHudCollapsed(true)
+    const anyElement = element as any
+    const request = anyElement.requestFullscreen || anyElement.webkitRequestFullscreen
+    if (typeof request !== 'function') {
+      setFullscreenModeSafe('overlay')
+      return
+    }
+    try {
+      const promise = request.call(element)
+      if (promise && typeof promise.catch === 'function') {
+        promise.catch(() => setFullscreenModeSafe('overlay'))
+      }
+      // If the host silently ignores the request (no fullscreenchange), fall
+      // back to the in-page overlay so the button never looks dead.
+      window.setTimeout(() => {
+        if (fullscreenModeRef.current !== 'off') return
+        const doc = document as any
+        if (doc.fullscreenElement || doc.webkitFullscreenElement) return
+        setFullscreenModeSafe('overlay')
+      }, 900)
+    } catch {
+      setFullscreenModeSafe('overlay')
+    }
+  }, [leaveFullscreen, setFullscreenModeSafe])
 
   const handleExportPng = useCallback(() => {
     const dataUrl = graphRef.current?.captureImage() ?? null
@@ -745,7 +814,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
     <section
       ref={sectionRef}
       aria-label={t('nebula.title')}
-      data-dsh-fullscreen={isFullscreen ? 'true' : undefined}
+      data-dsh-fullscreen={fullscreenMode === 'off' ? undefined : fullscreenMode}
       className="relative h-full w-full overflow-hidden"
       style={{ backgroundColor: NEBULA_BACKGROUND }}
     >
@@ -794,6 +863,18 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
             <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />
             {t('nebula.loading.graph')}
           </div>
+        </div>
+      ) : null}
+
+      {/* In fullscreen the exit affordance must always be reachable: the host
+          window buttons live in the top-right corner, so the toolbar moves to
+          the bottom-right and a short Escape hint is shown. */}
+      {fullscreenMode !== 'off' ? (
+        <div
+          data-testid="fullscreen-hint"
+          className="pointer-events-none absolute bottom-4 left-1/2 z-30 -translate-x-1/2 whitespace-nowrap rounded-[2px] border border-[#00E5FF]/25 bg-[#020A14]/80 px-2 py-1 font-mono text-[10px] tracking-[0.04em] text-[#7FA9BE] backdrop-blur-md"
+        >
+          {t('nebula.fullscreen.hint')}
         </div>
       ) : null}
 

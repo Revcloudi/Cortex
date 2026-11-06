@@ -103,18 +103,17 @@
 /* DSH shell adaptations                                                     */
 /* ------------------------------------------------------------------------- */
 
-/* Nebula "fullscreen": the embedded DSH view cannot reliably exit the Browser
- * Fullscreen API (the host shell owns the exit), so the page uses an in-page
- * full-viewport overlay. Clicking the button again (or Escape) restores it. */
-.dshc-cortex-root section[data-dsh-fullscreen='true'] {
+/* Native fullscreen cannot be styled by the page; the fallback in-page overlay
+ * is only used when the Browser Fullscreen API is unavailable or denied. */
+.dshc-cortex-root section[data-dsh-fullscreen='overlay'] {
   position: fixed;
   inset: 0;
   z-index: 2147483000;
 }
 
-/* DSH draws its own window buttons above the page; keep the toolbar (and the
- * exit button) clear of that band by moving it to the bottom-right corner. */
-.dshc-cortex-root section[data-dsh-fullscreen='true'] [data-testid='nebula-toolbar'] {
+/* Host window buttons live in the top-right corner; keep the toolbar (and the
+ * exit button) clear of that band in every fullscreen mode. */
+.dshc-cortex-root section[data-dsh-fullscreen] [data-testid='nebula-toolbar'] {
   top: auto;
   bottom: 18px;
   right: 18px;

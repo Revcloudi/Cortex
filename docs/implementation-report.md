@@ -113,10 +113,11 @@ esbuild IIFE（React shim + react-dom 18.3.1 + Radix + lucide + react-markdown +
 8. **星云默认旋转恢复**：motion 开关此前持久化到 `cortex.nebula.motion`，历史 "off" 值会让默认不旋转；
    改用 `cortex.nebula.motion.v2` 新键（默认 ON）。原逻辑里交互（含点节点）后 4s 自动恢复旋转。
    实测 `motion-toggle aria-pressed=true`、新键为空（默认开）。
-9. **星云全屏最终方案**：内嵌 DSH 视图里 Browser Fullscreen API 的退出被宿主接管，改用**页面内全屏覆盖层**
-   （`section[data-dsh-fullscreen]` → fixed inset-0，z-index 拉高）+ Esc/再次点击恢复；进入全屏时自动收起
-   左侧命令栏，并把工具栏移到**右下角**（避开 DSH/Electron 原生窗口按钮所在的右上角，保证退出按钮可点）。
-   实测：`relative → fixed(0,0,1920×1032) → relative`；全屏态 `aria-hidden=true`、工具栏 right 1902/bottom 1014。
+9. **星云全屏最终方案**：优先调用 **Browser Fullscreen API**——Electron 的真全屏会把内容铺满整个屏幕
+   （任务栏与窗口按钮由宿主隐藏），这正是用户要的效果；通过 `fullscreenchange` 同步状态，Esc/窗口退出
+   也一致。只有 API 不可用或被拒绝时才降级为页内覆盖层（`data-dsh-fullscreen='overlay'`）。
+   进入全屏自动收起左侧命令栏并显示 Esc 提示；工具栏始终移到右下角，避开宿主右上角窗口按钮。
+   降级路径实测：覆盖层 `relative → fixed → relative`、左栏 `aria-hidden=true`、工具栏 right 1902/bottom 1014。
 13. **全屏"看起来不对"**：旧页面仍缓存了原生 Fullscreen API 版本（左侧命令栏展开即旧构建特征）。刷新页面后
    即为第 9 条的页内覆盖层：默认收起左栏、覆盖内容区、右下角可退出；DSH 原生窗口按钮/任务栏属于
    Electron 外壳，插件无法覆盖（若需要真正的系统全屏请用 DSH/系统快捷键）。
