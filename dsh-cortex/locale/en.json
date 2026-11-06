@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Cortex",
-    "description": "The original Cortex workbench inside DeepSeek Harness: vulnerability board, internal operations, memory nebula graph, assets, cognitive snapshots, retest lab and MCP access."
+    "description": "The original Cortex workbench inside DeepSeek Harness: vulnerability board, internal operations, memory nebula graph, assets, snapshots and retest, plus 12 native cortex_* agent tools. No MCP needed."
   }
 }
