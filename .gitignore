@@ -4,3 +4,5 @@ build/
 *.tgz
 coverage/
 .DS_Store
+
+recon/
