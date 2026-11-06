@@ -16,7 +16,33 @@ window.__ModuleLoader__.load({
     globalThis.__DSH_CORTEX_REACT__ = React
 
     const UI_CSS = __CORTEX_UI_STYLES__
+    const FONT_FACES_CSS = __CORTEX_FONT_FACES__
     const LOGO_DATA_URL = __CORTEX_LOGO_DATA_URL__
+
+    /*
+     * Chromium ignores @font-face rules that live inside a Shadow DOM
+     * stylesheet, so the inlined Inter / JetBrains Mono faces are injected into
+     * document.head once (fonts are document-level and then also apply inside
+     * the shadow tree). The element is removed when the plugin unloads.
+     */
+    let fontStyleElement = null
+    function installFontFaces() {
+      if (fontStyleElement || !FONT_FACES_CSS) return
+      const style = document.createElement('style')
+      style.setAttribute('data-dsh-cortex-fonts', '')
+      style.textContent = FONT_FACES_CSS
+      document.head.appendChild(style)
+      fontStyleElement = style
+    }
+    function uninstallFontFaces() {
+      if (!fontStyleElement) return
+      try {
+        fontStyleElement.remove()
+      } catch (error) {
+        /* ignore */
+      }
+      fontStyleElement = null
+    }
 
     /* ---- vendored Cortex renderer (esbuild IIFE, exposes __DSH_CORTEX_UI__) ---- */
     __CORTEX_UI_BUNDLE__
@@ -85,6 +111,14 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      try {
+        ctx.effect(() => {
+          installFontFaces()
+          return () => uninstallFontFaces()
+        }, 'dsh-cortex: document font faces')
+      } catch (error) {
+        console.error('[dsh-cortex] font-face install failed', error)
+      }
       try {
         ctx.slots.inject('sidebar.panellist', () =>
           ctx.slots.register(

@@ -23,7 +23,9 @@ export function TopNav({ page, onNavigate }: TopNavProps) {
   const { t, lang, setLang } = useI18n()
   const nextLang = lang === 'zh' ? 'en' : 'zh'
   const languageAction = nextLang === 'en' ? t('app.switchToEnglish') : t('app.switchToChinese')
-  const items = NAV_ITEMS.filter((item) => !IS_WEB_RUNTIME || item.page !== 'ai-config')
+  const items = NAV_ITEMS.filter(
+    (item) => item.page !== 'mcp' && (!IS_WEB_RUNTIME || item.page !== 'ai-config')
+  )
 
   return (
     <header

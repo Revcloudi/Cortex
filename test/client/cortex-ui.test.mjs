@@ -31,8 +31,8 @@ test('client: ported Cortex UI renders under platform React 18.3.1', { timeout: 
   assert.equal(report.structural.topNav, true, 'a single horizontal card row replaces the cloned 236px sidebar')
   assert.deepEqual(
     report.structural.navItems.map((item) => item.id),
-    ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-mcp', 'nav-retest'],
-    'top nav must show the original nav items (ai-config is hidden in the web runtime)'
+    ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-retest'],
+    'top nav must show the original workbench entries (MCP removed, ai-config hidden)'
   )
   assert.deepEqual(report.structural.metrics, {
     'metric-total': '9',
@@ -44,8 +44,8 @@ test('client: ported Cortex UI renders under platform React 18.3.1', { timeout: 
   assert.equal(report.structural.assetPage.hostPort, 'http://127.0.0.1:8080/')
   assert.deepEqual(
     report.structural.pagesMounted,
-    ['internal', 'snapshots', 'mcp', 'retest (lazy chunk)'],
-    'every original non-canvas page must mount'
+    ['internal', 'snapshots', 'retest (lazy chunk)'],
+    'every remaining original non-canvas page must mount'
   )
   assert.equal(report.structural.nebula.bundled, true, 'nebula route + THREE.js must be bundled')
   assert.equal(report.structural.titlebarButtons, 0, 'window controls must stay hidden in the web runtime')

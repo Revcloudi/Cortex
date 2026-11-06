@@ -27,7 +27,6 @@ type DashboardTab = 'web' | 'internal'
 
 interface DashboardPageProps {
   dataVersion: number
-  onOpenMcp: () => void
   /** Switch to the dedicated internal operations page (sidebar page). */
   onOpenInternal?: () => void
   /** Deep link from the nebula inspector: open this vulnerability immediately. */
@@ -36,7 +35,6 @@ interface DashboardPageProps {
 
 export function DashboardPage({
   dataVersion,
-  onOpenMcp,
   onOpenInternal,
   initialVulnId = null
 }: DashboardPageProps) {
@@ -479,7 +477,6 @@ export function DashboardPage({
               onOpen={setSelectedId}
               onClearFilters={handleClearFilters}
               onSeedDemo={() => void handleSeedDemo()}
-              onOpenMcp={onOpenMcp}
               onRetry={refresh}
               fillHeight={(items?.length ?? 0) >= pageSize}
               footer={

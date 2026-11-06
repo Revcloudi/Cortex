@@ -31,8 +31,12 @@ src/host/cortex/           插件 Host 的 CortexApi 兼容层 + Nebula 图适�
 3. `renderer/components/ui/select.tsx`：`SelectPrimitive.Portal` 传入 `getPortalContainer()`。
 4. `renderer/components/ui/tooltip.tsx`：`TooltipPrimitive.Portal` 传入 `getPortalContainer()`。
 5. `renderer/App.tsx`：外壳组合调整 —— 去掉 frameless 窗口 Titlebar 与本插件自己的 236px 侧栏，
-   改为单个横向卡片行 `dsh/TopNav.tsx`（原 7 个导航项的图标/顺序/激活色/中英文切换）；
-   数据库卡片删除（Host 固定单一数据库）。
+   改为单个横向卡片行 `dsh/TopNav.tsx`（6 个导航项的图标/顺序/激活色/中英文切换）；
+   数据库卡片与 **MCP 接入页**删除（插件不需要 MCP）。
+6. `renderer/pages/NebulaPage.tsx`：全屏切换改为按 `document.fullscreenElement !== null` 判断
+   （Shadow DOM 下引用相等不可靠，否则二次点击无法退出全屏）。
+7. 字体注入：构建时把 `@font-face` 从面板 CSS 抽出，`apply()` 注入 `document.head`
+   （Chromium 不加载 Shadow DOM 样式表里的 @font-face），卸载时移除。
 
 其余均为新增：`dsh/{TopNav.tsx,entry.tsx,portal.ts,api.ts,sonner-shim.tsx,css-overrides.css,css-entry.css,wrapper.template.js}`、
 `shims/{react.cjs,jsx-runtime.cjs,jsx-dev-runtime.cjs}`、`tailwind.config.cjs`。

@@ -591,7 +591,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
 
   // Keep the fullscreen button in sync with browser-initiated exits (Esc).
   useEffect(() => {
-    const onChange = (): void => setIsFullscreen(document.fullscreenElement === sectionRef.current)
+    const onChange = (): void => setIsFullscreen(document.fullscreenElement !== null)
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
@@ -599,7 +599,11 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   const handleToggleFullscreen = useCallback(() => {
     const element = sectionRef.current
     if (element === null) return
-    if (document.fullscreenElement === element) {
+    // Inside a Shadow DOM, `document.fullscreenElement` can be the shadow host
+    // rather than this element, so decide on any active fullscreen instead of
+    // comparing identities; otherwise the second click requests fullscreen again
+    // and the page can never return to its normal layout.
+    if (document.fullscreenElement !== null) {
       void document.exitFullscreen().catch(() => undefined)
       return
     }

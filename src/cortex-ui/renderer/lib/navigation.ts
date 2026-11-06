@@ -1,4 +1,4 @@
-import { Bot, Boxes, Brain, FlaskConical, Network, Orbit, Plug, ShieldAlert, type LucideIcon } from 'lucide-react'
+import { Bot, Boxes, Brain, FlaskConical, Network, Orbit, ShieldAlert, type LucideIcon } from 'lucide-react'
 
 export type AppPage =
   | 'dashboard'
@@ -36,7 +36,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { page: 'nebula', labelKey: 'nav.nebula', icon: Orbit },
   { page: 'assets', labelKey: 'nav.assets', icon: Boxes },
   { page: 'snapshots', labelKey: 'nav.snapshots', icon: Brain },
-  { page: 'mcp', labelKey: 'nav.mcp', icon: Plug },
   { page: 'retest', labelKey: 'nav.retest', icon: FlaskConical },
   { page: 'ai-config', labelKey: 'retest.aiConfig.nav', icon: Bot }
 ]
@@ -61,10 +60,6 @@ export const PAGE_META: Record<AppPage, { titleKey: string; descriptionKey: stri
   snapshots: {
     titleKey: 'nav.snapshots',
     descriptionKey: 'ui.pageMeta.snapshots.description'
-  },
-  mcp: {
-    titleKey: 'nav.mcp',
-    descriptionKey: 'ui.pageMeta.mcp.description'
   },
   retest: {
     titleKey: 'nav.retest',

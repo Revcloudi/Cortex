@@ -43,9 +43,11 @@ dsh plugin add dsh-cortex
 ```
 
 安装后左侧全局面板出现 **Cortex** 图标（`sidebar.panellist`，order 5，位于「插件 / 自动化任务」之间），
-点击进入整页工作台。面板内部采用 **DSH 外壳适配布局**：顶部一行横向卡片导航（原 7 个入口，
-图标/顺序/激活色与原侧栏一致），右端为中英文切换；不再渲染原 236px 侧栏、Cortex 品牌与
-data.db 卡片（DSH 左栏已承担会话卡片，避免出现两组左侧卡片）。
+点击进入整页工作台。面板内部采用 **DSH 外壳适配布局**：顶部一行横向卡片导航（漏洞看板 / 内网作战 / 记忆星云 /
+资产库 / 认知快照 / 漏洞复测，图标与激活色沿用原侧栏），右端为中英文切换；不再渲染原 236px
+侧栏、Cortex 品牌与 data.db 卡片（DSH 左栏已承担会话卡片，避免出现两组左侧卡片）。
+原 MCP 接入页已移除（插件本身不依赖 MCP）；Inter / JetBrains Mono 字体在文档层注入，
+确保 Shadow DOM 内也能真正使用原始字体。
 链接安装时重建 `client.js` 会被 DSH `client-hmr` 自动热替换，无需刷新页面；
 Host 代码（`index.js` / `src/host/**`）变更需要 DSH 重载或插件 recomposition。
 
@@ -73,9 +75,10 @@ plugin_manager action=remove_bundle target="dsh-cortex"
 | 记忆星云 | 3D 知识图谱（three.js + ForceGraph3D）：漏洞 / 资产 / 泄露 / 快照 / 内网实体；2D 降级；节点检查器；范围选择 |
 | 资产库 | 资产表 / 详情抽屉：技术栈、结构化接口（原始 HTTP 请求）、泄露信息、测试参数、关联漏洞 |
 | 认知快照 | 项目 → 父/子会话；九字段、测试接口、关联漏洞、归档/恢复/删除 |
-| MCP 接入 | 原 MCP 工具参考表 + 接入说明 |
 | 漏洞复测 | 原 Repeater 面板；Web 漏洞步骤、重定向、响应渲染；顶部状态修改 |
 | AI 配置 | 桌面端专属；Web/DSH 运行时按原逻辑隐藏 |
+
+> MCP 接入页已按需求移除：DSH 插件直接访问本地 SQLite，不需要 MCP。
 
 ## 架构
 

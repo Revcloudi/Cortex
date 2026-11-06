@@ -26,7 +26,6 @@ interface VulnTableProps {
   onOpen: (id: string) => void
   onClearFilters: () => void
   onSeedDemo: () => void
-  onOpenMcp: () => void
   onRetry: () => void
   /** Optional panel footer (pagination) rendered inside the table border. */
   footer?: ReactNode
@@ -128,7 +127,6 @@ export function VulnTable({
   onOpen,
   onClearFilters,
   onSeedDemo,
-  onOpenMcp,
   onRetry,
   footer,
   fillHeight
@@ -191,9 +189,6 @@ export function VulnTable({
                 <Database aria-hidden="true" className="h-3.5 w-3.5" />
               )}
               {seeding ? t('vuln.table.seeding') : t('vuln.table.seed')}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onOpenMcp}>
-              {t('vuln.table.viewMcp')}
             </Button>
           </EmptyState>
         )}

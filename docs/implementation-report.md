@@ -97,7 +97,20 @@ esbuild IIFE（React shim + react-dom 18.3.1 + Radix + lucide + react-markdown +
 | 热更新 | `client-hmr` | 重建 client.js → 页面收到 `rebuilt frame` 并热替换（已实测） |
 | 2026-11-07 反馈修复（真实页面离屏探针） | — | 漏洞列表 9 行真实数据（`all` 过滤修复）；无 `<aside>`、仅 1 个 header；顶部卡片行 48px、7 导航；语言切换位于行右端（x 1848–1908）；`data.db` 卡片已移除；详情抽屉可滚动区 1194>897 且无 scroll-lock；`.markdown-body` 12.5px/21.25 行高 + 行内码底色恢复；0 console 错误 |
 
-### 2026-11-07 用户反馈修复
+### 2026-11-07 第二轮反馈修复（字体 / 全屏 / MCP）
+
+5. **字体与桌面版差异大（UI 字体 + 代码字体）**：`@font-face` 规则打包在 Shadow DOM 样式表里，
+   Chromium **不会**把它们注册进文档字体集（实测 `document.fonts` 无 face、`Inter Variable`
+   文本宽度等于 Segoe UI 回退宽度）。修复：构建时把 `@font-face` 抽出，插件 `apply` 时注入
+   `document.head`（文档级字体对 Shadow 内容同样生效），卸载时移除。
+   实测：head 字体样式 13 个 face、Inter/JetBrains 各 `load()` 成功；宽度 Inter 130.09 vs
+   Segoe 122.28、JetBrains 115.2 vs Consolas 105.56 → 真正加载。
+6. **星云全屏按钮无法退出**：`document.fullscreenElement` 在 Shadow DOM 下可能不是 section 元素，
+   原逻辑按引用相等判断导致第二次点击又发 `requestFullscreen`。修复：按“当前是否有全屏元素”
+   判断，有则 `document.exitFullscreen()`；`fullscreenchange` 同理。仿真验收：全屏态下
+   `exitFullscreen` 调用 1 次、空闲态下 `requestFullscreen` 调用 1 次。
+7. **移除 MCP 接入**：导航项、Dashboard 空态入口与页面路由全部删除（插件直接读 SQLite，不需要 MCP）；
+   顶部卡片行现为 6 项，左侧历史实体不再出现。实测 `navCount=6`、`hasMcpEntry=false`。
 
 1. **漏洞列表加载失败**（`severity must be one of …`）：原 UI 用字面量 `all` 表示不过滤，
    Host 枚举校验拒绝 → `/cortex/vulns`、`/cortex/assets` 现接受 `severity/status=all` 等同缺省。
@@ -106,7 +119,7 @@ esbuild IIFE（React shim + react-dom 18.3.1 + Radix + lucide + react-markdown +
 3. **漏洞详情无法滚轮滚动**：Radix Dialog modal 滚动锁在 Shadow DOM 下拦截滚轮（事件 target 被重定向），
    Sheet 改为非 modal（保留 Esc/遮罩关闭），实测抽屉可滚动且无 `body` scroll-lock。
 4. **左侧出现两组卡片**（DSH 对话卡 + 插件侧栏卡）：删除插件内 236px 侧栏、Cortex 品牌与标题栏、
-   data.db 卡片；改为顶部一行横向导航卡（原 7 项图标/顺序/激活色）+ 右端中英文切换。
+   data.db 卡片；改为顶部一行横向导航卡（原 6 项图标/顺序/激活色）+ 右端中英文切换；原 MCP 页移除。
 | 只读保护 | graph/nebula 测试 | live DB 仅 readOnly 连接；测试全部使用临时 fixture；未做真实库破坏性写 |
 
 ## 5. 与原桌面端的差异清单（诚实）

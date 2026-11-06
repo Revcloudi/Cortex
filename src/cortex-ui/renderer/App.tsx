@@ -7,7 +7,6 @@ import { DashboardPage } from '@renderer/pages/DashboardPage'
 import { InternalPage } from '@renderer/pages/InternalPage'
 import { AssetPage } from '@renderer/pages/AssetPage'
 import { SnapshotPage } from '@renderer/pages/SnapshotPage'
-import { McpPage } from '@renderer/pages/McpPage'
 import { AiConfigPage } from '@renderer/pages/AiConfigPage'
 import { I18nProvider, useI18n } from '@renderer/i18n'
 import { getApi, IS_WEB_RUNTIME } from '@renderer/lib/api'
@@ -74,7 +73,6 @@ export default function App() {
               {page === 'dashboard' ? (
                   <DashboardPage
                     dataVersion={dataVersion}
-                    onOpenMcp={() => navigate('mcp')}
                     onOpenInternal={() => navigate('internal')}
                     initialVulnId={detailTarget?.kind === 'vuln' ? detailTarget.id : null}
                   />
@@ -100,9 +98,7 @@ export default function App() {
                   </Suspense>
                 ) : page === 'ai-config' && !IS_WEB_RUNTIME ? (
                   <AiConfigPage />
-                ) : (
-                  <McpPage />
-                )}
+                ) : null}
             </main>
           </div>
 

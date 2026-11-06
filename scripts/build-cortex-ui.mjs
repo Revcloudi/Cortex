@@ -81,7 +81,15 @@ await build({
   logLevel: 'warning',
 })
 const styles = readFileSync(cssOut, 'utf8')
-log(`styles inlined: ${(Buffer.byteLength(styles) / 1024).toFixed(1)} KiB`)
+// @font-face rules inside a Shadow DOM stylesheet are not registered in
+// Chromium's document font set, so the bundled Inter/JetBrains faces would be
+// silently ignored and the page would fall back to system fonts. Extract them
+// and let the wrapper inject them into document.head (fonts are document-level
+// and then apply inside the shadow tree too).
+const FONT_FACE_PATTERN = /@font-face\{[^}]*\}/g
+const fontFaces = styles.match(FONT_FACE_PATTERN) || []
+const panelStyles = styles.replace(FONT_FACE_PATTERN, '')
+log(`styles inlined: ${(Buffer.byteLength(panelStyles) / 1024).toFixed(1)} KiB (+ ${fontFaces.length} @font-face rules for document.head)`)
 
 // ---------------------------------------------------------------- 3. JS bundle
 const reactShim = join(uiRoot, 'shims', 'react.cjs')
@@ -176,7 +184,8 @@ const logoUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(logo)}`
 
 const template = readFileSync(join(uiRoot, 'dsh', 'wrapper.template.js'), 'utf8')
 const client = template
-  .replace('__CORTEX_UI_STYLES__', JSON.stringify(styles))
+  .replace('__CORTEX_UI_STYLES__', () => JSON.stringify(panelStyles))
+  .replace('__CORTEX_FONT_FACES__', () => JSON.stringify(fontFaces.join('\n')))
   .replace('__CORTEX_LOGO_DATA_URL__', JSON.stringify(logoUrl))
   .replace('__CORTEX_UI_BUNDLE__', () => uiBundle)
 

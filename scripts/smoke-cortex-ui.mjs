@@ -649,7 +649,13 @@ export async function runCortexUiSmoke(options = {}) {
     /* ------------------------------------------------------- 2. fake ctx.slots */
     const injections = []
     const registrations = []
+    const effectDisposers = []
     const ctx = {
+      effect(factory) {
+        const dispose = factory()
+        effectDisposers.push(dispose)
+        return () => {}
+      },
       slots: {
         inject(name, callback) {
           injections.push(name)
@@ -707,10 +713,18 @@ export async function runCortexUiSmoke(options = {}) {
       const style = shadow.querySelector('style[data-dsh-cortex-ui]')
       assert.ok(style, 'shadow root has no <style data-dsh-cortex-ui>')
       structural.cssBytes = style.textContent.length
-      assert.ok(structural.cssBytes > 200_000, `stylesheet too small: ${structural.cssBytes} bytes`)
+      assert.ok(structural.cssBytes > 30_000, `stylesheet too small: ${structural.cssBytes} bytes`)
       assert.ok(style.textContent.includes('.dshc-cortex-root'), 'stylesheet lacks shadow-root variable overrides')
       assert.match(style.textContent, /\.markdown-body/, 'stylesheet lacks the original markdown typography')
-      assert.match(style.textContent, /data:font\/woff2/, 'stylesheet lacks inlined woff2 fonts')
+      // Chromium ignores @font-face inside Shadow DOM stylesheets, so the wrapper
+      // must inject the inlined Inter/JetBrains faces into document.head.
+      const fontStyle = document.querySelector('style[data-dsh-cortex-fonts]')
+      assert.ok(fontStyle, 'missing document.head @font-face style')
+      assert.match(fontStyle.textContent, /@font-face/, 'font style lacks @font-face rules')
+      assert.match(fontStyle.textContent, /data:font\/woff2/, 'font faces must embed the woff2 bytes')
+      structural.fontFaces = (fontStyle.textContent.match(/@font-face/g) || []).length
+      assert.ok(structural.fontFaces >= 12, `expected 13 bundled font faces, got ${structural.fontFaces}`)
+      assert.ok(fontStyle.textContent.length > 250_000, `inlined font payload too small: ${fontStyle.textContent.length} bytes`)
       assert.ok(shadow.querySelector('.dshc-cortex-root'), 'missing .dshc-cortex-root mount point')
       return `${structural.cssBytes} CSS bytes, fonts inlined`
     })
@@ -742,10 +756,10 @@ export async function runCortexUiSmoke(options = {}) {
       const topnav = byTestId('cortex-topnav')
       const buttons = Array.from(topnav.querySelectorAll('nav button'))
       const ids = buttons.map((button) => button.getAttribute('data-testid'))
-      const expected = ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-mcp', 'nav-retest']
+      const expected = ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-retest']
       assert.deepEqual(ids, expected, `nav items: ${ids.join(',')}`)
       const labels = buttons.map((button) => squash(button.textContent, 40))
-      assert.deepEqual(labels, ['漏洞看板', '内网作战', '记忆星云', '资产库', '认知快照', 'MCP 接入', '漏洞复测'], `nav labels: ${labels.join('|')}`)
+      assert.deepEqual(labels, ['漏洞看板', '内网作战', '记忆星云', '资产库', '认知快照', '漏洞复测'], `nav labels: ${labels.join('|')}`)
       const iconClasses = buttons.map((button) => {
         const svg = button.querySelector('svg')
         assert.ok(svg, `nav item ${button.getAttribute('data-testid')} has no lucide <svg> icon`)
@@ -757,7 +771,6 @@ export async function runCortexUiSmoke(options = {}) {
         'lucide-orbit',
         'lucide-boxes',
         'lucide-brain',
-        'lucide-plug',
         'lucide-flask-conical'
       ]
       expectedIcons.forEach((iconName, index) => {
@@ -788,8 +801,8 @@ export async function runCortexUiSmoke(options = {}) {
       assert.ok(header, 'missing <header> top nav')
       assert.equal(header.getAttribute('data-testid'), 'cortex-topnav', `header: ${header.className}`)
       const buttons = header.querySelectorAll('button')
-      // 7 nav cards + the language toggle, no window controls.
-      assert.equal(buttons.length, 8, `expected 7 nav buttons + 1 language toggle, found ${buttons.length}`)
+      // 6 nav cards + the language toggle, no window controls.
+      assert.equal(buttons.length, 7, `expected 6 nav buttons + 1 language toggle, found ${buttons.length}`)
       structural.titlebarButtons = 0
       return 'single header row, no window controls'
     })
@@ -913,7 +926,6 @@ export async function runCortexUiSmoke(options = {}) {
       const targets = [
         { nav: 'nav-internal', selector: '[data-testid="internal-page"]', label: 'internal' },
         { nav: 'nav-snapshots', selector: '[data-testid="snapshot-search"]', label: 'snapshots' },
-        { nav: 'nav-mcp', selector: '[data-testid="mcp-page"]', label: 'mcp' },
         { nav: 'nav-retest', selector: '[data-testid="retest-page"]', label: 'retest (lazy chunk)' }
       ]
       const mounted = []
