@@ -604,7 +604,13 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
   }, [isFullscreen])
 
   const handleToggleFullscreen = useCallback(() => {
-    setIsFullscreen((value) => !value)
+    setIsFullscreen((value) => {
+      const next = !value
+      // Immersive view: the left command column starts collapsed (an edge arrow
+      // re-opens it), so the map owns the whole viewport on entry.
+      if (next) setHudCollapsed(true)
+      return next
+    })
   }, [])
 
   const handleExportPng = useCallback(() => {
@@ -796,6 +802,7 @@ export function NebulaPage({ dataVersion, onOpenDetail }: NebulaPageProps) {
           400px inspector edge; that keeps it clear of the command column even
           at 1024px, where the horizontal layout would overhang the panel. */}
       <div
+        data-testid="nebula-toolbar"
         className={cn(
           'absolute top-4 z-20 flex',
           selectedNode !== null ? 'right-[416px]' : 'right-4'

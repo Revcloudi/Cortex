@@ -50,7 +50,7 @@ src/host/cortex/           插件 Host 的 CortexApi 兼容层 + Nebula 图适�
 | 漏洞详情无法滚轮上下滑动 | Radix Dialog 的 modal 滚动锁在 Shadow DOM 下无法识别滚轮目标 | Sheet 改非 modal；实测 drawer 可滚动区 1194 > 897、`body` 无 scroll-lock、`scrollTop` 可写 |
 | 左侧出现两组卡片（DSH 对话卡 + 插件侧栏卡） | 移植保留原 236px 侧栏，与 DSH 左侧栏重复 | 删除插件内 236px 侧栏/品牌/标题栏，改为顶部一行横向导航卡（6 项）+ 右端语言切换；删除 data.db 卡片与 MCP 页 |
 | 字体/代码字体与桌面版差距大 | Chromium 不加载 Shadow DOM 样式表里的 @font-face | 构建抽出 13 个 face，`apply()` 注入 document.head；实测 Inter/JetBrains 均加载 |
-| 星云全屏按钮无法退出 | 内嵌 DSH 视图里 Browser Fullscreen API 的退出由宿主接管 | 改为页面内全屏覆盖层（`section[data-dsh-fullscreen]` fixed inset-0）+ Esc 恢复；探针验证 relative → fixed → relative |
+| 星云全屏按钮无法退出 | 内嵌 DSH 视图里 Browser Fullscreen API 的退出被宿主接管 | 改为页面内全屏覆盖层（`section[data-dsh-fullscreen]` fixed inset-0）+ Esc 恢复；进入时自动收起左侧栏，工具栏移右下角避开原生窗口按钮；探针验证 relative → fixed → relative |
 | 星云默认不旋转 / 选节点后不恢复 | 旧版 motion 开关持久化键可能残留 "off" | 换 `cortex.nebula.motion.v2` 键，默认 ON；交互后 4s 恢复旋转（原逻辑） |
 | 星云左侧命令栏初始展开 | 原页面默认展开 | 默认缩回（`hudCollapsed=true`，实测 `aria-hidden=true`、位移 -328px），可手动展开 |
 | 漏洞复测页加载不到漏洞 | Retest 页请求 pageSize=200，cortex `/vulns` 上限仍为旧路由的 100 | cortex 路由上限提高到 500（旧路由不变）；实测列出 9 条 Web 漏洞 |

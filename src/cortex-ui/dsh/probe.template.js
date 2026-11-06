@@ -102,11 +102,22 @@ function runAcceptanceProbe() {
       if (fullscreenButton && section) {
         const before = measure()
         fullscreenButton.click()
-        await sleep(220)
+        await sleep(240)
         const full = measure()
+        const toolbar = shadow() && shadow().querySelector('[data-testid="nebula-toolbar"]')
+        const hudActive = shadow() && shadow().querySelector('[data-testid="hud-column"]')
+        const toolbarRect = toolbar ? toolbar.getBoundingClientRect() : null
+        report.nebula.fullscreen = {
+          before,
+          full,
+          toolbarInFullscreen: toolbarRect
+            ? { top: Math.round(toolbarRect.top), right: Math.round(toolbarRect.right), bottom: Math.round(toolbarRect.bottom) }
+            : null,
+          hudAriaHiddenInFullscreen: hudActive ? hudActive.getAttribute('aria-hidden') : null,
+        }
         fullscreenButton.click()
-        await sleep(220)
-        report.nebula.fullscreen = { before, full, restored: measure() }
+        await sleep(240)
+        report.nebula.fullscreen.restored = measure()
       }
     } catch (error) {
       report.nebula = { error: String(error && error.message ? error.message : error) }

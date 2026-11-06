@@ -105,15 +105,21 @@ esbuild IIFE（React shim + react-dom 18.3.1 + Radix + lucide + react-markdown +
    `document.head`（文档级字体对 Shadow 内容同样生效），卸载时移除。
    实测：head 字体样式 13 个 face、Inter/JetBrains 各 `load()` 成功；宽度 Inter 130.09 vs
    Segoe 122.28、JetBrains 115.2 vs Consolas 105.56 → 真正加载。
-6. **星云全屏按钮无法退出**：`document.fullscreenElement` 在 Shadow DOM 下可能不是 section 元素，
-   原逻辑按引用相等判断导致第二次点击又发 `requestFullscreen`。修复：按“当前是否有全屏元素”
-   判断，有则 `document.exitFullscreen()`；`fullscreenchange` 同理。仿真验收：全屏态下
-   `exitFullscreen` 调用 1 次、空闲态下 `requestFullscreen` 调用 1 次。
+6. **星云全屏按钮无法退出（初版尝试，已被第 9 条取代）**：`document.fullscreenElement` 在 Shadow DOM 下可能
+   不是 section 元素，原逻辑按引用相等判断导致第二次点击又发 `requestFullscreen`。改为“有全屏元素即退出”
+   后仍受宿主接管影响，最终改用页内全屏覆盖层（第 9 条）。
 7. **移除 MCP 接入**：导航项、Dashboard 空态入口与页面路由全部删除（插件直接读 SQLite，不需要 MCP）；
    顶部卡片行现为 6 项，左侧历史实体不再出现。实测 `navCount=6`、`hasMcpEntry=false`。
 8. **星云默认旋转恢复**：motion 开关此前持久化到 `cortex.nebula.motion`，历史 "off" 值会让默认不旋转；
    改用 `cortex.nebula.motion.v2` 新键（默认 ON）。原逻辑里交互（含点节点）后 4s 自动恢复旋转。
    实测 `motion-toggle aria-pressed=true`、新键为空（默认开）。
+9. **星云全屏最终方案**：内嵌 DSH 视图里 Browser Fullscreen API 的退出被宿主接管，改用**页面内全屏覆盖层**
+   （`section[data-dsh-fullscreen]` → fixed inset-0，z-index 拉高）+ Esc/再次点击恢复；进入全屏时自动收起
+   左侧命令栏，并把工具栏移到**右下角**（避开 DSH/Electron 原生窗口按钮所在的右上角，保证退出按钮可点）。
+   实测：`relative → fixed(0,0,1920×1032) → relative`；全屏态 `aria-hidden=true`、工具栏 right 1902/bottom 1014。
+13. **全屏"看起来不对"**：旧页面仍缓存了原生 Fullscreen API 版本（左侧命令栏展开即旧构建特征）。刷新页面后
+   即为第 9 条的页内覆盖层：默认收起左栏、覆盖内容区、右下角可退出；DSH 原生窗口按钮/任务栏属于
+   Electron 外壳，插件无法覆盖（若需要真正的系统全屏请用 DSH/系统快捷键）。
 10. **漏洞复测页加载不到漏洞**：Retest 页请求 `pageSize=200`，而 cortex `/vulns` 沿用了旧路由 100 的上限 →
     400 `pageSize must be between 1 and 100`。修复：cortex 路由上限提高到 500（旧 DSH 风格路由仍保持 100）；
     实测 retest 页真实列出 9 条 Web 漏洞，无错误。

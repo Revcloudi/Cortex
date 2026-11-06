@@ -109,8 +109,17 @@
 .dshc-cortex-root section[data-dsh-fullscreen='true'] {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 2147483000;
 }
+
+/* DSH draws its own window buttons above the page; keep the toolbar (and the
+ * exit button) clear of that band by moving it to the bottom-right corner. */
+.dshc-cortex-root section[data-dsh-fullscreen='true'] [data-testid='nebula-toolbar'] {
+  top: auto;
+  bottom: 18px;
+  right: 18px;
+}
+
 
 
 /*

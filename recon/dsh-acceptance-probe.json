@@ -29,6 +29,12 @@
         "top": 0,
         "left": 0
       },
+      "toolbarInFullscreen": {
+        "top": 976,
+        "right": 1902,
+        "bottom": 1014
+      },
+      "hudAriaHiddenInFullscreen": "true",
       "restored": {
         "position": "relative",
         "width": 1920,
@@ -39,6 +45,6 @@
     }
   },
   "kind": "dsh-cortex-acceptance-probe",
-  "at": "2026-11-06T20:30:35.688Z",
+  "at": "2026-11-06T20:35:28.451Z",
   "errors": []
 }
