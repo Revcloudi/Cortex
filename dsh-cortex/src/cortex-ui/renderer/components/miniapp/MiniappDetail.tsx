@@ -67,6 +67,23 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/**
+ * The analyzer records raw-file line numbers while the preview shows formatted
+ * lines, so a raw line number is not reliable after formatting. Search the
+ * secret's own value instead; pick the longest single-line chunk to keep the
+ * find query short and line-oriented.
+ */
+function secretSearchNeedle(value: string | undefined): string {
+  if (typeof value !== 'string') return ''
+  const segments = value
+    .split(/\r?\n/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length >= 8)
+    .sort((left, right) => right.length - left.length)
+  const chosen = segments[0] || value.trim()
+  return chosen.slice(0, 180)
+}
+
 /** Build one display-only HTML string with a line-number gutter and <mark> hits. */
 function buildPreviewHtml(
   content: string,
@@ -232,7 +249,12 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
       path: string,
       offset: number,
       append = false,
-      options: { find?: string; findRegex?: boolean; scrollLine?: number | null } = {}
+      options: {
+        find?: string
+        findRegex?: boolean
+        scrollLine?: number | null
+        hideFindInput?: boolean
+      } = {}
     ) => {
       if (miniappId === null) return
       const findQuery = options.find !== undefined ? options.find : fileFind
@@ -242,7 +264,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
       if (!append) {
         setFileFind(findQuery)
         setFileFindRegex(findRegexValue)
-        setFileFindInput(findQuery)
+        setFileFindInput(options.hideFindInput ? '' : findQuery)
         setActiveMatchIndex(-1)
         if (scrollLine === null) setActiveLine(null)
       }
@@ -342,7 +364,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
 
   const openAnalysisFile = (
     path: string,
-    options: { find?: string; line?: number | null } = {}
+    options: { find?: string; line?: number | null; hideFindInput?: boolean } = {}
   ): void => {
     const line = options.line ?? null
     setTab('files')
@@ -350,7 +372,12 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
       path,
       line !== null ? Math.floor((line - 1) / PREVIEW_LINES) * PREVIEW_LINES : 0,
       false,
-      { find: options.find ?? '', findRegex: false, scrollLine: line }
+      {
+        find: options.find ?? '',
+        findRegex: false,
+        scrollLine: line,
+        hideFindInput: options.hideFindInput
+      }
     )
   }
 
@@ -552,6 +579,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
     file?: string
     find?: string
     line?: number
+    hideFindInput?: boolean
   }> = (() => {
     if (!analysis) return []
     switch (overviewCategory) {
@@ -580,13 +608,18 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
           find: entry.path
         }))
       case 'secrets':
-        return analysis.secrets.map((entry) => ({
-          key: `secret:${entry.source}:${entry.line}:${entry.value_masked}`,
-          label: entry.value_masked || entry.name,
-          meta: `${entry.info_type} · ${entry.source}:${entry.line}`,
-          file: entry.source,
-          line: entry.line
-        }))
+        return analysis.secrets.map((entry) => {
+          const needle = secretSearchNeedle(entry.value)
+          return {
+            key: `secret:${entry.source}:${entry.line}:${entry.value_masked}`,
+            label: entry.value_masked || entry.name,
+            meta: `${entry.info_type} · ${entry.source}:${entry.line}`,
+            file: entry.source,
+            find: needle || undefined,
+            line: needle.length > 0 ? undefined : entry.line,
+            hideFindInput: needle.length > 0
+          }
+        })
       case 'parameters':
         return analysis.parameters.map((entry) => ({
           key: `param:${entry.endpoint}:${entry.name}:${entry.location}`,
@@ -990,7 +1023,13 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                                       variant="ghost"
                                       size="xs"
                                       className="shrink-0"
-                                      onClick={() => openAnalysisFile(row.file!, { find: row.find, line: row.line })}
+                                      onClick={() =>
+                                        openAnalysisFile(row.file!, {
+                                          find: row.find,
+                                          line: row.line,
+                                          hideFindInput: row.hideFindInput
+                                        })
+                                      }
                                     >
                                       {t('miniapp.detail.extracted.open')}
                                     </Button>
@@ -1009,55 +1048,6 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                           size: formatBytes(analysis.files.bytes)
                         })}
                       </p>
-
-                      {analysis.largestFiles.length > 0 ? (
-                        <section className="mt-5">
-                          <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                            {t('miniapp.detail.overview.largestFiles')}
-                          </h3>
-                          <ul className="mt-2 overflow-hidden rounded-md border border-border">
-                            {analysis.largestFiles.map((file) => (
-                              <li
-                                key={file.path}
-                                className="flex items-center gap-3 border-b border-border px-3 py-1.5 text-[11.5px] last:border-b-0"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setTab('files')
-                                    void loadFile(file.path, 0, false, { find: '', findRegex: false })
-                                  }}
-                                  className="min-w-0 flex-1 truncate text-left font-mono text-foreground hover:text-accent focus-visible:text-accent focus-visible:outline-none"
-                                  title={file.path}
-                                >
-                                  {file.path}
-                                </button>
-                                <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground">
-                                  {formatBytes(file.size)}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </section>
-                      ) : null}
-
-                      {analysis.warnings.length > 0 ? (
-                        <section className="mt-5">
-                          <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                            {t('miniapp.detail.overview.warnings')}
-                          </h3>
-                          <ul className="mt-2 space-y-1">
-                            {analysis.warnings.map((warning, index) => (
-                              <li
-                                key={`${index}-${warning}`}
-                                className="break-all text-[11.5px] leading-relaxed text-amber-800"
-                              >
-                                {warning}
-                              </li>
-                            ))}
-                          </ul>
-                        </section>
-                      ) : null}
                     </>
                   )}
 
