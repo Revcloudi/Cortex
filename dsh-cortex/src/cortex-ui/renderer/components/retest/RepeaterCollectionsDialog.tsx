@@ -10,7 +10,7 @@ import {
   listRepeaterCollections,
   saveRepeaterCollection,
   type RepeaterCollectionEntry
-} from '@renderer/lib/fuzzerApi'
+} from '@renderer/lib/repeaterStoreApi'
 import { useI18n } from '@renderer/i18n'
 import { getPortalContainer } from '../../../dsh/portal'
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Zap } from 'lucide-react'
 import type { Severity, Vulnerability, VulnerabilityListItem } from '@shared/types'
-import { FuzzerPanel } from '@renderer/components/retest/FuzzerPanel'
+import { YakitSendPanel } from '@renderer/components/retest/YakitSendPanel'
 import { SeverityBadge, StatusBadge } from '@renderer/components/common/Badges'
 import {
   Select,
@@ -37,11 +37,11 @@ function rememberTarget(id: string): void {
 }
 
 /**
- * Dedicated Web Fuzzer page: a Yakit-style workbench with the request editor on
- * the left, the response viewer on the right and results/recent jobs in the
- * bottom panel. There is deliberately no ported vulnerability list: a compact
- * target selector in the header is the only link to a finding, because the Host
- * derives the outbound origin allowlist from that finding.
+ * Dedicated Web Fuzzer page: a Yakit-style manual HTTP sender with the request
+ * editor on the left, the response viewer on the right and both panes filling
+ * the available height. There is deliberately no ported vulnerability list and
+ * no batch fuzzing: a compact target selector in the header is the only link to
+ * a finding, because the Host derives the outbound origin allowlist from it.
  */
 export function FuzzerPage({ dataVersion }: FuzzerPageProps) {
   const { t } = useI18n()
@@ -202,9 +202,9 @@ export function FuzzerPage({ dataVersion }: FuzzerPageProps) {
             {t('fuzzer.target.empty')}
           </div>
         ) : detail === null ? (
-          <FuzzerPanel vuln={null} loading={detailLoading || listLoading || (items?.length ?? 0) > 0} />
+          <YakitSendPanel vuln={null} loading={detailLoading || listLoading || (items?.length ?? 0) > 0} />
         ) : (
-          <FuzzerPanel key={detail.id} vuln={detail} loading={detailLoading} />
+          <YakitSendPanel key={detail.id} vuln={detail} loading={detailLoading} />
         )}
       </div>
     </div>

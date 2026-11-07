@@ -7,7 +7,7 @@ import {
   clearRepeaterHistory,
   listRepeaterHistory,
   type RepeaterHistoryEntry
-} from '@renderer/lib/fuzzerApi'
+} from '@renderer/lib/repeaterStoreApi'
 import { statusTone } from '@renderer/lib/retestResponse'
 import { cn } from '@renderer/lib/utils'
 import { useI18n } from '@renderer/i18n'

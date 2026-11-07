@@ -63,8 +63,9 @@ interface SavedRepeaterEntry {
  * report (all HTTP request steps are selectable) instead of the old generated-JS
  * pipeline. The user edits the raw request and sends it through the retest proxy.
  *
- * The batch Fuzzer lives on its own Web Fuzzer page; this panel stays a
- * single-request repeater (plus history, favorites and curl tools).
+ * The Yakit-style manual sender lives on its own Web Fuzzer page; this panel
+ * stays the per-finding single-request repeater (plus history, favorites and
+ * curl tools).
  */
 export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
   const { t } = useI18n()

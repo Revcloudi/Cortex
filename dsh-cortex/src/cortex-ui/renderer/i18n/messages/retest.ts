@@ -458,10 +458,9 @@ export const retestMessages: MessageBundle = {
     'retest.config.noProvidersActiveHint': '配置至少一个模型提供商后，才能生成 PoC。',
 
     // ------------------------------------------------------------------
-    // Repeater mode switch + single-Repeater additions (history / favorites /
-    // curl import+export). Appended block; existing keys above are untouched.
+    // Single-Repeater additions (history / favorites / curl import+export).
+    // Appended block; existing keys above are untouched.
     // ------------------------------------------------------------------
-    'retest.repeater.modeSingle': '单次请求',
     'retest.repeater.requestSection': '请求',
 
     // Send history
@@ -1003,10 +1002,9 @@ export const retestMessages: MessageBundle = {
       'Configure at least one model provider before generating a PoC.',
 
     // ------------------------------------------------------------------
-    // Repeater mode switch + single-Repeater additions (history / favorites /
-    // curl import+export). Appended block; existing keys above are untouched.
+    // Single-Repeater additions (history / favorites / curl import+export).
+    // Appended block; existing keys above are untouched.
     // ------------------------------------------------------------------
-    'retest.repeater.modeSingle': 'Single request',
     'retest.repeater.requestSection': 'Request',
 
     // Send history

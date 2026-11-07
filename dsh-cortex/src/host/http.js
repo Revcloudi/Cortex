@@ -259,19 +259,11 @@ function drainAndDiscard(req) {
 }
 
 /**
- * Read and parse a JSON object request body.
- *
- * Enforces the 1 MiB cap by default. Callers that accept larger documented
- * payloads (the fuzzer: <= 2 MiB of payload strings + a <= 256 KiB template)
- * may pass an explicit `maxBytes`; every other caller keeps the default.
+ * Read and parse a JSON object request body. Enforces the 1 MiB cap.
  * @param {import('node:http').IncomingMessage} req
- * @param {{maxBytes?: number}} [options]
  * @returns {Promise<Record<string, unknown>>}
  */
-export function readJsonBody(req, options = {}) {
-  const opts = options && typeof options === 'object' ? options : {}
-  const limit =
-    Number.isSafeInteger(opts.maxBytes) && opts.maxBytes > 0 ? opts.maxBytes : MAX_BODY_BYTES
+export function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     const headers = (req && req.headers) || {}
     const contentType = headers['content-type']
@@ -304,8 +296,8 @@ export function readJsonBody(req, options = {}) {
     const onData = (chunk) => {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       size += buffer.length
-      if (size > limit) {
-        finish(badRequest('request body is too large', { maxBytes: limit }))
+      if (size > MAX_BODY_BYTES) {
+        finish(badRequest('request body is too large', { maxBytes: MAX_BODY_BYTES }))
         drainAndDiscard(req)
         return
       }

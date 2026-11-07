@@ -337,22 +337,6 @@ function fullVulnerability(id) {
 /* -------------------------------------------------------------------------- */
 function createMockFetch() {
   const requests = []
-  /** Fuzzer mock state: one job, three result rows + a baseline. */
-  const fuzzJobs = new Map()
-  const FUZZ_BASELINE = {
-    status: 200,
-    length: 128,
-    durationMs: 12,
-    error: null,
-    errorCode: null,
-    contentType: 'text/html',
-    truncated: false
-  }
-  const FUZZ_ROWS = [
-    { index: 0, payloadBrief: 'pos1=1', status: 200, length: 128, durationMs: 10, error: null, errorCode: null, contentType: 'text/html', truncated: false },
-    { index: 1, payloadBrief: 'pos1=<script>alert(1)</script>', status: 500, length: 512, durationMs: 14, error: null, errorCode: null, contentType: 'text/html', truncated: false },
-    { index: 2, payloadBrief: 'pos1=../../etc/passwd', status: 200, length: 400, durationMs: 11, error: null, errorCode: null, contentType: 'text/html', truncated: false }
-  ]
   /** Mini-program host state: a scan adds MINIAPP_EXTRA once. */
   let miniappRows = MINIAPP_ROWS.map((row) => ({ ...row }))
   let miniappScanCount = 0
@@ -672,131 +656,30 @@ function createMockFetch() {
     if (method === 'GET' && route === '/poc/config') return respond({ providers: [], models: [], agent: null })
     if (method === 'POST' && route === '/graph') return respond({ nodes: [], links: [], meta: {} })
 
-    /* ------------------------------ repeater fuzzer ---------------------- */
-    const fuzzParam = route.startsWith('/repeater/fuzz/')
-      ? route.slice('/repeater/fuzz/'.length).split('/')
-      : []
-
-    if (method === 'POST' && route === '/repeater/fuzz') {
+    /* ---------------------------- single send --------------------------- */
+    if (method === 'POST' && route === '/repeater/send') {
       let body = {}
       try {
         body = JSON.parse(String((init && init.body) || '{}'))
       } catch {
         body = {}
       }
-      const jobId = `FUZZ-SMOKE-${fuzzJobs.size + 1}`
-      const job = {
-        jobId,
-        vulnId: body.vulnId,
-        mode: (body.attack && body.attack.mode) || 'sniper',
-        status: 'running',
-        total: FUZZ_ROWS.length,
-        completed: 0,
-        failed: 0,
-        concurrency: (body.options && body.options.concurrency) ?? 5,
-        delayMs: (body.options && body.options.delayMs) ?? 0,
-        followRedirects: Boolean(body.options && body.options.followRedirects),
-        stopOnConsecutiveErrors: Boolean(body.options && body.options.stopOnConsecutiveErrors),
-        createdAt: new Date().toISOString(),
-        startedAt: new Date().toISOString(),
-        finishedAt: null,
-        stoppedReason: null,
-        target: {
-          method: (body.request && body.request.method) || 'GET',
-          url: (body.request && body.request.url) || '',
-          origin: 'http://127.0.0.1:8080'
+      const requestUrl = typeof body.url === 'string' ? body.url : 'http://127.0.0.1:8080/'
+      const responseBody = JSON.stringify({ ok: true, path: new URL(requestUrl).pathname })
+      return respond({
+        request: {
+          method: typeof body.method === 'string' ? body.method : 'GET',
+          url: requestUrl,
+          headers: body.headers && typeof body.headers === 'object' ? body.headers : {},
+          body: typeof body.body === 'string' ? body.body : ''
         },
-        baseline: FUZZ_BASELINE,
-        positions: 1,
-        payloadBytes: 42
-      }
-      fuzzJobs.set(jobId, job)
-      for (const entry of FUZZ_ROWS) entry.createdAt = new Date().toISOString()
-      return respond({ jobId, total: job.total, mode: job.mode, status: 'running', baseline: null })
-    }
-    if (method === 'GET' && route === '/repeater/fuzz') {
-      return respond({
-        jobs: [...fuzzJobs.values()].map((job) => ({
-          jobId: job.jobId,
-          vulnId: job.vulnId,
-          mode: job.mode,
-          status: job.status,
-          total: job.total,
-          completed: job.completed,
-          failed: job.failed,
-          createdAt: job.createdAt,
-          finishedAt: job.finishedAt,
-          stoppedReason: job.stoppedReason,
-          targetUrl: job.target.url
-        }))
-      })
-    }
-    if (method === 'GET' && fuzzParam.length === 1) {
-      const job = fuzzJobs.get(decodeURIComponent(fuzzParam[0]))
-      if (!job) return notFound(route)
-      // First poll still running, every later poll reports completion so the
-      // component's 1 s polling loop terminates quickly in jsdom.
-      if (job.status === 'running') {
-        job.polls = (job.polls || 0) + 1
-        if (job.polls >= 2) {
-          job.status = 'completed'
-          job.completed = job.total
-          job.finishedAt = new Date().toISOString()
+        response: {
+          status: 200,
+          headers: { 'content-type': 'application/json; charset=utf-8', 'x-smoke': 'send' },
+          body: responseBody,
+          durationMs: 12,
+          truncated: false
         }
-      }
-      const offset = Number(query.get('offset')) || 0
-      const limit = Number(query.get('limit')) || 200
-      const results = FUZZ_ROWS.slice(offset, offset + limit).map((row) => ({ ...row }))
-      return respond({ job: { ...job }, offset, limit, count: FUZZ_ROWS.length, results })
-    }
-    if (method === 'GET' && fuzzParam.length === 3 && fuzzParam[1] === 'results') {
-      const job = fuzzJobs.get(decodeURIComponent(fuzzParam[0]))
-      if (!job) return notFound(route)
-      const rawIndex = decodeURIComponent(fuzzParam[2])
-      const index = rawIndex === 'baseline' ? 'baseline' : Number(rawIndex)
-      const row = index === 'baseline' ? FUZZ_BASELINE : FUZZ_ROWS[index]
-      if (!row) return notFound(route)
-      return respond({
-        result: {
-          index,
-          payloadBrief: index === 'baseline' ? '(baseline)' : row.payloadBrief,
-          payloads: index === 'baseline' ? [] : [row.payloadBrief.replace(/^pos\d+=/, '')],
-          request: {
-            method: 'GET',
-            url: `http://127.0.0.1:8080/api/items?id=${encodeURIComponent(index === 'baseline' ? '1' : String(index))}`,
-            headers: { Accept: '*/*' },
-            body: ''
-          },
-          response: {
-            status: row.status,
-            statusText: 'OK',
-            headers: { 'content-type': 'application/json', 'x-smoke': 'yes' },
-            body: JSON.stringify({ ok: true, index }),
-            bodyBytes: row.length,
-            truncated: false,
-            durationMs: row.durationMs,
-            contentType: 'application/json'
-          },
-          error: row.error,
-          errorCode: row.errorCode
-        }
-      })
-    }
-    if (method === 'POST' && fuzzParam.length === 2 && fuzzParam[1] === 'cancel') {
-      const job = fuzzJobs.get(decodeURIComponent(fuzzParam[0]))
-      if (!job) return notFound(route)
-      job.status = 'cancelled'
-      job.finishedAt = new Date().toISOString()
-      return respond({ jobId: job.jobId, status: 'cancelled' })
-    }
-    if (method === 'GET' && fuzzParam.length === 2 && fuzzParam[1] === 'export') {
-      const job = fuzzJobs.get(decodeURIComponent(fuzzParam[0]))
-      if (!job) return notFound(route)
-      const format = query.get('format') === 'json' ? 'json' : 'csv'
-      return respond({
-        savedPaths: [`C:\\Users\\smoke\\.cortex\\repeater\\exports\\${job.jobId}.${format}`],
-        format,
-        count: job.total
       })
     }
 
@@ -1664,12 +1547,11 @@ export async function runCortexUiSmoke(options = {}) {
       return `mounted: ${mounted.join(', ')}`
     })
 
-    await check('fuzzer page: Yakit layout, markers, attack modes and a mocked job', async () => {
+    await check('web fuzzer page: Yakit send layout, target selector and mocked send', async () => {
       const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
       const windowBefore = windowErrors.length
       const navFuzzer = byTestId('nav-fuzzer')
       assert.ok(navFuzzer, 'missing Web Fuzzer nav card')
-      assert.equal(navFuzzer.getAttribute('aria-current'), null)
       await act(async () => {
         navFuzzer.click()
       })
@@ -1685,164 +1567,65 @@ export async function runCortexUiSmoke(options = {}) {
         0,
         'the Web Fuzzer page must not port the vulnerability list'
       )
+
       const requestPane = await waitFor(act, () => byTestId('fuzzer-request-pane'), {
         label: 'fuzzer request pane',
         timeoutMs: 10_000
       })
       const responsePane = byTestId('fuzzer-response-pane')
-      const resultsPane = byTestId('fuzzer-results-pane')
       assert.ok(requestPane, 'missing fuzzer request pane')
       assert.ok(responsePane, 'missing fuzzer response pane')
-      assert.ok(resultsPane, 'missing fuzzer results pane')
+      const sendButton = byTestId('fuzzer-send')
+      assert.ok(sendButton, 'missing send button')
+      assert.equal(
+        requestPane.querySelector('button'),
+        sendButton,
+        'the send button must be the first control (top-left) of the request pane'
+      )
+      assert.equal(allTestIds('fuzzer-marker-count').length, 0, 'fuzzer markers must be removed')
+      assert.equal(allTestIds('fuzzer-payload-0').length, 0, 'payload editors must be removed')
+      assert.equal(allTestIds('fuzzer-attack-mode').length, 0, 'attack modes must be removed')
+      assert.equal(allTestIds('fuzzer-results').length, 0, 'fuzz result table must be removed')
+
       const requestEditor = await waitFor(act, () => byTestId('fuzzer-request'), {
         label: 'fuzzer request editor',
         timeoutMs: 10_000
       })
-      const raw = 'GET /api/items?id=1&name=demo HTTP/1.1\nHost: 127.0.0.1:8080\n\n'
+      const raw = 'GET /api/items?id=1 HTTP/1.1\nHost: 127.0.0.1:8080\nAccept: */*\n\n'
       await act(async () => {
         setControlValue(window, requestEditor, raw)
       })
-      const markAt = async (needle) => {
-        const editor = byTestId('fuzzer-request')
-        const start = editor.value.indexOf(needle)
-        assert.notEqual(start, -1, `missing ${needle} in the fuzzer request editor`)
-        editor.focus()
-        editor.setSelectionRange(start, start + needle.length)
-        await act(async () => {
-          byTestId('fuzzer-mark-selection').click()
-        })
-      }
-      await markAt('1')
-      await markAt('demo')
-      await waitFor(
-        act,
-        () => (byTestId('fuzzer-marker-count')?.getAttribute('data-count') === '2' ? true : null),
-        { label: 'two injection markers', timeoutMs: 5_000 }
-      )
-      assert.match(byTestId('fuzzer-request').value, /id=§1§/, 'first marker was not inserted')
-      assert.match(byTestId('fuzzer-request').value, /name=§demo§/, 'second marker was not inserted')
-
-      const payload0 = byTestId('fuzzer-payload-0')
-      assert.ok(payload0, 'missing payload set 1')
       await act(async () => {
-        setControlValue(window, payload0, '1\n2\n3')
+        sendButton.click()
       })
-      await waitFor(
-        act,
-        () => (byTestId('fuzzer-total')?.getAttribute('data-total') === '6' ? true : null),
-        { label: 'sniper total 6', timeoutMs: 5_000 }
-      )
-
-      const chooseAttackMode = async (label) => {
-        const trigger = byTestId('fuzzer-attack-mode')
-        assert.ok(trigger, 'missing attack-mode select')
-        // Radix Select only opens from real pointer sequencing; keyboard arrows
-        // are the stable jsdom path (same as the platform WebView).
-        await act(async () => {
-          trigger.focus()
-          trigger.dispatchEvent(
-            new window.KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true, cancelable: true })
-          )
-        })
-        const option = await waitFor(
-          act,
-          () =>
-            Array.from(shadow.querySelectorAll('[role="option"]')).find((element) =>
-              (element.textContent || '').includes(label)
-            ) ?? null,
-          { label: `attack option ${label}`, timeoutMs: 5_000 }
-        )
-        await act(async () => {
-          option.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 }))
-          option.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true, cancelable: true, button: 0 }))
-          option.click()
-        })
-      }
-
-      await chooseAttackMode('Battering Ram')
-      await waitFor(
-        act,
-        () => (byTestId('fuzzer-total')?.getAttribute('data-total') === '3' ? true : null),
-        { label: 'battering ram total 3', timeoutMs: 5_000 }
-      )
-
-      await chooseAttackMode('Cluster Bomb')
-      const payload1 = await waitFor(act, () => byTestId('fuzzer-payload-1'), {
-        label: 'second payload set',
-        timeoutMs: 5_000
-      })
-      await act(async () => {
-        setControlValue(window, payload1, 'a\nb')
-      })
-      await waitFor(
-        act,
-        () => (byTestId('fuzzer-total')?.getAttribute('data-total') === '6' ? true : null),
-        { label: 'cluster bomb total 6', timeoutMs: 5_000 }
-      )
-
-      await chooseAttackMode('Battering Ram')
-      await waitFor(
-        act,
-        () => (byTestId('fuzzer-total')?.getAttribute('data-total') === '3' ? true : null),
-        { label: 'battering ram total 3 again', timeoutMs: 5_000 }
-      )
-
-      await act(async () => {
-        byTestId('fuzzer-start').click()
-      })
-      const confirm = await waitFor(act, () => byTestId('fuzzer-confirm'), {
-        label: 'fuzzer confirm dialog',
-        timeoutMs: 5_000
-      })
-      assert.ok(
-        (confirm.textContent || '').includes('127.0.0.1:8080'),
-        `confirm dialog lacks the target origin: ${textOf(confirm)}`
-      )
-      await act(async () => {
-        byTestId('fuzzer-confirm-start').click()
-      })
-      await waitFor(
-        act,
-        () => (allTestIds('fuzzer-results-row').length >= 3 ? true : null),
-        { label: 'fuzz result rows', timeoutMs: 15_000 }
-      )
-      const progress = byTestId('fuzzer-progress')
-      assert.ok(progress, 'missing fuzzer progress bar')
-      await waitFor(
-        act,
-        () => (progress.getAttribute('data-status') === 'completed' ? true : null),
-        { label: 'fuzz job completed', timeoutMs: 15_000 }
-      )
-      assert.ok(byTestId('fuzzer-results-baseline'), 'missing baseline result row')
-      const resultRows = allTestIds('fuzzer-results-row')
-      await act(async () => {
-        resultRows[0].click()
-      })
-      const detail = await waitFor(act, () => byTestId('fuzzer-detail'), {
-        label: 'fuzzer result detail',
+      const status = await waitFor(act, () => byTestId('fuzzer-response-status'), {
+        label: 'fuzzer response status',
         timeoutMs: 10_000
       })
-      assert.ok(byTestId('fuzzer-detail-request'), 'result detail lacks the replaced request')
-      assert.ok((detail.textContent || '').includes('200'), 'result detail lacks the response status')
-      assert.ok(
-        byTestId('fuzzer-response-pane').contains(detail),
-        'result detail must render in the right-hand response pane'
-      )
-      assert.equal(
-        byTestId('fuzzer-bottom-tab-results').getAttribute('aria-selected'),
-        'true',
-        'results tab must be selected by default'
-      )
-      await act(async () => {
-        byTestId('fuzzer-bottom-tab-history').click()
-      })
-      await waitFor(act, () => byTestId('fuzzer-history-row'), {
-        label: 'fuzzer bottom history row',
+      assert.equal(textOf(status), '200')
+      const responseBody = await waitFor(act, () => byTestId('fuzzer-response-body'), {
+        label: 'fuzzer response body',
         timeoutMs: 10_000
       })
+      assert.ok(
+        (responseBody.textContent || '').includes('"ok":true'),
+        `unexpected response body: ${textOf(responseBody)}`
+      )
+      assert.ok(byTestId('fuzzer-view-json'), 'missing JSON view button for the JSON response')
+      await act(async () => {
+        byTestId('fuzzer-view-json').click()
+      })
+      const formatted = await waitFor(act, () => byTestId('fuzzer-response-json'), {
+        label: 'formatted JSON response',
+        timeoutMs: 5_000
+      })
+      assert.match(formatted.textContent || '', /"ok": true/)
+      assert.ok(
+        (shadow.querySelector('main')?.textContent || '').includes('Web Fuzzer'),
+        'page heading missing'
+      )
 
-      // The Repeater card is single-request only now; its editor and the
-      // history / favorites / curl tools must still be available.
+      // Back to the single-request Repeater card: history/favorites/curl stay.
       await act(async () => {
         byTestId('nav-retest').click()
       })
@@ -1856,9 +1639,6 @@ export async function runCortexUiSmoke(options = {}) {
       })
       assert.ok(byTestId('retest-repeater-request'), 'single repeater editor did not render')
       assert.ok(byTestId('retest-repeater-send'), 'single repeater send button is missing')
-      assert.ok(byTestId('repeater-collections-open'), 'missing favorites button')
-      assert.ok(byTestId('repeater-curl-import'), 'missing curl import button')
-      assert.ok(byTestId('repeater-curl-export'), 'missing curl export button')
       await act(async () => {
         historyButton.click()
       })
@@ -1875,41 +1655,6 @@ export async function runCortexUiSmoke(options = {}) {
         })
       }
 
-      // Curl import: parse a bash-style command into the raw request editor.
-      await act(async () => {
-        byTestId('repeater-curl-import').click()
-      })
-      await waitFor(act, () => byTestId('repeater-curl-dialog'), {
-        label: 'curl import dialog',
-        timeoutMs: 5_000
-      })
-      const curlInput = byTestId('repeater-curl-input')
-      assert.ok(curlInput, 'curl import dialog lacks its textarea')
-      await act(async () => {
-        setControlValue(
-          window,
-          curlInput,
-          "curl 'http://127.0.0.1:8080/api/items' -X POST -H 'X-Smoke: 1' --data-raw '{\"a\":1}'"
-        )
-      })
-      await act(async () => {
-        byTestId('repeater-curl-parse').click()
-      })
-      await waitFor(
-        act,
-        () => {
-          const editor = byTestId('retest-repeater-request')
-          if (!editor) return null
-          const value = editor.value
-          return value.includes('POST http://127.0.0.1:8080/api/items') &&
-            value.includes('X-Smoke: 1') &&
-            value.includes('{"a":1}')
-            ? true
-            : null
-        },
-        { label: 'curl import applied to the single repeater', timeoutMs: 5_000 }
-      )
-
       assert.equal(
         consoleErrors.filter(isFatalConsoleMessage).length,
         fatalBefore,
@@ -1923,14 +1668,14 @@ export async function runCortexUiSmoke(options = {}) {
       structural.fuzzer = {
         page: true,
         layout: 'request-left/response-right',
+        fullHeight: true,
+        sendButton: 'top-left',
         targetSelector: true,
         vulnerabilityList: false,
-        markers: 2,
-        modes: ['sniper', 'battering_ram', 'cluster_bomb'],
-        totalCases: 3,
-        resultRows: resultRows.length
+        fuzzing: false,
+        mockStatus: 200
       }
-      return 'Web Fuzzer card, request/response split, compact target selector (no ported vulnerability list), 2 markers, Sniper/Battering Ram/Cluster Bomb totals, confirm, progress, results, detail, history tab, single-mode tools'
+      return 'Web Fuzzer card, full-height request/response split, send button top-left, compact target selector (no vulnerability list), single send + JSON view, single-mode tools'
     })
 
     await check('main view stays isolated inside the shadow root after navigation', () => {
