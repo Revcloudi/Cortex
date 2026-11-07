@@ -397,7 +397,15 @@ export function AssetDetail({
         if (!next) onClose()
       }}
     >
-      <SheetContent data-testid="asset-sheet">
+      <SheetContent
+        data-testid="asset-sheet"
+        onInteractOutside={(event) => {
+          if (deleteOpen) event.preventDefault()
+        }}
+        onEscapeKeyDown={(event) => {
+          if (deleteOpen) event.preventDefault()
+        }}
+      >
         <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-6">
           <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
             {t('asset.page.eyebrow')}

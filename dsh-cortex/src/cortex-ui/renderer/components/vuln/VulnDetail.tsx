@@ -288,7 +288,18 @@ export function VulnDetail({
           if (!next) onClose()
         }}
       >
-        <SheetContent data-testid="vuln-sheet">
+        <SheetContent
+          data-testid="vuln-sheet"
+          onInteractOutside={(event) => {
+            // Nested dialogs (export/build path, delete confirm) are portaled
+            // outside this sheet in the DOM; without this the sheet treats a
+            // click inside them as an outside click and closes itself.
+            if (exportOpen || confirmOpen) event.preventDefault()
+          }}
+          onEscapeKeyDown={(event) => {
+            if (exportOpen || confirmOpen) event.preventDefault()
+          }}
+        >
           <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-6">
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
               {t('vuln.detail.eyebrow')}

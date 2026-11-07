@@ -80,6 +80,14 @@ export function ExportReportDialog({
           <DialogPrimitive.Overlay className="sheet-overlay fixed inset-0 z-[70] bg-[hsl(224_18%_10%/0.3)]" />
           <DialogPrimitive.Content
             data-testid="export-report-dialog"
+            onInteractOutside={(event) => {
+              // The directory picker is a sibling Radix layer; keep this dialog
+              // open while the user browses folders.
+              if (pickerOpen) event.preventDefault()
+            }}
+            onEscapeKeyDown={(event) => {
+              if (pickerOpen) event.preventDefault()
+            }}
             className="fixed left-1/2 top-1/2 z-[70] w-[min(480px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-5 shadow-panel focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             <DialogPrimitive.Title className="text-[16px] font-medium tracking-tight text-foreground">

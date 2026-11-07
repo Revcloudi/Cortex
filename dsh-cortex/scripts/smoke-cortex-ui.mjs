@@ -1050,8 +1050,42 @@ export async function runCortexUiSmoke(options = {}) {
       )
       assert.ok(cancel, 'confirmation dialog has no cancel button')
       await act(async () => {
+        // Real browsers send pointerdown before click; Radix's outside-dismiss
+        // listens to pointerdown, so exercise that path too.
+        cancel.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
         cancel.click()
       })
+      assert.ok(sheet.isConnected, 'vuln sheet must stay open after cancelling the delete dialog')
+
+      // Export dialog lives outside the sheet in the DOM; clicking its buttons
+      // must not dismiss the vulnerability detail sheet.
+      const exportButton = sheet.querySelector('[data-testid="export-vuln-md"]')
+      assert.ok(exportButton, 'vuln sheet has no export button')
+      await act(async () => {
+        exportButton.click()
+      })
+      const exportDialog = await waitFor(
+        act,
+        () => shadow.querySelector('[data-testid="export-report-dialog"]'),
+        { label: 'export report dialog', timeoutMs: 5000 },
+      )
+      const docxFormat = exportDialog.querySelector('[data-testid="export-format-docx"]')
+      assert.ok(docxFormat, 'export dialog has no Word format button')
+      await act(async () => {
+        docxFormat.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+        docxFormat.click()
+      })
+      assert.ok(sheet.isConnected, 'vuln sheet must stay open while the export dialog is used')
+      assert.ok(exportDialog.isConnected, 'export dialog must stay open when switching format')
+      const exportCancel = Array.from(exportDialog.querySelectorAll('button')).find((button) =>
+        /取消/.test(button.textContent || ''),
+      )
+      if (exportCancel) {
+        await act(async () => {
+          exportCancel.click()
+        })
+      }
+      assert.ok(sheet.isConnected, 'vuln sheet must stay open after closing the export dialog')
       const closeButton = Array.from(sheet.querySelectorAll('button')).find((button) =>
         /关闭|Close/.test(button.getAttribute('aria-label') || ''),
       )
