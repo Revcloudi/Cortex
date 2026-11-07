@@ -13,7 +13,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import http from 'node:http'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -894,6 +894,33 @@ describe('cortex: vulnerability writes', () => {
       )
       const list = expectOk(await server.request('/cortex-api/cortex/vulns'))
       assert.equal(list.total, 7)
+    } finally {
+      await server.close()
+      cleanupDir(fixture.dir)
+    }
+  })
+
+  it('GET /fs/list lists directories for the export folder picker', async () => {
+    const fixture = createFixture()
+    const server = await startTestHost({ dbPath: fixture.dbPath })
+    try {
+      mkdirSync(join(fixture.dir, 'reports'), { recursive: true })
+      const listing = expectOk(
+        await server.request(
+          `/cortex-api/cortex/fs/list?path=${encodeURIComponent(fixture.dir)}`,
+        ),
+      )
+      assert.equal(listing.path, fixture.dir)
+      assert.ok(listing.directories.some((entry) => entry.name === 'reports'))
+      assert.equal(listing.directories.find((entry) => entry.name === 'reports').path, join(fixture.dir, 'reports'))
+      assert.equal(listing.parent, join(fixture.dir, '..'))
+
+      const relative = await server.request('/cortex-api/cortex/fs/list?path=relative%2Fpath')
+      assert.equal(relative.status, 400)
+      const missing = await server.request(
+        `/cortex-api/cortex/fs/list?path=${encodeURIComponent(join(fixture.dir, 'missing'))}`,
+      )
+      assert.equal(missing.status, 400)
     } finally {
       await server.close()
       cleanupDir(fixture.dir)

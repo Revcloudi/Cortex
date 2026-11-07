@@ -36,6 +36,7 @@ import {
   sendJson,
 } from '../http.js'
 import * as assets from './assets.js'
+import * as fs from './fs.js'
 import * as misc from './misc.js'
 import * as repeater from './repeater.js'
 import * as snapshots from './snapshots.js'
@@ -114,6 +115,9 @@ const ROUTES = [
   { pattern: /^\/poc\/provider-test$/, methods: { POST: misc.unsupportedHandler }, db: false },
 
   { pattern: /^\/repeater\/send$/, methods: { POST: repeater.handleSend } },
+
+  // Directory browser for the export-path picker (read-only).
+  { pattern: /^\/fs\/list$/, methods: { GET: fs.handleList }, db: false },
 ]
 
 /* ------------------------------------------------------------------------- */
