@@ -37,6 +37,20 @@ if (!process.env.CORTEX_REPEATER_DIR) {
   })
 }
 
+// The database setup screen persists its chosen path in plugin-settings.json.
+// Never let the test suite read the operator's saved path.
+if (!process.env.CORTEX_SETTINGS_FILE) {
+  const settingsDir = mkdtempSync(join(tmpdir(), 'dsh-cortex-settings-'))
+  process.env.CORTEX_SETTINGS_FILE = join(settingsDir, 'plugin-settings.json')
+  process.on('exit', () => {
+    try {
+      rmSync(settingsDir, { recursive: true, force: true })
+    } catch {
+      /* best-effort cleanup */
+    }
+  })
+}
+
 /** @returns {string} */
 export function makeTempDir() {
   return mkdtempSync(join(tmpdir(), 'dsh-cortex-host-'))

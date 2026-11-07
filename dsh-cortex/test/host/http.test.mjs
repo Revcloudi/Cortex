@@ -177,6 +177,7 @@ describe('http: live loopback server', () => {
       'dbFile',
       'error',
       'readOnly',
+      'readOnlyFallback',
       'schemaVersion',
     ])
     assert.equal(body.db.available, true)
@@ -184,6 +185,7 @@ describe('http: live loopback server', () => {
     assert.equal(body.db.compatible, true)
     assert.equal(body.db.dbFile, 'data.db')
     assert.equal(body.db.readOnly, false)
+    assert.equal(body.db.readOnlyFallback, false)
     assert.equal(body.server.loopbackOnly, true)
     assert.equal(JSON.stringify(body).includes(fixture.dir), false)
     assert.equal(JSON.stringify(body).includes('.cortex'), false)

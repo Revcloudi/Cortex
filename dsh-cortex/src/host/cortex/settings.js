@@ -37,6 +37,24 @@ export function getLastExportDir() {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
 }
 
+/** Remember/clear the database file configured from the plugin UI. */
+export function getConfiguredDbPath() {
+  const value = readSettings().dbPath
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+/** Persist the database path across host restarts (best effort). */
+export function rememberDbPath(dbPath) {
+  try {
+    const settings = readSettings()
+    if (typeof dbPath === 'string' && dbPath.trim().length > 0) settings.dbPath = dbPath.trim()
+    else delete settings.dbPath
+    writeSettings(settings)
+  } catch {
+    /* ignore: the current process still uses the new path */
+  }
+}
+
 /** Best-effort: a settings write failure must never fail an export. */
 export function rememberExportDir(outputDir) {
   try {

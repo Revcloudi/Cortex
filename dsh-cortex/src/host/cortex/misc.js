@@ -22,8 +22,10 @@
  */
 
 import { statSync } from 'node:fs'
-import { basename } from 'node:path'
-import { readJsonBody, sendJson } from '../http.js'
+import { homedir } from 'node:os'
+import { basename, isAbsolute, join, resolve } from 'node:path'
+import { badRequest, readJsonBody, sendJson } from '../http.js'
+import { rememberDbPath } from './settings.js'
 
 /** Execution limits mirroring `POC_LIMITS` in shared/poc.ts. */
 const POC_LIMITS = {
@@ -76,18 +78,69 @@ function fileStat(filePath) {
 
 /** GET /db/info -> DatabaseInfo (never the absolute path) */
 export function handleDbInfo({ res, holder }) {
+  holder.ensure()
+  sendJson(res, 200, databaseInfo(holder))
+}
+
+/** Shared shape for GET /db/info and POST /db/configure. */
+function databaseInfo(holder) {
   const dbPath = typeof holder.dbPath === 'string' ? holder.dbPath : ''
   const main = fileStat(dbPath)
   const wal = fileStat(`${dbPath}-wal`)
   const lastModifiedMs = Math.max(main.mtimeMs, wal.mtimeMs)
-  sendJson(res, 200, {
+  return {
     dbPath: dbPath.length > 0 ? basename(dbPath) : '',
     schemaVersion: holder.schemaVersion === null ? 0 : Number(holder.schemaVersion),
+    compatible: holder.compatible === true,
     exists: main.exists,
     sizeBytes: main.size,
     walSizeBytes: wal.size,
     lastModifiedAt: lastModifiedMs > 0 ? new Date(lastModifiedMs).toISOString() : null,
-  })
+    readOnly: holder.readOnly === true || holder.readOnlyFallback === true,
+    readOnlyFallback: holder.readOnlyFallback === true,
+    openError: typeof holder.openError === 'string' ? holder.openError : null,
+  }
+}
+
+const MAX_DB_PATH_LENGTH = 2000
+
+/** Expand `~` and resolve a user-entered database path. */
+function resolveConfiguredPath(rawPath, defaultPath) {
+  const value = typeof rawPath === 'string' ? rawPath.trim() : ''
+  if (value.length === 0) return defaultPath
+  if (value.length > MAX_DB_PATH_LENGTH) {
+    throw badRequest('database path is too long', { field: 'path', max: MAX_DB_PATH_LENGTH })
+  }
+  let expanded = value
+  if (value === '~') expanded = homedir()
+  else if (value.startsWith('~/') || value.startsWith('~\\')) {
+    expanded = join(homedir(), value.slice(2))
+  }
+  if (!isAbsolute(expanded)) {
+    throw badRequest('database path must be absolute or start with ~', { field: 'path' })
+  }
+  return resolve(expanded)
+}
+
+/**
+ * POST /db/configure { path } -> DatabaseInfo
+ *
+ * Web DSH hosts do not necessarily run with the operator's HOME; this lets the
+ * UI point the Host at a Cortex v5 SQLite file on the machine that runs DSH.
+ * The path is persisted in the plugin settings for the next host start.
+ */
+export async function handleDbConfigure({ req, res, holder }) {
+  const body = await readJsonBody(req)
+  const rawPath = body && typeof body.path === 'string' ? body.path : ''
+  const target = resolveConfiguredPath(
+    rawPath,
+    typeof holder.defaultDbPath === 'string' ? holder.defaultDbPath : ''
+  )
+  holder.configure(target)
+  const status = databaseInfo(holder)
+  if (rawPath.trim().length === 0) rememberDbPath(null)
+  else if (status.compatible) rememberDbPath(target)
+  sendJson(res, 200, status)
 }
 
 /** GET /app/info -> AppInfo (no absolute filesystem paths) */

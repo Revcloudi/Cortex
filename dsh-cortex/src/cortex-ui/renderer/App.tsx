@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { TopNav } from '../dsh/TopNav'
+import { DatabaseGate } from '@renderer/components/layout/DatabaseGate'
 import { TooltipProvider } from '@renderer/components/ui/tooltip'
 import { DashboardPage } from '@renderer/pages/DashboardPage'
 import { InternalPage } from '@renderer/pages/InternalPage'
@@ -88,7 +89,8 @@ export default function App() {
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <main className="min-h-0 flex-1 overflow-y-auto">
-              {page === 'dashboard' ? (
+              <DatabaseGate>
+                {page === 'dashboard' ? (
                   <DashboardPage
                     dataVersion={dataVersion}
                     onOpenInternal={() => navigate('internal')}
@@ -125,6 +127,7 @@ export default function App() {
                 ) : page === 'ai-config' && !IS_WEB_RUNTIME ? (
                   <AiConfigPage />
                 ) : null}
+              </DatabaseGate>
             </main>
           </div>
 

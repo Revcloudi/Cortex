@@ -24,6 +24,7 @@ import { DatabaseHolder } from './db.js'
 import { sendError } from './http.js'
 import { Repository } from './repository.js'
 import { createRouter } from './router.js'
+import { getConfiguredDbPath } from './cortex/settings.js'
 
 export const PLUGIN_NAME = 'dsh-cortex'
 
@@ -53,6 +54,12 @@ export function resolveHostConfig(config) {
   if (dbPath === undefined) {
     const envPath = process.env.CORTEX_DB_PATH
     if (typeof envPath === 'string' && envPath.length > 0) dbPath = envPath
+  }
+  // A path chosen from the plugin's database setup screen (web DSH) is used
+  // when neither the plugin config nor the environment overrides it.
+  if (dbPath === undefined) {
+    const saved = getConfiguredDbPath()
+    if (typeof saved === 'string' && saved.length > 0) dbPath = saved
   }
   if (dbPath === undefined) dbPath = join(homedir(), '.cortex', 'data.db')
   const readOnly = cfg.readOnly === true || process.env.CORTEX_DB_READONLY === '1'

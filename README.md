@@ -26,6 +26,8 @@ Cortex also ships as a native **DeepSeek Harness** plugin (`dsh-cortex/` in this
 - a **WeChat mini-program** reverse-engineering workbench (wxapkg detect / decrypt / unpack / analyze / import);
 - **22 native agent tools** over the same local SQLite, **without any MCP server**.
 
+Web DSH note: the Host must be able to read a Cortex schema **v5** SQLite file on the machine that runs DSH. If it runs on another host or with a sandboxed home, use the in-app database setup screen (or set `CORTEX_DB_PATH`) to point it at that file.
+
 Requirements: DeepSeek Harness **≥ 0.2.2-rc.1**, Node.js **≥ 22.19** (bundled with the DSH desktop app) and a
 Cortex database with schema **v5**.
 

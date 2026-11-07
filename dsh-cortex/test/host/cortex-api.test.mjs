@@ -680,16 +680,24 @@ describe('cortex: metadata endpoints', () => {
     const res = await readServer.request('/cortex-api/cortex/db/info')
     const body = expectOk(res)
     assert.deepEqual(Object.keys(body).sort(), [
+      'compatible',
       'dbPath',
       'exists',
       'lastModifiedAt',
+      'openError',
+      'readOnly',
+      'readOnlyFallback',
       'schemaVersion',
       'sizeBytes',
       'walSizeBytes',
     ])
     assert.equal(body.dbPath, 'data.db')
     assert.equal(body.schemaVersion, 5)
+    assert.equal(body.compatible, true)
     assert.equal(body.exists, true)
+    assert.equal(body.readOnly, false)
+    assert.equal(body.readOnlyFallback, false)
+    assert.equal(body.openError, null)
     assert.ok(body.sizeBytes > 0)
     assert.ok(body.lastModifiedAt === null || typeof body.lastModifiedAt === 'string')
     assert.equal(res.text.includes(read.dir), false)

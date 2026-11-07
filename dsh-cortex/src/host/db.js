@@ -87,8 +87,12 @@ export class DatabaseHolder {
    */
   constructor({ dbPath, readOnly = false, busyTimeoutMs = DEFAULT_BUSY_TIMEOUT_MS } = {}) {
     this.dbPath = dbPath
+    /** Startup path used by the setup screen's "restore default" action. */
+    this.defaultDbPath = dbPath
     this.readOnly = Boolean(readOnly)
     this.busyTimeoutMs = busyTimeoutMs
+    /** True when a read-write open failed and the holder fell back to read-only. */
+    this.readOnlyFallback = false
     /** @type {DatabaseSync|null} */
     this.db = null
     /** @type {number|null} */
@@ -109,10 +113,29 @@ export class DatabaseHolder {
       schemaVersion: this.schemaVersion,
       compatible: this.compatible,
       readOnly: this.readOnly,
+      readOnlyFallback: this.readOnlyFallback,
       busy: false,
       dbFile: basename(this.dbPath || 'data.db'),
       error: this.openError,
     }
+  }
+
+  /**
+   * Switch the SQLite file at runtime (database setup screen). An empty value
+   * keeps the current path; callers normally pass an explicit default.
+   * @param {string} dbPath
+   */
+  configure(dbPath) {
+    if (this.closed) return this.status()
+    this._closeQuietly()
+    if (typeof dbPath === 'string' && dbPath.length > 0) this.dbPath = dbPath
+    else if (typeof this.defaultDbPath === 'string' && this.defaultDbPath.length > 0) {
+      this.dbPath = this.defaultDbPath
+    }
+    this.openError = null
+    this.openAttempts = 0
+    this.ensure()
+    return this.status()
   }
 
   /**
@@ -159,6 +182,7 @@ export class DatabaseHolder {
   _openOnce() {
     this.openAttempts += 1
     this.openError = null
+    this.readOnlyFallback = false
     if (typeof this.dbPath !== 'string' || this.dbPath.length === 0) {
       this.openError = 'database path is not configured'
       this.schemaVersion = null
@@ -177,21 +201,32 @@ export class DatabaseHolder {
     let db = null
     try {
       db = new DatabaseSync(this.dbPath, { readOnly: this.readOnly })
-      db.exec(`PRAGMA busy_timeout = ${Number(this.busyTimeoutMs) || 0}`)
-      db.exec('PRAGMA foreign_keys = ON')
-      const row = db.prepare('PRAGMA user_version').get()
-      const version = row && row.user_version !== undefined ? Number(row.user_version) : null
-      this.db = db
-      this.schemaVersion = Number.isFinite(version) ? version : null
-      this.compatible = this.schemaVersion === SCHEMA_VERSION
-      this.openError = null
-      this.stamp = this._readStamp()
+      this._finishOpen(db, false)
+      return
     } catch (err) {
       if (db) {
         try {
           db.close()
         } catch {
           /* already closed */
+        }
+      }
+      // Web DSH hosts can run on a read-only filesystem. Browsing is still
+      // useful in that case, so retry once in read-only mode before failing.
+      if (!this.readOnly) {
+        let readonlyDb = null
+        try {
+          readonlyDb = new DatabaseSync(this.dbPath, { readOnly: true })
+          this._finishOpen(readonlyDb, true)
+          return
+        } catch {
+          if (readonlyDb) {
+            try {
+              readonlyDb.close()
+            } catch {
+              /* already closed */
+            }
+          }
         }
       }
       this.db = null
@@ -202,12 +237,31 @@ export class DatabaseHolder {
     }
   }
 
+  /**
+   * Apply connection pragmas and record the compatibility state.
+   * @param {DatabaseSync} db
+   * @param {boolean} readOnlyFallback
+   */
+  _finishOpen(db, readOnlyFallback) {
+    db.exec(`PRAGMA busy_timeout = ${Number(this.busyTimeoutMs) || 0}`)
+    db.exec('PRAGMA foreign_keys = ON')
+    const row = db.prepare('PRAGMA user_version').get()
+    const version = row && row.user_version !== undefined ? Number(row.user_version) : null
+    this.db = db
+    this.schemaVersion = Number.isFinite(version) ? version : null
+    this.compatible = this.schemaVersion === SCHEMA_VERSION
+    this.readOnlyFallback = readOnlyFallback
+    this.openError = null
+    this.stamp = this._readStamp()
+  }
+
   _closeQuietly() {
     const db = this.db
     this.db = null
     this.schemaVersion = null
     this.compatible = false
     this.stamp = null
+    this.readOnlyFallback = false
     if (db) {
       try {
         db.close()
@@ -246,7 +300,7 @@ export class DatabaseHolder {
   /** Throwing guard for write routes (read-only mode is a 403, contract §2.3). */
   assertWritable() {
     this.assertUsable()
-    if (this.readOnly) {
+    if (this.readOnly || this.readOnlyFallback) {
       throw new ApiError(403, 'READ_ONLY', 'database is opened in read-only mode')
     }
   }
