@@ -100,6 +100,16 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
         : buildHtmlPreview(result.response.body, vuln.target_url),
     [result, vuln]
   )
+  /** Raw response as one block: status line + headers + blank line + body. */
+  const rawResponse = useMemo(() => {
+    if (result === null) return ''
+    const lines = [`HTTP/1.1 ${result.response.status}`]
+    for (const [name, value] of Object.entries(result.response.headers)) {
+      lines.push(`${name}: ${value}`)
+    }
+    lines.push('', result.response.body)
+    return lines.join('\n')
+  }, [result])
 
   const send = async (): Promise<void> => {
     if (vuln === null || sending) return
@@ -150,7 +160,7 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
   return (
     <div
       data-testid="fuzzer-panel"
-      className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2"
+      className="grid min-h-0 flex-1 items-stretch gap-3 lg:grid-cols-2"
     >
       {/* ------------------------------------------------------------- request */}
       <section
@@ -158,7 +168,7 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
         aria-label={t('fuzzer.request.paneAria')}
         className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background"
       >
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
           <Button
             size="sm"
             data-testid="fuzzer-send"
@@ -173,7 +183,7 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             )}
             {sending ? t('retest.repeater.sending') : t('retest.repeater.send')}
           </Button>
-          <label className="flex cursor-pointer items-center gap-1.5 text-[10.5px] text-muted-foreground">
+          <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[10.5px] text-muted-foreground">
             <Checkbox
               data-testid="fuzzer-follow-redirects"
               checked={followRedirects}
@@ -181,12 +191,12 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             />
             {t('retest.repeater.followRedirects')}
           </label>
-          <span className="rounded border border-border bg-sidebar px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
+          <span className="shrink-0 rounded border border-border bg-sidebar px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
             {vuln.id}
           </span>
           {requests.length > 0 ? (
             <div
-              className="ml-auto flex max-w-full items-center gap-1 overflow-x-auto"
+              className="ml-auto flex min-w-0 items-center gap-1 overflow-x-auto"
               role="tablist"
               aria-label={t('retest.repeater.stepsAria')}
             >
@@ -211,7 +221,7 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
               ))}
             </div>
           ) : null}
-          <span className={cn('font-mono text-[9.5px] tabular-nums text-muted-foreground', requests.length === 0 && 'ml-auto')}>
+          <span className={cn('shrink-0 font-mono text-[9.5px] tabular-nums text-muted-foreground', requests.length === 0 && 'ml-auto')}>
             {t('retest.repeater.bytes', { count: rawBytes })}
           </span>
         </div>
@@ -223,7 +233,7 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             value={raw}
             spellCheck={false}
             onChange={(event) => setRaw(event.target.value)}
-            className="min-h-0 w-full flex-1 resize-none rounded-lg border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-[hsl(220_14%_92%)] caret-[hsl(174_77%_45%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="min-h-0 w-full flex-1 resize-none rounded-lg border border-border bg-white px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground caret-accent placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           />
           {error !== null ? (
             <p
@@ -243,9 +253,9 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
         aria-label={t('fuzzer.response.aria')}
         className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background"
       >
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-          <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-[12px] font-medium text-foreground">{t('retest.repeater.responseTitle')}</span>
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+          <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 text-[12px] font-medium text-foreground">{t('retest.repeater.responseTitle')}</span>
           {result !== null ? (
             <>
               <span
@@ -273,7 +283,7 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
                 </Button>
               ) : null}
               {formattedJson !== null || responseIsHtml ? (
-                <div className="ml-auto flex items-center gap-0.5 rounded-md border border-border bg-muted p-0.5">
+                <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-muted p-0.5">
                   <button
                     type="button"
                     data-testid="fuzzer-view-raw"
@@ -329,11 +339,6 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
           </p>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3">
-            <pre className="mb-2 shrink-0 whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar px-2.5 py-2 font-mono text-[10.5px] leading-relaxed text-foreground">
-              {Object.entries(result.response.headers)
-                .map(([name, value]) => `${name}: ${value}`)
-                .join('\n')}
-            </pre>
             {responseIsHtml && bodyView === 'html' ? (
               <iframe
                 title={t('retest.repeater.htmlPreview')}
@@ -345,16 +350,16 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             ) : formattedJson !== null && bodyView === 'pretty' ? (
               <pre
                 data-testid="fuzzer-response-json"
-                className="whitespace-pre-wrap break-words rounded-md border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11px] leading-relaxed text-[hsl(220_14%_92%)]"
+                className="whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
               >
                 {formattedJson}
               </pre>
             ) : (
               <pre
                 data-testid="fuzzer-response-body"
-                className="whitespace-pre-wrap break-words rounded-md border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11px] leading-relaxed text-[hsl(220_14%_92%)]"
+                className="whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
               >
-                {result.response.body.slice(0, 200_000)}
+                {rawResponse.slice(0, 200_000)}
               </pre>
             )}
           </div>

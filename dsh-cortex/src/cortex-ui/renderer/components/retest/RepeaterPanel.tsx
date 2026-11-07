@@ -167,6 +167,16 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
     () => (result === null ? '' : buildHtmlPreview(result.response.body, vuln.target_url)),
     [result, vuln.target_url]
   )
+  /** Raw response as one block: status line + headers + blank line + body. */
+  const rawResponse = useMemo(() => {
+    if (result === null) return ''
+    const lines = [`HTTP/1.1 ${result.response.status}`]
+    for (const [name, value] of Object.entries(result.response.headers)) {
+      lines.push(`${name}: ${value}`)
+    }
+    lines.push('', result.response.body)
+    return lines.join('\n')
+  }, [result])
 
   /** Parsed request used by the favorites dialog (null while the editor is invalid). */
   const currentRequest = useMemo<RepeaterSendResult['request'] | null>(() => {
@@ -287,7 +297,7 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
             value={raw}
             spellCheck={false}
             onChange={(event) => setRaw(event.target.value)}
-            className="min-h-[210px] w-full resize-y rounded-lg border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-[hsl(220_14%_92%)] caret-[hsl(174_77%_45%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="min-h-[210px] w-full resize-y rounded-lg border border-border bg-white px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground caret-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button
@@ -451,11 +461,6 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
           </p>
         ) : (
           <div className="min-h-0 flex-1 overflow-auto p-3">
-            <pre className="mb-2 whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar px-2.5 py-2 font-mono text-[10.5px] leading-relaxed text-foreground">
-              {Object.entries(result.response.headers)
-                .map(([name, value]) => `${name}: ${value}`)
-                .join('\n')}
-            </pre>
             {responseIsHtml && bodyView === 'html' ? (
               <iframe
                 title={t('retest.repeater.htmlPreview')}
@@ -467,13 +472,16 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
             ) : formattedJson !== null && bodyView === 'pretty' ? (
               <pre
                 data-testid="retest-repeater-json"
-                className="whitespace-pre-wrap break-words rounded-md border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11px] leading-relaxed text-[hsl(220_14%_92%)]"
+                className="whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
               >
                 {formattedJson}
               </pre>
             ) : (
-              <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11px] leading-relaxed text-[hsl(220_14%_92%)]">
-                {result.response.body.slice(0, 200_000)}
+              <pre
+                data-testid="retest-repeater-response"
+                className="whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
+              >
+                {rawResponse.slice(0, 200_000)}
               </pre>
             )}
           </div>

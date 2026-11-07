@@ -1575,6 +1575,10 @@ export async function runCortexUiSmoke(options = {}) {
       const responsePane = byTestId('fuzzer-response-pane')
       assert.ok(requestPane, 'missing fuzzer request pane')
       assert.ok(responsePane, 'missing fuzzer response pane')
+      const requestHeaderHeight = requestPane.firstElementChild?.className || ''
+      const responseHeaderHeight = responsePane.firstElementChild?.className || ''
+      assert.ok(requestHeaderHeight.includes('h-12'), 'request pane header must be h-12')
+      assert.ok(responseHeaderHeight.includes('h-12'), 'response pane header must be h-12')
       const sendButton = byTestId('fuzzer-send')
       assert.ok(sendButton, 'missing send button')
       assert.equal(
