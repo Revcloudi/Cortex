@@ -228,7 +228,6 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 - 漏洞模型：Host、入口、类型、等级、URL、描述、影响、受影响接口、Markdown 复现步骤、修复建议、加解密说明、测试边界、只追加的复测历史、关联漏洞与状态流转。
 - 资产上下文：完整 URL、项目、技术栈、结构化 `interfaces`（`path` / `method` / `params` / 原始请求）、敏感泄露、非密 `test_parameters` 与关联漏洞；旧版 `interface_dir` 自动规范化。
 - 内网作战域（Plan B，schema v3）：Web 与内网逻辑隔离，主看板分「Web 漏洞」（默认）与「内网作战」两个 tab；入口资产通过 foothold 桥接内网主机 / 服务 / 凭据 / pivot，内网作战页提供概览、网段热力图、凭据-服务矩阵、代理路由视图与 Loot 本地导入。
-- **漏洞复测**（手动 HTTP 重放，仅桌面端）：面向 Web 漏洞，提供原始请求编辑、Headers/Body 修改、发送/跟随重定向、原始响应查看和复测专用代理。AI 模型配置已独立为主侧边栏的「模型配置」页面；旧的生成式 JS 沙箱与 `poc_artifacts` / `poc_runs` 已在 schema v5 删除。MCP 不返回重放流量，Key 与代理密码只留在主进程。
 - 固定 7 个 MCP 工具：`save_vulnerability`、`query_vulnerabilities`、`update_vulnerability`、`sync_asset_info`、`query_asset_context`、`manage_snapshot`、`sync_internal_scope`（内网作战域：登记 foothold / 内网主机 / 服务 / 凭据 / pivot）。
 - `ctx init` 自动检测 Agent，幂等写入 MCP 配置、4 个 Skill 与系统级强制规则（带备份、`--dry-run`、JSON/TOML/YAML 校验）。
 - 桌面端：漏洞看板（服务端过滤/分页）、资产库（接口浏览器）、认知快照（项目 → 子会话层级）、Markdown 报告导出、双语 MCP 接入页（一键「接入 Agent」+ 精简工具表）。
@@ -243,26 +242,6 @@ Agent：manage_snapshot(list) → manage_snapshot(load, SESS-...) →
 **记忆星云**把本地 SQLite 记忆变成一张可探索的 3D 星图：项目/目标、Host 资产、漏洞、泄露与快照会话通过派生关系连成可旋转、可缩放的网络（纯只读，不新增数据表）。支持全库 / 当前资产 / 当前任务三种 Scope、搜索与类型过滤、聚焦邻域、`+N` 性能聚合、全屏与 PNG 导出，无 WebGL 时自动降级为 2D SVG。
 
 ![记忆星云：由本地 Cortex 数据库生成的项目/目标/资产/漏洞关系图](assets/readme-nebula.png)
-
-### 漏洞复测（手动 HTTP 重放，仅桌面端）
-
-「复测实验室」是主侧边栏的普通入口，打开一个面向 Web 漏洞（`realm='web'` 且 `service_host` / `internal_service_id` 为空）的工作台；内网作战域漏洞不显示入口，主进程即使被直接 IPC 调用也会拒绝。该工作台与 `VulnDetail` 分离：漏洞详情保持原有 5 个 Tab。
-
-![复测实验室：Web 漏洞列表与原始 HTTP 请求重放](assets/readme-retest.png)
-
-1. **选择漏洞**——左侧列表直接读取现有漏洞表，不再涉及 PoC artifact 或生成代码。
-2. **编辑原始请求**——右侧从漏洞 Markdown 复现步骤中提取全部 HTTP 请求，并默认选中与漏洞入口最匹配的利用步骤；步骤下拉框可切换登录/准备/利用请求。方法、路径、Headers、Cookie 占位符与 Body 均保留并可编辑。
-3. **发送**——请求经主进程发送，可切换「跟随重定向」；响应区展示原始状态码、Headers 与 Body。请求仅限该漏洞的目标 origin。
-4. **复测代理**——右上角「复测代理」只配置重放流量使用的 HTTP 代理，与全局代理、AI 模型配置均无关。
-
-**AI 模型配置**已移到主侧边栏的「模型配置」页面：配置厂商、Base URL、API Key 与当前模型；Key 只写不回显，**仍不内置默认模型**。
-
-安全与隔离：
-
-- 复测代理只作用于重放流量；代理密码不进入 renderer，`config.json` 与 `data.db` 同目录且为明文（与数据库同一威胁边界），尽最大努力收紧 ACL 并显示权限警告。
-- 旧的生成式 JS 沙箱、`poc_artifacts` / `poc_runs` 存储已删除；schema **v5** 会移除这两张表，现有漏洞原始证据与 v3 内网作战表不变。
-- 7 个 MCP 工具保持不变；`ctx web` 隐藏桌面端复测/模型页面并拒绝相关 IPC，不提供 `/api/poc/*`。
-
 
 ## 环境要求
 

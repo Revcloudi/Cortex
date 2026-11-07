@@ -229,7 +229,6 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 - Vulnerability model: host, entry point, type, severity, URL, description, impact, affected interfaces, Markdown reproduction, remediation, crypto notes, test boundaries, append-only retests, related IDs and status.
 - Asset context: full URLs, project, tech stack, structured interfaces (`path` / `method` / `params` / raw request), leaked info, non-secret `test_parameters` and related vulnerabilities. Legacy `interface_dir` arrays are normalized automatically.
 - Internal operations domain (Plan B, schema v3): Web and internal findings are logically isolated, and the main dashboard splits into "Web vulnerabilities" (default) and "Internal operations" tabs; footholds bridge entry assets to internal hosts / services / credentials / pivots, and the internal page provides an overview, subnet heatmap, credential-service matrix, proxy route view and local Loot import.
-- **Re-test lab** (manual HTTP repeater, desktop only): a sidebar page for Web findings with a raw request editor, editable headers/body, send/follow-redirect controls, raw response viewer and a retest-scoped proxy. AI model configuration is a separate main-sidebar page; the old generated-JS sandbox, `poc_artifacts` and `poc_runs` were removed in schema v5. MCP never returns retest traffic; keys and proxy passwords stay in the main process.
 - One MCP server with exactly seven tools: `save_vulnerability`, `query_vulnerabilities`, `update_vulnerability`, `sync_asset_info`, `query_asset_context`, `manage_snapshot`, `sync_internal_scope` (internal operations: register footholds, internal hosts / services, credentials and pivots).
 - `ctx init` detects installed agents and writes their MCP config, the four skills and system-level hard rules idempotently (with backups, a dry-run mode and JSON / TOML / YAML validation).
 - GUI: vulnerability dashboard with server-side filtering/pagination, asset library with interface explorer, cognitive snapshot sessions (project → child hierarchy), Markdown report export, and a compact bilingual MCP page with a one-click **Connect agents** action and the seven-tool reference.
@@ -244,26 +243,6 @@ Agent: manage_snapshot(list) -> manage_snapshot(load, SESS-...) ->
 **Memory Nebula** turns the local SQLite memory into an explorable 3D star map: project/target hubs, host assets, vulnerabilities, leaks and snapshot sessions are connected by derived, read-only relations (no extra tables). It supports all-library / single-asset / single-task scopes, search and type filters, a focus neighbourhood, `+N` performance aggregation, fullscreen view and PNG export, plus a 2D SVG fallback when WebGL is unavailable.
 
 ![Memory Nebula: project/target/host/vulnerability graph generated from the local Cortex database](assets/readme-nebula.png)
-
-### Vulnerability retest (manual HTTP repeater, desktop only)
-
-The **Re-test lab** is a normal sidebar entry that opens a dedicated workbench for Web findings (`realm='web'`, empty `service_host` / `internal_service_id`). Internal-realm findings are hidden and the main process rejects them even when IPC is called directly. The lab is deliberately separate from `VulnDetail`, which keeps its existing five tabs.
-
-![Re-test lab: Web finding list and raw HTTP repeater](assets/readme-retest.png)
-
-1. **Pick a finding** — the left list is read from the existing vulnerability table; no PoC artifacts or generated code are involved.
-2. **Edit the raw request** — the right pane extracts every raw HTTP request step from the finding's Markdown reproduction and selects the best matching exploit step; the step selector switches between login/setup/exploit requests. The editor preserves the original method, path, headers, Cookie placeholders and body, all editable.
-3. **Send** — the request goes through the main process with an optional follow-redirect toggle. The raw status, headers and body are shown in the response pane. Requests are restricted to the finding's target origin.
-4. **Retest proxy** — the top-right **Retest proxy** button configures an HTTP proxy used only by repeater traffic. It is independent from any global proxy or the AI model configuration.
-
-**AI model configuration** is no longer part of the retest lab. The main sidebar **Model configuration** page configures provider presets, Base URL, API key and active model; keys are write-only, and there is still **no built-in default model**.
-
-Safety and isolation:
-
-- The retest proxy only applies to repeater traffic; proxy passwords never reach the renderer and `config.json` is plaintext next to `data.db` with best-effort ACL hardening.
-- The old generated-JS sandbox, `poc_artifacts` and `poc_runs` storage were removed. Schema **v5** drops those tables; existing vulnerability evidence and the schema-v3 internal operations tables are untouched.
-- The seven MCP tools are unchanged. `ctx web` hides the desktop-only retest/model pages and rejects repeater/config IPC; no `/api/poc/*` route is served.
-
 
 ## Requirements
 
