@@ -313,11 +313,15 @@ export function DashboardPage({
     setExporting(true)
     try {
       const result = await api.exportVulnerabilities(ids)
+      const savedPath = result.savedPaths?.[0]
       if (!result.cancelled) {
-        toast.success(
+        const message =
           result.files.length > 1
             ? t('vuln.toast.exportedMany', { count: result.files.length })
             : t('vuln.toast.exported')
+        toast.success(
+          message,
+          savedPath ? { description: t('vuln.toast.exportedPath', { path: savedPath }) } : undefined
         )
       }
     } catch (cause) {

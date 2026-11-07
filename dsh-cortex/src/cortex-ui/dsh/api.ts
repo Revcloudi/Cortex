@@ -112,7 +112,16 @@ export function createCortexApi(): CortexApi {
       patch(`/vulns/${encodeURIComponent(input.id)}/status`, { status: input.status }),
     deleteVulnerability: (id) => del(`/vulns/${encodeURIComponent(id)}`),
     deleteVulnerabilities: (ids) => post('/vulns/delete-many', { ids }),
-    exportVulnerabilities: (ids) => post('/vulns/export', { ids }),
+    exportVulnerabilities: async (ids) => {
+      const response = await post('/vulns/export', { ids })
+      const files = Array.isArray(response?.files) ? response.files : []
+      const savedPaths = Array.isArray(response?.savedPaths) ? response.savedPaths : []
+      return {
+        cancelled: response?.cancelled === true || files.length === 0,
+        files: files.map((file) => (file && typeof file.filename === 'string' ? file.filename : String(file))),
+        savedPaths: savedPaths.filter((path) => typeof path === 'string'),
+      }
+    },
 
     // ---------------------------------------------------------------- assets
     listAssets: (filters) => get('/assets', filters as Record<string, unknown>),

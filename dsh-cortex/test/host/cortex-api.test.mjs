@@ -900,9 +900,11 @@ describe('cortex: vulnerability writes', () => {
     }
   })
 
-  it('POST /vulns/export returns inline Markdown reports', async () => {
+  it('POST /vulns/export returns inline Markdown reports and saves copies for the desktop UI', async () => {
     const fixture = createFixture()
     const server = await startTestHost({ dbPath: fixture.dbPath })
+    const previousExportDir = process.env.CORTEX_EXPORT_DIR
+    process.env.CORTEX_EXPORT_DIR = join(fixture.dir, 'exports')
     try {
       const ids = [FIXTURE.vulnMultiHttp, FIXTURE.vulnWithRetest]
       const body = expectOk(
@@ -913,10 +915,14 @@ describe('cortex: vulnerability writes', () => {
       )
       assert.equal(body.cancelled, false)
       assert.equal(body.files.length, 2)
+      assert.equal(body.savedPaths.length, 2)
       for (const file of body.files) {
         assert.ok(ids.includes(file.id))
         assert.equal(file.filename.endsWith('.md'), true)
         assert.equal(file.content.startsWith('# '), true)
+      }
+      for (const savedPath of body.savedPaths) {
+        assert.equal(existsSync(savedPath), true)
       }
       const retestFile = body.files.find((file) => file.id === FIXTURE.vulnWithRetest)
       assert.ok(retestFile.content.includes('## 复测记录'))
@@ -927,15 +933,17 @@ describe('cortex: vulnerability writes', () => {
           body: { ids: [] },
         }),
       )
-      assert.deepEqual(empty, { cancelled: true, files: [] })
+      assert.deepEqual(empty, { cancelled: true, files: [], savedPaths: [] })
       const unknown = expectOk(
         await server.request('/cortex-api/cortex/vulns/export', {
           method: 'POST',
           body: { ids: ['VULN-MISSING'] },
         }),
       )
-      assert.deepEqual(unknown, { cancelled: true, files: [] })
+      assert.deepEqual(unknown, { cancelled: true, files: [], savedPaths: [] })
     } finally {
+      if (previousExportDir === undefined) delete process.env.CORTEX_EXPORT_DIR
+      else process.env.CORTEX_EXPORT_DIR = previousExportDir
       await server.close()
       cleanupDir(fixture.dir)
     }

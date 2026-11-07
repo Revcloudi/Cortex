@@ -920,6 +920,14 @@ export async function runCortexUiSmoke(options = {}) {
       assert.ok(assetRow.textContent.includes('127.0.0.1:8080'), 'asset row does not show host_port')
       assert.ok(assetRow.textContent.includes(PROJECT), 'asset row does not show project name')
       structural.assetPage = { rows: allTestIds('asset-row').length, hostPort: assetRow.getAttribute('data-host-port') }
+      const techStack = shadow.querySelector('[data-testid="asset-tech-stack"]')
+      assert.ok(techStack, 'asset tech-stack cell missing')
+      assert.ok(
+        (techStack.className || '').includes('truncate'),
+        'asset tech stack must be single-line with ellipsis',
+      )
+      const assetRowHeight = assetRow.querySelector('td')?.className || ''
+      assert.ok(assetRowHeight.includes('h-14'), 'asset table rows must keep a fixed height')
       return `${ASSET_HOST_PORT} rendered by the original AssetPage`
     })
 

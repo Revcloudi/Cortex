@@ -1020,8 +1020,10 @@ export interface DeleteVulnsResult {
 
 export interface ExportReportsResult {
   cancelled: boolean
-  /** Absolute paths of the written Markdown files. */
+  /** File names (or absolute paths for desktop transports) of exported reports. */
   files: string[]
+  /** DSH Host also writes reports under ~/.cortex/exports and returns them here. */
+  savedPaths?: string[]
 }
 
 export interface SeedDemoResult {

@@ -262,7 +262,13 @@ export function VulnDetail({
     setExporting(true)
     try {
       const result = await api.exportVulnerabilities([detail.id])
-      if (!result.cancelled) toast.success(t('vuln.toast.exported'))
+      if (!result.cancelled) {
+        const savedPath = result.savedPaths?.[0]
+        toast.success(
+          t('vuln.toast.exported'),
+          savedPath ? { description: t('vuln.toast.exportedPath', { path: savedPath }) } : undefined
+        )
+      }
     } catch (cause) {
       toast.error(t('vuln.toast.exportFailed', { error: toErrorMessage(cause, t) }))
     } finally {

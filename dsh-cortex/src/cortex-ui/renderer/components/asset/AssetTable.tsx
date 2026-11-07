@@ -23,12 +23,15 @@ interface AssetTableProps {
 const thBase =
   'sticky top-0 z-10 border-b border-border bg-background px-3 py-2 text-left text-[11px] font-medium text-foreground/70'
 
-/** Table cells share the hairline bottom border; the last row drops it. */
+/** Table cells share a fixed row height and the hairline bottom border. */
 function cellClass(last: boolean, extra?: string): string {
-  return cn('border-b border-border px-3 py-2.5 align-middle', last && 'border-b-0', extra)
+  return cn('h-14 border-b border-border px-3 py-2 align-middle', last && 'border-b-0', extra)
 }
 
-/** Technology fingerprints render as one complete chip per technology. */
+/**
+ * Fixed single-line fingerprint summary: list rows keep one constant height, so
+ * a long stack is clipped with an ellipsis instead of growing the row.
+ */
 function TechStackTags({ techStack }: { techStack: string }) {
   const { t } = useI18n()
   const tags = techStackTags(techStack)
@@ -36,23 +39,14 @@ function TechStackTags({ techStack }: { techStack: string }) {
     return <span className="text-[11px] text-muted-foreground">{t('asset.value.notRecorded')}</span>
   }
 
-  const visibleTags = tags.slice(0, 4)
-  const hiddenCount = tags.length - visibleTags.length
-
+  const label = tags.join(' · ')
   return (
-    <span className="flex flex-wrap items-center gap-1">
-      {visibleTags.map((tag) => (
-        <span
-          key={tag}
-          title={tag}
-          className="inline-block max-w-full break-words rounded border border-border bg-sidebar px-1.5 py-0.5 font-mono text-[11px] leading-relaxed text-foreground/75"
-        >
-          {tag}
-        </span>
-      ))}
-      {hiddenCount > 0 ? (
-        <span className="font-mono text-[11px] tabular-nums text-foreground/60">+{hiddenCount}</span>
-      ) : null}
+    <span
+      className="block truncate font-mono text-[11px] leading-5 text-foreground/75"
+      title={label}
+      data-testid="asset-tech-stack"
+    >
+      {label}
     </span>
   )
 }
@@ -83,28 +77,28 @@ function TableSkeleton() {
           <tbody>
             {[0, 1, 2, 3, 4, 5].map((index) => (
               <tr key={index}>
-                <td className="border-b border-border px-3 py-3.5">
+                <td className="h-14 border-b border-border px-3 py-0">
                   <Skeleton className="h-3.5 w-[182px]" />
                 </td>
-                <td className="border-b border-border px-3 py-3.5">
+                <td className="h-14 border-b border-border px-3 py-0">
                   <Skeleton className="h-3 w-[92px]" />
                 </td>
-                <td className="border-b border-border px-3 py-3.5">
+                <td className="h-14 border-b border-border px-3 py-0">
                   <Skeleton className="h-3 w-[68%]" />
                 </td>
-                <td className="border-b border-border px-3 py-3.5">
+                <td className="h-14 border-b border-border px-3 py-0">
                   <Skeleton className="mx-auto h-[22px] w-[56px] rounded-full" />
                 </td>
-                <td className="border-b border-border px-3 py-3.5">
+                <td className="h-14 border-b border-border px-3 py-0">
                   <Skeleton className="mx-auto h-3 w-5" />
                 </td>
-                <td className="border-b border-border px-3 py-3.5">
+                <td className="h-14 border-b border-border px-3 py-0">
                   <Skeleton className="mx-auto h-3 w-5" />
                 </td>
-                <td className="border-b border-border px-3 py-3.5">
+                <td className="h-14 border-b border-border px-3 py-0">
                   <Skeleton className="mx-auto h-3 w-5" />
                 </td>
-                <td className="border-b border-border px-3 py-3.5">
+                <td className="h-14 border-b border-border px-3 py-0">
                   <Skeleton className="h-3 w-[62px]" />
                 </td>
                 <td className="border-b border-border py-3 pr-4" />

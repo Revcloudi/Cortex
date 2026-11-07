@@ -11,6 +11,23 @@ export interface RepeaterRequestCandidate {
 
 const REQUEST_LINE = /^([A-Z]+)\s+(\S+)\s+HTTP\/\d(?:\.\d)?$/
 
+/**
+ * Raw report requests carry only the origin-form path (`GET /api/x HTTP/1.1`),
+ * but the Host send API requires an absolute URL. Resolve against the finding's
+ * target so http-only targets stay http and https targets stay https.
+ */
+export function resolveRepeaterUrl(rawUrl: string, targetUrl: string): string {
+  const value = rawUrl.trim()
+  if (/^https?:\/\//i.test(value)) return value
+  try {
+    const target = new URL(targetUrl)
+    if (value.startsWith('//')) return `${target.protocol}${value}`
+    return new URL(value, target).href
+  } catch {
+    return value
+  }
+}
+
 function normalizePath(input: string): string {
   try {
     if (/^https?:\/\//i.test(input)) return new URL(input).pathname

@@ -34,6 +34,9 @@ import {
 } from '../http.js'
 import * as dto from '../dto.js'
 import { buildVulnReport, reportFilename } from '../reports.js'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 const STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed']
@@ -497,7 +500,7 @@ export async function handleExport({ req, res, holder, bumpRev }) {
   const body = await readJsonBody(req)
   const ids = requireIdList(body, 'ids', MAX_EXPORT_IDS)
   if (ids.length === 0) {
-    sendJson(res, 200, { cancelled: true, files: [] })
+    sendJson(res, 200, { cancelled: true, files: [], savedPaths: [] })
     return
   }
   const db = holder.db
@@ -525,9 +528,36 @@ export async function handleExport({ req, res, holder, bumpRev }) {
       content: buildVulnReport(detail, related),
     })
   }
+  // The DSH desktop WebView may block browser downloads, so the Host also
+  // writes the Markdown reports to ~/.cortex/exports/<timestamp>/ and returns
+  // the absolute paths. The renderer still attempts a normal download, but the
+  // toast can then point at a real file that always exists.
+  const savedPaths = []
+  if (files.length > 0) {
+    try {
+      const exportRoot = process.env.CORTEX_EXPORT_DIR || join(homedir(), '.cortex', 'exports')
+      const stamp = new Date()
+        .toISOString()
+        .replace(/[-:]/g, '')
+        .replace(/\..+$/, '')
+        .replace('T', '-')
+      const exportDir = join(exportRoot, stamp)
+      mkdirSync(exportDir, { recursive: true })
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index]
+        const safeName = String(file.filename).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 120) || file.id
+        const target = join(exportDir, `${String(index + 1).padStart(2, '0')}-${safeName.endsWith('.md') ? safeName : `${safeName}.md`}`)
+        writeFileSync(target, file.content, 'utf8')
+        savedPaths.push(target)
+      }
+    } catch {
+      // Filesystem failure must not break the export response; the inline
+      // files still let the browser download attempt proceed.
+    }
+  }
   // Export is a read-only projection: no revision bump.
   void bumpRev
-  sendJson(res, 200, { cancelled: files.length === 0, files })
+  sendJson(res, 200, { cancelled: files.length === 0, files, savedPaths })
 }
 
 export { SEVERITIES, STATUSES, REALM_FILTERS, VULN_ORDER }

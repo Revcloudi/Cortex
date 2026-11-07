@@ -8,7 +8,8 @@ import { useI18n } from '@renderer/i18n'
 import { getApi } from '@renderer/lib/api'
 import {
   defaultRequestIndex,
-  extractRepeaterRequests
+  extractRepeaterRequests,
+  resolveRepeaterUrl
 } from '@renderer/lib/retestRequest'
 
 interface RepeaterPanelProps {
@@ -159,7 +160,7 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
       const response = await api.sendRepeaterRequest({
         vulnId: vuln.id,
         method: parsed.method,
-        url: parsed.url,
+        url: resolveRepeaterUrl(parsed.url, vuln.target_url),
         headers: parsed.headers,
         ...(parsed.body === '' ? {} : { body: parsed.body }),
         followRedirects

@@ -72,6 +72,8 @@ export interface WebExportFile {
 /** Response of `POST /api/vulns/export`; the browser downloads these, nothing is written server-side. */
 export interface WebExportResponse {
   files: WebExportFile[]
+  /** Optional Host-side saved copies (`~/.cortex/exports/...`) for desktop builds. */
+  savedPaths?: string[]
 }
 
 /**
