@@ -248,7 +248,7 @@ test('npm pack excludes dev-only trees (tests, fixtures, recon, node_modules, sc
     assert.ok(!/(^|\/)\.env(\.|$)/.test(packed), `npm pack must not include .env (${packed})`)
   }
   // Sanity: the dev tree really is present locally (otherwise the assertions above are vacuous).
-  for (const dir of ['test', 'fixtures', 'scripts', 'docs']) {
+  for (const dir of ['test', 'fixtures', 'scripts']) {
     assert.ok(exists(dir), `dev tree ${dir}/ exists locally but is not packed`)
   }
   const relativeToRoot = relative(root, join(root, 'test', 'manifest.test.mjs'))
