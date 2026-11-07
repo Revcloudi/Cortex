@@ -391,14 +391,14 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             ) : formattedJson !== null && bodyView === 'pretty' ? (
               <pre
                 data-testid="fuzzer-response-json"
-                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
+                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground"
               >
                 {jsonResponse}
               </pre>
             ) : (
               <pre
                 data-testid="fuzzer-response-body"
-                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
+                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground"
               >
                 {rawResponse.slice(0, 200_000)}
               </pre>

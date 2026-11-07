@@ -1670,6 +1670,18 @@ export async function runCortexUiSmoke(options = {}) {
         'raw response box must fill the response pane height'
       )
       assert.ok(
+        (requestEditor.className || '').includes('text-[11.5px]'),
+        'request text size must be 11.5px'
+      )
+      assert.ok(
+        (responseBody.className || '').includes('text-[11.5px]'),
+        'request and response text sizes must be identical'
+      )
+      assert.ok(
+        (formatted.className || '').includes('text-[11.5px]'),
+        'formatted response text size must equal the request text size'
+      )
+      assert.ok(
         (responseBody.textContent || '').includes('HTTP/1.1 200'),
         'raw response must keep the status line'
       )
