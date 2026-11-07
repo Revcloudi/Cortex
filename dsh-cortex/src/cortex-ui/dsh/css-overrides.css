@@ -99,6 +99,14 @@
   border: 3px solid transparent;
 }
 
+/* DSH draws its native window buttons above the page in the top-right corner.
+   Right-hand inspector sheets start at the very top edge, so their header
+   actions (export / close) ended up underneath those buttons. Move every sheet
+   below that band; the overlay still dims the area behind it. */
+.dshc-cortex-root .sheet-content {
+  top: calc(0.875rem + 2.25rem);
+}
+
 /* ------------------------------------------------------------------------- */
 /* DSH shell adaptations                                                     */
 /* ------------------------------------------------------------------------- */
