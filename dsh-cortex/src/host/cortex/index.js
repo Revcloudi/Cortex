@@ -231,7 +231,10 @@ async function loadDelegatedHandler(moduleName, exportName) {
     const candidate =
       (mod && (mod[exportName] || mod.handle || mod.default)) || null
     return typeof candidate === 'function' ? candidate : null
-  } catch {
+  } catch (err) {
+    // Coarse diagnostics only: never log request data or file contents.
+    const kind = err && typeof err.code === 'string' ? err.code : err && err.name ? err.name : 'error'
+    console.warn(`[dsh-cortex] delegated module ${moduleName} is unavailable (${String(kind).slice(0, 80)})`)
     return null
   }
 }
@@ -371,6 +374,21 @@ export async function handleCortex(deps) {
       if (path === '/internal/credential-trial') holder.assertWritable()
       const handled = await runDelegated(await loadDelegatedHandler('internal', 'handleInternal'), ctx)
       if (!handled) misc.sendUnsupported(res, 'internal operations are not available in this host')
+      return
+    }
+
+    // Mini-program (wxapkg) reverse-engineering workbench. Delegated lazily so a
+    // failure in the new modules can never take down the rest of Cortex, and so
+    // its routes work even without a compatible Cortex data.db (they use their
+    // own ~/.cortex/plugin.db).
+    if (path === '/miniapps' || path.startsWith('/miniapps/')) {
+      const handler = await loadDelegatedHandler('../miniapp/routes', 'handleMiniapps')
+      if (!handler) {
+        misc.sendUnsupported(res, 'mini-program workbench is not available in this host')
+        return
+      }
+      const handled = await runDelegated(handler, ctx)
+      if (!handled) throw notFound('route not found')
       return
     }
 

@@ -1,4 +1,4 @@
-import { Bot, Boxes, Brain, FlaskConical, Network, Orbit, ShieldAlert, type LucideIcon } from 'lucide-react'
+import { Bot, Boxes, Brain, FlaskConical, Network, Orbit, PackageSearch, ShieldAlert, type LucideIcon } from 'lucide-react'
 
 export type AppPage =
   | 'dashboard'
@@ -8,6 +8,7 @@ export type AppPage =
   | 'snapshots'
   | 'mcp'
   | 'retest'
+  | 'miniapps'
   | 'ai-config'
 
 /** Cross-page deep link used by the nebula inspector ("view full details"). */
@@ -37,6 +38,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { page: 'assets', labelKey: 'nav.assets', icon: Boxes },
   { page: 'snapshots', labelKey: 'nav.snapshots', icon: Brain },
   { page: 'retest', labelKey: 'nav.retest', icon: FlaskConical },
+  { page: 'miniapps', labelKey: 'nav.miniapps', icon: PackageSearch },
   { page: 'ai-config', labelKey: 'retest.aiConfig.nav', icon: Bot }
 ]
 
@@ -64,6 +66,10 @@ export const PAGE_META: Record<AppPage, { titleKey: string; descriptionKey: stri
   retest: {
     titleKey: 'nav.retest',
     descriptionKey: 'retest.page.repeaterSubtitle'
+  },
+  miniapps: {
+    titleKey: 'nav.miniapps',
+    descriptionKey: 'miniapp.page.description'
   },
   'ai-config': {
     titleKey: 'retest.aiConfig.nav',

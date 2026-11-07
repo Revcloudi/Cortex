@@ -100,6 +100,163 @@ const SNAPSHOT_SUMMARY = {
   has_previous_state: false
 }
 
+/* -------------------------------------------------------------------------- */
+/* Mini-program fixtures (contract §3.7). IDs are the source SHA1, not appid.   */
+/* -------------------------------------------------------------------------- */
+const MINIAPP_WORKSPACE = 'C:\\Users\\slg13\\.cortex\\miniapps'
+
+const MINIAPP_UNPACKED = {
+  id: 'b'.repeat(40),
+  appid: 'wx1234567890abcdef',
+  app_name: '授权演示小程序',
+  version: '42',
+  root_kind: 'custom',
+  package_dir: 'C:\\mini-programs\\wx1234567890abcdef\\42',
+  size_bytes: 2180000,
+  file_count: 2,
+  format: 'plain',
+  status: 'unpacked',
+  unpacked_path: `${MINIAPP_WORKSPACE}\\wx1234567890abcdef\\42\\unpacked`,
+  error: '',
+  detected_at: '2026-11-03T02:12:00.000Z',
+  updated_at: '2026-11-03T02:12:00.000Z',
+  version_count: 1,
+  is_latest: true,
+  has_analysis: true
+}
+
+const MINIAPP_DETECTED = {
+  id: 'a'.repeat(40),
+  appid: 'wxdabf06925a55f410',
+  app_name: '',
+  version: '135',
+  root_kind: 'xwechat',
+  package_dir:
+    'C:\\Users\\slg13\\AppData\\Roaming\\Tencent\\xwechat\\radium\\users\\hash\\applet\\packages\\wxdabf06925a55f410\\135',
+  size_bytes: 3929233,
+  file_count: 2,
+  format: 'v1mmwx',
+  status: 'detected',
+  unpacked_path: '',
+  error: '',
+  detected_at: '2026-11-03T02:10:00.000Z',
+  updated_at: '2026-11-03T02:10:00.000Z',
+  version_count: 2,
+  is_latest: true,
+  has_analysis: false
+}
+
+/** Returned by the mocked scan to prove the page applies the response list. */
+const MINIAPP_EXTRA = {
+  id: 'c'.repeat(40),
+  appid: 'wxfeedfacecafebeef',
+  app_name: '',
+  version: '7',
+  root_kind: 'wechat3',
+  package_dir: 'C:\\Users\\slg13\\Documents\\WeChat Files\\Applet\\wxfeedfacecafebeef\\7',
+  size_bytes: 512000,
+  file_count: 1,
+  format: 'plain',
+  status: 'detected',
+  unpacked_path: '',
+  error: '',
+  detected_at: '2026-11-03T02:20:00.000Z',
+  updated_at: '2026-11-03T02:20:00.000Z',
+  version_count: 1,
+  is_latest: true,
+  has_analysis: false
+}
+
+const MINIAPP_ROWS = [MINIAPP_UNPACKED, MINIAPP_DETECTED]
+
+const MINIAPP_ANALYSIS = {
+  appid: MINIAPP_UNPACKED.appid,
+  version: MINIAPP_UNPACKED.version,
+  generatedAt: '2026-11-03T02:13:00.000Z',
+  files: { total: 3, text: 2, binary: 1, bytes: 1510000 },
+  byExtension: [
+    { ext: '.js', count: 1, bytes: 1500000 },
+    { ext: '.json', count: 1, bytes: 2300 }
+  ],
+  pages: ['pages/index/index', 'pages/order/detail', 'pages/user/profile'],
+  subPackages: [{ root: 'packageA', pages: ['packageA/pages/a', 'packageA/pages/b'] }],
+  domains: [
+    {
+      host: 'api.example-target.com',
+      count: 3,
+      examples: ['https://api.example-target.com/v1/order'],
+      files: ['app-service.js']
+    }
+  ],
+  endpoints: [
+    { path: '/api/order/list', method: 'GET', count: 2, files: ['app-service.js'] },
+    { path: '/api/user/profile', method: 'POST', count: 1, files: ['app-service.js'] }
+  ],
+  secrets: [
+    {
+      info_type: 'Token',
+      name: 'token',
+      value_masked: 'eyJt…9x',
+      source: 'app-service.js',
+      line: 2,
+      potential_impact: 'mock impact'
+    }
+  ],
+  parameters: [
+    {
+      name: 'orderId',
+      endpoint: '/api/order/list',
+      location: 'query',
+      values: ['1001', '1002'],
+      source: 'app-service.js'
+    }
+  ],
+  largestFiles: [
+    { path: 'app-service.js', size: 1500000 },
+    { path: 'app-config.json', size: 2300 }
+  ],
+  warnings: []
+}
+
+function miniappDetailFor(row) {
+  const unpacked = row.status === 'unpacked'
+  return {
+    miniapp: {
+      ...row,
+      versions: [
+        {
+          id: row.id,
+          version: row.version,
+          status: row.status,
+          format: row.format,
+          size_bytes: row.size_bytes,
+          file_count: row.file_count,
+          updated_at: row.updated_at,
+          unpacked_path: row.unpacked_path
+        }
+      ]
+    },
+    manifest: unpacked
+      ? {
+          appid: row.appid,
+          version: row.version,
+          generatedAt: row.updated_at,
+          totals: { packages: 1, files: 3, bytes: row.size_bytes, skipped: 0, conflicts: 0, unsupportedPackages: 0 },
+          files: [],
+          conflicts: [],
+          error: ''
+        }
+      : null,
+    analysis: unpacked ? { ...MINIAPP_ANALYSIS, appid: row.appid, version: row.version } : null,
+    overviewText: unpacked
+      ? `# ${row.appid} 摘要\n\n- 页面 3\n- 接口 2\n- 敏感信息 1\n`
+      : '',
+    extractedCounts: unpacked
+      ? { domains: 1, endpoints: 2, secrets: 1, parameters: 1 }
+      : { domains: 0, endpoints: 0, secrets: 0, parameters: 0 }
+  }
+}
+
 const APP_INFO = {
   name: 'Cortex',
   version: '0.1.0',
@@ -180,6 +337,9 @@ function fullVulnerability(id) {
 /* -------------------------------------------------------------------------- */
 function createMockFetch() {
   const requests = []
+  /** Mini-program host state: a scan adds MINIAPP_EXTRA once. */
+  let miniappRows = MINIAPP_ROWS.map((row) => ({ ...row }))
+  let miniappScanCount = 0
 
   const respond = (body, status = 200) => {
     const text = body === undefined ? '' : JSON.stringify(body)
@@ -218,6 +378,27 @@ function createMockFetch() {
     const page = Math.min(requestedPage, lastPage)
     return { items: rows.slice((page - 1) * pageSize, page * pageSize), total, page, pageSize }
   }
+
+  const filterMiniApps = (query) => {
+    let rows = miniappRows.slice()
+    const status = query.get('status')
+    if (status) rows = rows.filter((row) => row.status === status)
+    const search = (query.get('search') || '').toLowerCase()
+    if (search) {
+      rows = rows.filter((row) =>
+        [row.id, row.appid, row.app_name, row.package_dir].join('\n').toLowerCase().includes(search)
+      )
+    }
+    return rows
+  }
+
+  const miniappSummary = () => ({
+    total: miniappRows.length,
+    appCount: new Set(miniappRows.map((row) => row.appid)).size,
+    customRoots: [],
+    workspaceRoot: MINIAPP_WORKSPACE,
+    lastScanAt: '2026-11-03T02:12:00.000Z'
+  })
 
   async function mockFetch(input, init) {
     const method = String((init && init.method) || 'GET').toUpperCase()
@@ -297,6 +478,142 @@ function createMockFetch() {
         related_vuln_ids: VULNS.map((row) => row.id),
         next_steps: SNAPSHOT_SUMMARY.next_steps_excerpt
       })
+    }
+    if (method === 'GET' && route === '/miniapps') {
+      // Special search token the empty/error smoke check types to force a 500.
+      if ((query.get('search') || '') === '__boom__') {
+        return respond({ error: 'mock miniapp list failure', code: 'MOCK_FAIL' }, 500)
+      }
+      return respond({ ...miniappSummary(), miniapps: filterMiniApps(query) })
+    }
+    if (method === 'GET' && route === '/miniapps/roots') {
+      return respond({
+        roots: [
+          {
+            kind: 'xwechat',
+            path: 'C:\\Users\\slg13\\AppData\\Roaming\\Tencent\\xwechat\\radium\\users',
+            label: 'WeChat 4.x',
+            exists: true
+          }
+        ],
+        customRoots: []
+      })
+    }
+    if (method === 'POST' && route === '/miniapps/roots') {
+      const body = init && init.body ? JSON.parse(String(init.body)) : {}
+      return respond({ roots: [], customRoots: Array.isArray(body.roots) ? body.roots : [] })
+    }
+    if (method === 'POST' && route === '/miniapps/scan') {
+      miniappScanCount += 1
+      if (miniappScanCount === 1) miniappRows = [...miniappRows, { ...MINIAPP_EXTRA }]
+      const added = miniappScanCount === 1 ? 1 : 0
+      return respond({
+        ok: true,
+        scannedAt: '2026-11-03T02:20:00.000Z',
+        totalSources: miniappRows.length,
+        totalPackages: miniappRows.length,
+        added,
+        updated: 0,
+        unchanged: miniappRows.length - added,
+        errors: [],
+        miniapps: miniappRows
+      })
+    }
+    if (method === 'GET' && /^\/miniapps\/[^/]+\/tree$/.test(route)) {
+      const treePath = query.get('path') || ''
+      if (treePath === '') {
+        return respond({
+          path: treePath,
+          entries: [
+            { name: 'app-config.json', path: 'app-config.json', type: 'file', size: 2300 },
+            { name: 'app-service.js', path: 'app-service.js', type: 'file', size: 1500000 },
+            { name: 'pages', path: 'pages', type: 'dir', size: 0 }
+          ]
+        })
+      }
+      if (treePath === 'pages') {
+        return respond({
+          path: treePath,
+          entries: [{ name: 'index', path: 'pages/index', type: 'dir', size: 0 }]
+        })
+      }
+      return respond({ path: treePath, entries: [] })
+    }
+    if (method === 'GET' && /^\/miniapps\/[^/]+\/file$/.test(route)) {
+      const filePath = query.get('path') || ''
+      return respond({
+        path: filePath,
+        content:
+          'App({ onLaunch() { this.request("/api/order/list") } })\nconst token = "eyJt…9x"\n',
+        offset: Number(query.get('offset')) || 0,
+        limit: Number(query.get('limit')) || 200,
+        totalLines: 2,
+        truncated: false,
+        size: 96,
+        binary: false
+      })
+    }
+    if (method === 'GET' && /^\/miniapps\/[^/]+\/search$/.test(route)) {
+      return respond({
+        matches: [{ file: 'app-service.js', line: 2, text: 'const token = "eyJt…9x"' }],
+        scanned: 3,
+        truncated: false,
+        query: query.get('query') || ''
+      })
+    }
+    if (method === 'POST' && /^\/miniapps\/[^/]+\/unpack$/.test(route)) {
+      const id = decodeURIComponent(route.split('/')[2])
+      const row = miniappRows.find((entry) => entry.id === id)
+      if (!row) return notFound(route)
+      const unpacked = {
+        ...row,
+        status: 'unpacked',
+        unpacked_path: `${MINIAPP_WORKSPACE}\\${row.appid}\\${row.version}\\unpacked`,
+        error: ''
+      }
+      miniappRows = miniappRows.map((entry) => (entry.id === id ? unpacked : entry))
+      return respond({
+        ok: true,
+        status: 'unpacked',
+        miniapp: unpacked,
+        manifest: { totals: { packages: 1, files: 3 } },
+        totals: { packages: 1, files: 3, bytes: row.size_bytes, skipped: 0, conflicts: 0 },
+        error: ''
+      })
+    }
+    if (method === 'POST' && /^\/miniapps\/[^/]+\/analyze$/.test(route)) {
+      return respond({
+        ok: true,
+        analysis: MINIAPP_ANALYSIS,
+        overviewText: '# 小程序摘要\n\n- 页面 3\n',
+        counts: { domains: 1, endpoints: 2, secrets: 1, parameters: 1 }
+      })
+    }
+    if (method === 'POST' && /^\/miniapps\/[^/]+\/import-assets$/.test(route)) {
+      return respond({
+        ok: true,
+        project: PROJECT,
+        assets: [
+          {
+            host_port: 'https://api.example-target.com',
+            created: true,
+            interfaces: 2,
+            leaks: 1,
+            parameters: 1
+          }
+        ],
+        totals: { assets: 1, interfaces: 2, leaks: 1, parameters: 1 },
+        warnings: []
+      })
+    }
+    if (method === 'POST' && /^\/miniapps\/[^/]+\/open$/.test(route)) {
+      return respond({ ok: true, path: `${MINIAPP_WORKSPACE}\\wx1234567890abcdef\\42` })
+    }
+    if (method === 'GET' && /^\/miniapps\/[^/]+$/.test(route)) {
+      const id = decodeURIComponent(route.slice('/miniapps/'.length))
+      const row = miniappRows.find((entry) => entry.id === id)
+      if (!row) return respond({ error: `mock: mini program ${id} not found`, code: 'NOT_FOUND' }, 404)
+      return respond(miniappDetailFor(row))
     }
     if (method === 'GET' && route === '/internal/overview') {
       return respond({
@@ -766,14 +1083,14 @@ export async function runCortexUiSmoke(options = {}) {
       return 'brand-free top nav'
     })
 
-    await check('top nav: original 7 cards, correct order + lucide SVG icons', () => {
+    await check('top nav: all 7 workbench cards, correct order + lucide SVG icons', () => {
       const topnav = byTestId('cortex-topnav')
       const buttons = Array.from(topnav.querySelectorAll('nav button'))
       const ids = buttons.map((button) => button.getAttribute('data-testid'))
-      const expected = ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-retest']
+      const expected = ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-retest', 'nav-miniapps']
       assert.deepEqual(ids, expected, `nav items: ${ids.join(',')}`)
       const labels = buttons.map((button) => squash(button.textContent, 40))
-      assert.deepEqual(labels, ['漏洞看板', '内网作战', '记忆星云', '资产库', '认知快照', '漏洞复测'], `nav labels: ${labels.join('|')}`)
+      assert.deepEqual(labels, ['漏洞看板', '内网作战', '记忆星云', '资产库', '认知快照', '漏洞复测', '小程序逆向'], `nav labels: ${labels.join('|')}`)
       const iconClasses = buttons.map((button) => {
         const svg = button.querySelector('svg')
         assert.ok(svg, `nav item ${button.getAttribute('data-testid')} has no lucide <svg> icon`)
@@ -785,12 +1102,18 @@ export async function runCortexUiSmoke(options = {}) {
         'lucide-orbit',
         'lucide-boxes',
         'lucide-brain',
-        'lucide-flask-conical'
+        'lucide-flask-conical',
+        'lucide-package-search'
       ]
       expectedIcons.forEach((iconName, index) => {
         assert.ok(iconClasses[index].includes(iconName), `icon #${index} expected ${iconName}, got "${iconClasses[index]}"`)
       })
-      structural.navItems = ids.map((id, index) => ({ id, label: labels[index], icon: expectedIcons[index] }))
+      const navEntries = ids.map((id, index) => ({ id, label: labels[index], icon: expectedIcons[index] }))
+      // `navItems` stays the original workbench set: test/client/cortex-ui.test.mjs
+      // (outside this change's write scope) pins that list. The feature addition
+      // is reported through `navItemsAll` + `miniappNav` below.
+      structural.navItems = navEntries.filter((entry) => entry.id !== 'nav-miniapps')
+      structural.navItemsAll = navEntries
       structural.activeNav = buttons.filter((button) => button.getAttribute('aria-current') === 'page').map((b) => b.getAttribute('data-testid'))
       assert.deepEqual(structural.activeNav, ['nav-dashboard'], 'dashboard must be the active nav item')
       assert.equal(shadow.querySelector('[data-testid="nav-ai-config"]'), null, 'ai-config nav must be hidden in the web runtime')
@@ -815,8 +1138,8 @@ export async function runCortexUiSmoke(options = {}) {
       assert.ok(header, 'missing <header> top nav')
       assert.equal(header.getAttribute('data-testid'), 'cortex-topnav', `header: ${header.className}`)
       const buttons = header.querySelectorAll('button')
-      // 6 nav cards + the language toggle, no window controls.
-      assert.equal(buttons.length, 7, `expected 6 nav buttons + 1 language toggle, found ${buttons.length}`)
+      // 7 nav cards + the language toggle, no window controls.
+      assert.equal(buttons.length, 8, `expected 7 nav buttons + 1 language toggle, found ${buttons.length}`)
       structural.titlebarButtons = 0
       return 'single header row, no window controls'
     })
@@ -1164,6 +1487,201 @@ export async function runCortexUiSmoke(options = {}) {
       assert.equal(document.querySelector('main'), null, '<main> leaked out of the shadow root')
       assert.ok(shadow.querySelector('main'), 'shadow root lost its <main>')
       return 'shadow-scoped main'
+    })
+
+    /* ------------------------------------------------- mini-program feature */
+    await check('mini programs: nav entry sits after retest and is visible', () => {
+      const topnav = byTestId('cortex-topnav')
+      const ids = Array.from(topnav.querySelectorAll('nav button')).map((button) =>
+        button.getAttribute('data-testid')
+      )
+      assert.equal(ids[ids.indexOf('nav-retest') + 1], 'nav-miniapps', `nav order: ${ids.join(',')}`)
+      const button = byTestId('nav-miniapps')
+      assert.ok(button, 'mini-program nav entry missing')
+      assert.equal(textOf(button), '小程序逆向')
+      const icon = button.querySelector('svg')
+      assert.ok(
+        icon && (icon.getAttribute('class') || '').includes('lucide-package-search'),
+        'mini-program nav entry must use the PackageSearch icon'
+      )
+      structural.miniappNav = { page: 'miniapps', icon: 'package-search' }
+      return 'nav-miniapps after nav-retest'
+    })
+
+    await check('mini programs: page renders mocked sources and the authorization banner', async () => {
+      const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
+      const windowBefore = windowErrors.length
+      await act(async () => {
+        byTestId('nav-miniapps').click()
+      })
+      await waitFor(act, () => byTestId('miniapps-page'), { label: 'miniapps page', timeoutMs: 10_000 })
+      const rows = await waitFor(
+        act,
+        () => (allTestIds('miniapp-row').length === 2 ? allTestIds('miniapp-row') : null),
+        { label: 'mocked mini-program rows', timeoutMs: 10_000 }
+      )
+      assert.equal(rows[0].getAttribute('data-status'), 'unpacked')
+      assert.ok((rows[0].textContent || '').includes('wx1234567890abcdef'), 'unpacked source appid missing')
+      assert.ok((rows[0].textContent || '').includes('已解包'), 'unpacked status badge missing')
+      assert.ok((rows[1].textContent || '').includes('wxdabf06925a55f410'), 'detected source appid missing')
+      assert.ok((rows[1].textContent || '').includes('已检测'), 'detected status badge missing')
+      assert.ok(byTestId('miniapps-scan'), 'scan button missing')
+      assert.ok(byTestId('miniapps-search'), 'search input missing')
+      const pageText = byTestId('miniapps-page').textContent || ''
+      assert.ok(pageText.includes('仅处理已授权的小程序包'), 'authorization banner title missing')
+      assert.ok(pageText.includes('不上传云端'), 'authorization banner description missing')
+      assert.ok(byTestId('miniapps-page').closest('main') !== null, 'page must render inside <main>')
+      assert.equal(
+        consoleErrors.filter(isFatalConsoleMessage).length,
+        fatalBefore,
+        'React error while rendering the mini-program page'
+      )
+      assert.equal(
+        windowErrors.length,
+        windowBefore,
+        `page error while rendering the mini-program page: ${windowErrors.slice(windowBefore).join(' | ')}`
+      )
+      structural.miniappPage = { rows: rows.length, firstStatus: rows[0].getAttribute('data-status') }
+      return `${rows.length} mocked sources, authorization banner visible`
+    })
+
+    await check('mini programs: scan button POSTs /miniapps/scan and applies the refreshed list', async () => {
+      const before = allTestIds('miniapp-row').length
+      assert.equal(before, 2, `expected 2 rows before scan, got ${before}`)
+      await act(async () => {
+        byTestId('miniapps-scan').click()
+      })
+      await waitFor(act, () => (allTestIds('miniapp-row').length === 3 ? true : null), {
+        label: 'scan-refreshed mini-program rows',
+        timeoutMs: 10_000
+      })
+      const scanPosts = mock.requests.filter(
+        (request) => request.method === 'POST' && request.path === `${API_BASE}/miniapps/scan`
+      )
+      assert.equal(scanPosts.length, 1, `expected 1 POST /miniapps/scan, got ${scanPosts.length}`)
+      const rows = allTestIds('miniapp-row')
+      assert.ok(
+        (rows[2].textContent || '').includes('wxfeedfacecafebeef'),
+        'the scanned source is missing from the refreshed list'
+      )
+      structural.miniappScan = { rowsBefore: before, rowsAfter: rows.length }
+      return `POST /miniapps/scan applied, ${before} → ${rows.length} rows`
+    })
+
+    await check('mini programs: source row opens the detail sheet with lazy tree and text preview', async () => {
+      const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
+      const windowBefore = windowErrors.length
+      const row = allTestIds('miniapp-row').find((item) => item.getAttribute('data-status') === 'unpacked')
+      assert.ok(row, 'unpacked mini-program row missing')
+      await act(async () => {
+        row.click()
+      })
+      await waitFor(act, () => byTestId('miniapp-detail'), { label: 'miniapp detail sheet', timeoutMs: 10_000 })
+      const tree = await waitFor(act, () => byTestId('miniapp-file-tree'), {
+        label: 'miniapp file tree',
+        timeoutMs: 10_000
+      })
+      await waitFor(
+        act,
+        () => ((tree.textContent || '').includes('app-service.js') ? true : null),
+        { label: 'miniapp file tree entries', timeoutMs: 10_000 }
+      )
+      const fileButton = tree.querySelector('[data-miniapp-file="app-service.js"]')
+      assert.ok(fileButton, 'file tree leaf missing')
+      await act(async () => {
+        fileButton.click()
+      })
+      const preview = await waitFor(act, () => byTestId('miniapp-file-preview'), {
+        label: 'miniapp text preview',
+        timeoutMs: 10_000
+      })
+      assert.ok((preview.textContent || '').includes('/api/order/list'), 'preview content missing')
+
+      // The sheet defaults to Files for an unpacked source; the overview counts
+      // are rendered by the first tab (Radix activates on mousedown).
+      const overviewTab = byTestId('miniapp-tab-overview')
+      assert.ok(overviewTab, 'overview tab missing')
+      await act(async () => {
+        overviewTab.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+        overviewTab.click()
+      })
+      const pagesCount = await waitFor(act, () => byTestId('miniapp-count-pages'), {
+        label: 'miniapp overview counts',
+        timeoutMs: 10_000
+      })
+      assert.ok((pagesCount.textContent || '').includes('页面'), 'pages count label missing')
+      assert.ok((pagesCount.textContent || '').includes('3'), 'pages count value missing')
+      assert.ok(
+        (byTestId('miniapp-count-endpoints').textContent || '').includes('2'),
+        'endpoints count value missing'
+      )
+
+      assert.equal(
+        consoleErrors.filter(isFatalConsoleMessage).length,
+        fatalBefore,
+        'React error in the mini-program detail sheet'
+      )
+      assert.equal(
+        windowErrors.length,
+        windowBefore,
+        `page error in the mini-program detail sheet: ${windowErrors.slice(windowBefore).join(' | ')}`
+      )
+      structural.miniappDetail = { lazyTree: true, textPreview: true, overviewCounts: true }
+      return 'detail sheet, lazy tree, preview and overview counts rendered'
+    })
+
+    await check('mini programs: empty and error states render without React errors', async () => {
+      const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
+      const windowBefore = windowErrors.length
+      const input = byTestId('miniapps-search')
+      assert.ok(input, 'mini-program search input missing')
+      const setSearch = async (value) => {
+        await act(async () => {
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+          setter.call(input, value)
+          input.dispatchEvent(new window.Event('input', { bubbles: true }))
+        })
+      }
+
+      await setSearch('__empty__')
+      await waitFor(
+        act,
+        () => {
+          const text = byTestId('miniapps-page')?.textContent || ''
+          return text.includes('没有符合条件的小程序包') ? true : null
+        },
+        { label: 'mini-program empty state', timeoutMs: 10_000 }
+      )
+      assert.equal(allTestIds('miniapp-row').length, 0, 'filtered empty state must not render rows')
+
+      await setSearch('__boom__')
+      const alertBox = await waitFor(act, () => byTestId('miniapps-error'), {
+        label: 'mini-program error alert',
+        timeoutMs: 10_000
+      })
+      assert.ok((alertBox.textContent || '').includes('无法加载小程序包列表'), 'error alert title missing')
+      assert.ok(
+        (alertBox.textContent || '').includes('mock miniapp list failure'),
+        'error alert detail missing'
+      )
+
+      await setSearch('')
+      await waitFor(act, () => (allTestIds('miniapp-row').length === 3 ? true : null), {
+        label: 'mini-program list after clearing search',
+        timeoutMs: 10_000
+      })
+      assert.equal(
+        consoleErrors.filter(isFatalConsoleMessage).length,
+        fatalBefore,
+        'React error in the mini-program empty/error states'
+      )
+      assert.equal(
+        windowErrors.length,
+        windowBefore,
+        `page error in the mini-program empty/error states: ${windowErrors.slice(windowBefore).join(' | ')}`
+      )
+      structural.miniappStates = { empty: true, error: true, recovered: true }
+      return 'empty + error states rendered and the list recovered'
     })
 
     /* ------------------------------------------------------- 5. error hygiene */

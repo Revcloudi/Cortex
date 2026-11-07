@@ -41,6 +41,13 @@ test('registers the Cortex agent tool surface without MCP', () => {
     'cortex_graph_summary',
     'cortex_audit_completeness',
     'cortex_sync_internal_scope',
+    'cortex_scan_miniapps',
+    'cortex_list_miniapps',
+    'cortex_unpack_miniapp',
+    'cortex_get_miniapp_overview',
+    'cortex_read_miniapp_file',
+    'cortex_search_miniapp',
+    'cortex_import_miniapp_assets',
   ])
   for (const tool of tools) {
     assert.ok(tool.description.length > 20)

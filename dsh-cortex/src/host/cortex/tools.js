@@ -14,6 +14,7 @@ import {
   normalizeTestParameters,
 } from './normalize-asset.js'
 import { auditCompleteness, syncInternalScope } from './data-tools.js'
+import { createMiniappToolDefinitions } from '../miniapp/tools.js'
 
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 const STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed']
@@ -981,6 +982,7 @@ export function createCortexToolDefinitions({ holder, config }) {
     graphSummary,
     auditTool,
     internalSyncTool,
+    ...createMiniappToolDefinitions({ holder, config }),
   ]
   return readOnly ? tools.map((tool) => ({ ...tool, description: `${tool.description} (current host: read-only)` })) : tools
 }

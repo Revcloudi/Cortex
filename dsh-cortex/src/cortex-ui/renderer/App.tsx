@@ -30,6 +30,15 @@ const RetestPage = lazy(async () => {
   return { default: module.RetestPage }
 })
 
+/**
+ * Mini-program reverse engineering is desktop-only too (it reads local WeChat
+ * caches through the Host), so it stays out of the first-screen bundle.
+ */
+const MiniappPage = lazy(async () => {
+  const module = await import('@renderer/pages/MiniappPage')
+  return { default: module.MiniappPage }
+})
+
 export default function App() {
   const [page, setPage] = useState<AppPage>('dashboard')
   const [dataVersion, setDataVersion] = useState(0)
@@ -96,6 +105,10 @@ export default function App() {
                   <Suspense fallback={<RetestPageFallback />}>
                     <RetestPage dataVersion={dataVersion} />
                   </Suspense>
+                ) : page === 'miniapps' ? (
+                  <Suspense fallback={<MiniappPageFallback />}>
+                    <MiniappPage dataVersion={dataVersion} />
+                  </Suspense>
                 ) : page === 'ai-config' && !IS_WEB_RUNTIME ? (
                   <AiConfigPage />
                 ) : null}
@@ -149,6 +162,19 @@ function NebulaPageFallback() {
 
 /** Light-weight fallback while the desktop-only re-test chunk loads. */
 function RetestPageFallback() {
+  const { t } = useI18n()
+  return (
+    <div className="flex h-full w-full items-center justify-center">
+      <div className="flex items-center gap-2.5 text-[12px] text-muted-foreground">
+        <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+        {t('common.loading')}
+      </div>
+    </div>
+  )
+}
+
+/** Light-weight fallback while the desktop-only mini-program chunk loads. */
+function MiniappPageFallback() {
   const { t } = useI18n()
   return (
     <div className="flex h-full w-full items-center justify-center">

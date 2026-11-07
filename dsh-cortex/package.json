@@ -1,7 +1,7 @@
 {
   "name": "@lievclouds/dsh-cortex",
-  "version": "0.5.4",
-  "description": "Cortex workbench for DeepSeek Harness: the original Cortex UI (vulnerabilities, assets, internal operations, Memory Nebula, snapshots, retest) as a native DSH panel, plus 12 native agent tools so DSH conversations use the local Cortex SQLite without MCP.",
+  "version": "0.6.0",
+  "description": "Cortex workbench for DeepSeek Harness: the original Cortex UI (vulnerabilities, assets, internal operations, Memory Nebula, snapshots, retest, mini-program reversing) as a native DSH panel, plus 22 native agent tools so DSH conversations use the local Cortex SQLite without MCP.",
   "type": "module",
   "main": "index.js",
   "license": "MIT",
@@ -22,16 +22,20 @@
     "access": "public"
   },
   "keywords": [
-    "dsh-plugin",
-    "deepseek-harness",
-    "dsh",
+    "asset-management",
     "cordis",
     "cortex",
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "miniapp",
+    "nebula",
     "pentest",
-    "vulnerability-management",
-    "asset-management",
+    "reverse-engineering",
     "sqlite",
-    "nebula"
+    "vulnerability-management",
+    "wechat-mini-program",
+    "wxapkg"
   ],
   "exports": {
     ".": "./index.js",

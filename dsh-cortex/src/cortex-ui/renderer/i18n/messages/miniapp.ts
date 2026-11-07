@@ -1,0 +1,338 @@
+import type { MessageBundle } from './types'
+
+/**
+ * Mini-program reverse engineering (wxapkg) UI copy.
+ *
+ * Everything the page renders lives here so the vendored renderer keeps its
+ * "no user-facing literals in TSX" rule. Data values (appid, package paths,
+ * extracted hosts) are interpolated by the caller and intentionally stay
+ * untranslated.
+ */
+export const miniappMessages: MessageBundle = {
+  zh: {
+    // Nav + page chrome
+    'nav.miniapps': '小程序逆向',
+    'miniapp.page.eyebrow': 'MINI PROGRAM',
+    'miniapp.page.description': '本机小程序包扫描、解包、源码浏览与资产提取',
+    'miniapp.page.count': '{count} 个包 · {apps} 个应用',
+    'miniapp.page.loading': '正在加载小程序包…',
+
+    // Authorization banner
+    'miniapp.banner.title': '仅处理已授权的小程序包',
+    'miniapp.banner.description':
+      '全部解析、解包与预览都在本机完成，不上传云端；请确保对目标小程序拥有合法授权。',
+    'miniapp.banner.workspace': '解包工作区：{path}',
+    'miniapp.banner.roots': '自定义目录 {count} 个',
+
+    // Toolbar
+    'miniapp.action.scan': '扫描本机',
+    'miniapp.action.scanning': '扫描中…',
+    'miniapp.action.addRoot': '添加自定义目录',
+    'miniapp.action.addRootSubmit': '添加并扫描',
+    'miniapp.action.addRootCancel': '取消',
+    'miniapp.addRoot.placeholder': '例如 C:\\mini-programs',
+    'miniapp.addRoot.hint': '自定义目录会持久化到本机设置，仅扫描其中的 .wxapkg 文件。',
+    'miniapp.search.placeholder': '搜索 appid、应用名或包路径',
+    'miniapp.search.ariaLabel': '搜索小程序包',
+    'miniapp.search.clear': '清除搜索',
+    'miniapp.filter.statusAria': '按状态筛选小程序包',
+    'miniapp.filter.all': '全部状态',
+    'miniapp.scan.done': '{added} 新增 · {updated} 更新 · {unchanged} 未变',
+    'miniapp.scan.failed': '扫描失败：{error}',
+    'miniapp.scan.errors': '{count} 个路径读取失败',
+    'miniapp.toast.rootAdded': '已添加自定义目录：{path}',
+    'miniapp.toast.rootFailed': '添加目录失败：{error}',
+
+    // List states
+    'miniapp.error.title': '无法加载小程序包列表',
+    'miniapp.empty.title': '还没有扫描到小程序包',
+    'miniapp.empty.description':
+      '扫描本机微信缓存中的 .wxapkg 包，或添加一个自定义目录，解包后即可浏览源码并提取接口、域名与敏感信息。',
+    'miniapp.empty.cta': '扫描本机',
+    'miniapp.emptyFiltered.title': '没有符合条件的小程序包',
+    'miniapp.emptyFiltered.description': '换一个关键词或状态筛选试试。',
+    'miniapp.emptyFiltered.reset': '重置筛选',
+
+    // Status / format badges
+    'miniapp.status.detected': '已检测',
+    'miniapp.status.decrypting': '解密中',
+    'miniapp.status.unpacked': '已解包',
+    'miniapp.status.unsupported': '不支持',
+    'miniapp.status.failed': '失败',
+    'miniapp.format.plain': '明文',
+    'miniapp.format.v1mmwx': 'V1MMWX',
+    'miniapp.format.unknown': '未知',
+
+    // Source card
+    'miniapp.card.version': 'v{version}',
+    'miniapp.card.noVersion': '无版本',
+    'miniapp.card.versions': '{count} 个版本',
+    'miniapp.card.files': '{count} 个文件',
+    'miniapp.card.updated': '更新于 {time}',
+    'miniapp.card.errorLabel': '错误：{error}',
+    'miniapp.action.unpack': '解包',
+    'miniapp.action.unpacking': '解包中…',
+    'miniapp.action.browse': '浏览文件',
+    'miniapp.action.analyze': '生成摘要',
+    'miniapp.action.analyzing': '分析中…',
+    'miniapp.action.import': '导入资产',
+    'miniapp.action.importing': '导入中…',
+    'miniapp.action.openDir': '打开目录',
+    'miniapp.action.opening': '打开中…',
+
+    // Action toasts
+    'miniapp.toast.unpacked': '已解包 {appid}',
+    'miniapp.toast.unpackUnsupported': '无法解包：{error}',
+    'miniapp.toast.unpackFailed': '解包失败：{error}',
+    'miniapp.toast.analyzed':
+      '摘要已生成：{pages} 个页面 · {endpoints} 个接口 · {secrets} 条敏感信息',
+    'miniapp.toast.analyzeFailed': '生成摘要失败：{error}',
+    'miniapp.toast.imported':
+      '已导入 {assets} 个资产、{interfaces} 个接口、{leaks} 条泄露信息、{parameters} 个参数',
+    'miniapp.toast.importWarnings': '导入未创建资产：{warnings}',
+    'miniapp.toast.importFailed': '导入资产失败：{error}',
+    'miniapp.toast.opened': '已打开目录：{path}',
+    'miniapp.toast.openFailed': '打开目录失败：{error}',
+
+    // Detail sheet
+    'miniapp.detail.eyebrow': 'MINI PROGRAM SOURCE',
+    'miniapp.detail.loading': '正在加载小程序详情…',
+    'miniapp.detail.loadError': '无法读取小程序详情',
+    'miniapp.detail.tab.overview': '概览',
+    'miniapp.detail.tab.files': '文件',
+    'miniapp.detail.tab.search': '搜索',
+    'miniapp.detail.copySummary': '复制摘要',
+    'miniapp.detail.copiedSummary': '已复制小程序摘要',
+    'miniapp.detail.noSummary': '尚未生成摘要，请先点击“生成摘要”。',
+    'miniapp.detail.generate': '生成摘要',
+    'miniapp.detail.rename': '重命名小程序',
+    'miniapp.detail.renamePlaceholder': '输入显示名称，例如中文名',
+    'miniapp.detail.renameSave': '保存名称',
+    'miniapp.detail.renamed': '显示名称已更新',
+    'miniapp.detail.renameFailed': '重命名失败：{error}',
+    'miniapp.detail.generating': '分析中…',
+    'miniapp.detail.importAssets': '导入资产',
+    'miniapp.detail.importing': '导入中…',
+
+    // Detail overview
+    'miniapp.detail.count.pages': '页面',
+    'miniapp.detail.count.subPackages': '分包',
+    'miniapp.detail.count.domains': '域名',
+    'miniapp.detail.count.endpoints': '接口',
+    'miniapp.detail.count.secrets': '敏感信息',
+    'miniapp.detail.count.parameters': '参数',
+    'miniapp.detail.overview.heading': '概览',
+    'miniapp.detail.overview.filesSummary': '{text} 个文本文件 / {binary} 个二进制文件 · {size}',
+    'miniapp.detail.overview.largestFiles': '最大文件',
+    'miniapp.detail.overview.warnings': '警告',
+    'miniapp.detail.overview.versions': '历史版本',
+    'miniapp.detail.overview.analysisMissing': '还没有生成摘要',
+    'miniapp.detail.overview.analysisMissingHint':
+      '生成摘要后，这里会显示页面、分包、域名、接口、敏感信息与参数统计。',
+    'miniapp.detail.versionMeta': '{status} · {format} · {size} · {files} 个文件 · {time}',
+    'miniapp.detail.meta.rootKind': '来源',
+    'miniapp.detail.meta.packageDir': '包目录',
+    'miniapp.detail.meta.unpackedPath': '解包目录',
+    'miniapp.detail.meta.format': '格式',
+    'miniapp.detail.meta.updated': '更新时间',
+    'miniapp.detail.importResult.title': '资产导入结果',
+    'miniapp.detail.importResult.totals':
+      '资产 {assets} · 接口 {interfaces} · 泄露 {leaks} · 参数 {parameters}',
+    'miniapp.detail.importResult.project': '项目：{project}',
+    'miniapp.detail.importResult.warnings': '警告：{warnings}',
+
+    // Files tab
+    'miniapp.file.loading': '正在读取…',
+    'miniapp.file.empty': '该目录为空',
+    'miniapp.file.selectPrompt': '从左侧文件树选择一个文件查看文本内容。',
+    'miniapp.file.previewTitle': '文件预览',
+    'miniapp.file.formatted': '已格式化',
+    'miniapp.file.binary': '二进制文件，无法以文本预览。',
+    'miniapp.file.truncated': '内容已截断，仅显示前 {lines} 行。',
+    'miniapp.file.loadMore': '加载更多',
+    'miniapp.file.loadError': '读取文件失败：{error}',
+    'miniapp.file.treeError': '读取目录失败：{error}',
+    'miniapp.file.root': '根目录',
+    'miniapp.file.totalLines': '共 {count} 行',
+
+    // Search tab
+    'miniapp.search.queryPlaceholder': '搜索源码关键词',
+    'miniapp.search.queryAria': '搜索源码关键词',
+    'miniapp.search.regex': '正则',
+    'miniapp.search.glob': 'Glob',
+    'miniapp.search.globPlaceholder': '例如 pages/**/*.js',
+    'miniapp.search.maxResults': '上限',
+    'miniapp.search.submit': '搜索',
+    'miniapp.search.searching': '搜索中…',
+    'miniapp.search.empty': '输入关键词后搜索已解包的源码。',
+    'miniapp.search.noResults': '没有匹配结果。',
+    'miniapp.search.summary': '{count} 条匹配 · 扫描 {scanned} 个文件',
+    'miniapp.search.truncated': '结果已截断，请缩小范围。',
+    'miniapp.search.error': '搜索失败：{error}',
+    'miniapp.search.resultAria': '预览 {file}:{line}'
+  },
+  en: {
+    // Nav + page chrome
+    'nav.miniapps': 'Mini Programs',
+    'miniapp.page.eyebrow': 'MINI PROGRAM',
+    'miniapp.page.description':
+      'Scan local mini-program packages, unpack them, browse source and extract assets',
+    'miniapp.page.count': '{count} packages · {apps} apps',
+    'miniapp.page.loading': 'Loading mini-program packages…',
+
+    // Authorization banner
+    'miniapp.banner.title': 'Authorized mini-program packages only',
+    'miniapp.banner.description':
+      'All parsing, unpacking and previews happen locally with no cloud upload. Make sure you are authorized to analyze the target mini programs.',
+    'miniapp.banner.workspace': 'Unpack workspace: {path}',
+    'miniapp.banner.roots': '{count} custom directories',
+
+    // Toolbar
+    'miniapp.action.scan': 'Scan this machine',
+    'miniapp.action.scanning': 'Scanning…',
+    'miniapp.action.addRoot': 'Add custom directory',
+    'miniapp.action.addRootSubmit': 'Add and scan',
+    'miniapp.action.addRootCancel': 'Cancel',
+    'miniapp.addRoot.placeholder': 'e.g. C:\\mini-programs',
+    'miniapp.addRoot.hint':
+      'Custom directories are stored in local settings and only scanned for .wxapkg files.',
+    'miniapp.search.placeholder': 'Search appid, app name or package path',
+    'miniapp.search.ariaLabel': 'Search mini-program packages',
+    'miniapp.search.clear': 'Clear search',
+    'miniapp.filter.statusAria': 'Filter mini-program packages by status',
+    'miniapp.filter.all': 'All statuses',
+    'miniapp.scan.done': '{added} added · {updated} updated · {unchanged} unchanged',
+    'miniapp.scan.failed': 'Scan failed: {error}',
+    'miniapp.scan.errors': '{count} paths could not be read',
+    'miniapp.toast.rootAdded': 'Custom directory added: {path}',
+    'miniapp.toast.rootFailed': 'Failed to add directory: {error}',
+
+    // List states
+    'miniapp.error.title': 'Unable to load mini-program packages',
+    'miniapp.empty.title': 'No mini-program packages found yet',
+    'miniapp.empty.description':
+      'Scan the .wxapkg packages in local WeChat caches, or add a custom directory. Once unpacked, browse source and extract endpoints, domains and secrets.',
+    'miniapp.empty.cta': 'Scan this machine',
+    'miniapp.emptyFiltered.title': 'No matching mini-program packages',
+    'miniapp.emptyFiltered.description': 'Try a different keyword or status filter.',
+    'miniapp.emptyFiltered.reset': 'Reset filters',
+
+    // Status / format badges
+    'miniapp.status.detected': 'Detected',
+    'miniapp.status.decrypting': 'Decrypting',
+    'miniapp.status.unpacked': 'Unpacked',
+    'miniapp.status.unsupported': 'Unsupported',
+    'miniapp.status.failed': 'Failed',
+    'miniapp.format.plain': 'Plain',
+    'miniapp.format.v1mmwx': 'V1MMWX',
+    'miniapp.format.unknown': 'Unknown',
+
+    // Source card
+    'miniapp.card.version': 'v{version}',
+    'miniapp.card.noVersion': 'No version',
+    'miniapp.card.versions': '{count} versions',
+    'miniapp.card.files': '{count} files',
+    'miniapp.card.updated': 'Updated {time}',
+    'miniapp.card.errorLabel': 'Error: {error}',
+    'miniapp.action.unpack': 'Unpack',
+    'miniapp.action.unpacking': 'Unpacking…',
+    'miniapp.action.browse': 'Browse files',
+    'miniapp.action.analyze': 'Generate summary',
+    'miniapp.action.analyzing': 'Analyzing…',
+    'miniapp.action.import': 'Import assets',
+    'miniapp.action.importing': 'Importing…',
+    'miniapp.action.openDir': 'Open directory',
+    'miniapp.action.opening': 'Opening…',
+
+    // Action toasts
+    'miniapp.toast.unpacked': 'Unpacked {appid}',
+    'miniapp.toast.unpackUnsupported': 'Cannot unpack: {error}',
+    'miniapp.toast.unpackFailed': 'Unpack failed: {error}',
+    'miniapp.toast.analyzed':
+      'Summary generated: {pages} pages · {endpoints} endpoints · {secrets} secrets',
+    'miniapp.toast.analyzeFailed': 'Summary failed: {error}',
+    'miniapp.toast.imported':
+      'Imported {assets} assets, {interfaces} interfaces, {leaks} leaks, {parameters} parameters',
+    'miniapp.toast.importWarnings': 'No asset was created: {warnings}',
+    'miniapp.toast.importFailed': 'Asset import failed: {error}',
+    'miniapp.toast.opened': 'Opened directory: {path}',
+    'miniapp.toast.openFailed': 'Failed to open directory: {error}',
+
+    // Detail sheet
+    'miniapp.detail.eyebrow': 'MINI PROGRAM SOURCE',
+    'miniapp.detail.loading': 'Loading mini-program details…',
+    'miniapp.detail.loadError': 'Unable to load mini-program details',
+    'miniapp.detail.tab.overview': 'Overview',
+    'miniapp.detail.tab.files': 'Files',
+    'miniapp.detail.tab.search': 'Search',
+    'miniapp.detail.copySummary': 'Copy summary',
+    'miniapp.detail.copiedSummary': 'Mini-program summary copied',
+    'miniapp.detail.noSummary': 'No summary yet. Generate one first.',
+    'miniapp.detail.generate': 'Generate summary',
+    'miniapp.detail.rename': 'Rename mini program',
+    'miniapp.detail.renamePlaceholder': 'Display name, e.g. the Chinese name',
+    'miniapp.detail.renameSave': 'Save display name',
+    'miniapp.detail.renamed': 'Display name updated',
+    'miniapp.detail.renameFailed': 'Rename failed: {error}',
+    'miniapp.detail.generating': 'Analyzing…',
+    'miniapp.detail.importAssets': 'Import assets',
+    'miniapp.detail.importing': 'Importing…',
+
+    // Detail overview
+    'miniapp.detail.count.pages': 'Pages',
+    'miniapp.detail.count.subPackages': 'Subpackages',
+    'miniapp.detail.count.domains': 'Domains',
+    'miniapp.detail.count.endpoints': 'Endpoints',
+    'miniapp.detail.count.secrets': 'Secrets',
+    'miniapp.detail.count.parameters': 'Parameters',
+    'miniapp.detail.overview.heading': 'Overview',
+    'miniapp.detail.overview.filesSummary': '{text} text files / {binary} binary files · {size}',
+    'miniapp.detail.overview.largestFiles': 'Largest files',
+    'miniapp.detail.overview.warnings': 'Warnings',
+    'miniapp.detail.overview.versions': 'Versions',
+    'miniapp.detail.overview.analysisMissing': 'No summary generated',
+    'miniapp.detail.overview.analysisMissingHint':
+      'Generate a summary to see pages, subpackages, domains, endpoints, secrets and parameter counts.',
+    'miniapp.detail.versionMeta': '{status} · {format} · {size} · {files} files · {time}',
+    'miniapp.detail.meta.rootKind': 'Source',
+    'miniapp.detail.meta.packageDir': 'Package directory',
+    'miniapp.detail.meta.unpackedPath': 'Unpacked directory',
+    'miniapp.detail.meta.format': 'Format',
+    'miniapp.detail.meta.updated': 'Updated',
+    'miniapp.detail.importResult.title': 'Asset import result',
+    'miniapp.detail.importResult.totals':
+      'Assets {assets} · Interfaces {interfaces} · Leaks {leaks} · Parameters {parameters}',
+    'miniapp.detail.importResult.project': 'Project: {project}',
+    'miniapp.detail.importResult.warnings': 'Warnings: {warnings}',
+
+    // Files tab
+    'miniapp.file.loading': 'Loading…',
+    'miniapp.file.empty': 'This directory is empty',
+    'miniapp.file.selectPrompt': 'Pick a file from the tree to preview its text.',
+    'miniapp.file.previewTitle': 'File preview',
+    'miniapp.file.formatted': 'Formatted',
+    'miniapp.file.binary': 'Binary file; text preview is unavailable.',
+    'miniapp.file.truncated': 'Content truncated to the first {lines} lines.',
+    'miniapp.file.loadMore': 'Load more',
+    'miniapp.file.loadError': 'Failed to read file: {error}',
+    'miniapp.file.treeError': 'Failed to read directory: {error}',
+    'miniapp.file.root': 'Root',
+    'miniapp.file.totalLines': '{count} lines',
+
+    // Search tab
+    'miniapp.search.queryPlaceholder': 'Search source text',
+    'miniapp.search.queryAria': 'Search source keywords',
+    'miniapp.search.regex': 'Regex',
+    'miniapp.search.glob': 'Glob',
+    'miniapp.search.globPlaceholder': 'e.g. pages/**/*.js',
+    'miniapp.search.maxResults': 'Limit',
+    'miniapp.search.submit': 'Search',
+    'miniapp.search.searching': 'Searching…',
+    'miniapp.search.empty': 'Enter a keyword to search the unpacked source.',
+    'miniapp.search.noResults': 'No matches.',
+    'miniapp.search.summary': '{count} matches · scanned {scanned} files',
+    'miniapp.search.truncated': 'Results truncated; narrow the query.',
+    'miniapp.search.error': 'Search failed: {error}',
+    'miniapp.search.resultAria': 'Preview {file}:{line}'
+  }
+}
