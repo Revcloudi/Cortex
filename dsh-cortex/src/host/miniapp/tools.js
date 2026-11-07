@@ -90,6 +90,14 @@ export function createMiniappToolDefinitions({ holder } = {}) {
         if (result.errors && result.errors.length > 0) {
           lines.push(`scan warnings: ${result.errors.length} skipped path(s) (permission/locked/limit)`)
         }
+        for (const root of Array.isArray(result.roots) ? result.roots : []) {
+          lines.push(
+            `root: ${root.kind} ${root.path} => ${root.exists ? `${root.filesFound ?? 0} wxapkg file(s)` : 'missing'}`,
+          )
+        }
+        lines.push(
+          'note: only wxapkg packages cached on this PC are detectable; mini programs opened only on the phone have no local package. Use a custom scan root for exported packages.',
+        )
         for (const item of result.miniapps.slice(0, 40)) {
           const kind = item.kind === 'plugin' ? '[插件] ' : item.kind === 'library' ? '[公共库] ' : ''
           lines.push(

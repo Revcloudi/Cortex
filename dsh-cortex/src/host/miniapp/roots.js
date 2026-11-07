@@ -53,7 +53,7 @@ function localAppDataDir(env) {
  * @returns {Root[]}
  */
 export function defaultRoots(env = process.env) {
-  return [
+  const roots = [
     {
       kind: 'xwechat',
       path: resolve(join(appDataDir(env), 'Tencent', 'xwechat', 'radium', 'users')),
@@ -76,6 +76,54 @@ export function defaultRoots(env = process.env) {
       maxDepth: DEFAULT_MAX_DEPTH,
     },
   ]
+
+  // WeChat 4.x can keep its "files" directory on another drive (or the user's
+  // Documents folder). Its account data may still contain applet caches; scan
+  // every discovered `Documents` directory without touching the whole drive.
+  const documents = new Set([resolve(join(homeDir(env), 'Documents'))])
+  // Extra-drive probing is opt-in (host sets the flag at runtime) so tests and
+  // embedders with a synthetic env never touch unrelated drives.
+  if (env && env.CORTEX_MINIAPP_EXTRA_DRIVES === '1') {
+    for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
+      const driveDocuments = `${letter}:\\Documents`
+      try {
+        if (existsSync(driveDocuments)) documents.add(driveDocuments)
+      } catch {
+        /* inaccessible drive letter */
+      }
+    }
+  }
+  for (const directory of documents) {
+    const xwechatFiles = join(directory, 'xwechat_files')
+    try {
+      if (existsSync(xwechatFiles)) {
+        roots.push({
+          kind: 'xwechat',
+          path: resolve(xwechatFiles),
+          label: `WeChat 4.x files (${directory.slice(0, 2)})`,
+          mode: 'recursive',
+          maxDepth: DEFAULT_MAX_DEPTH,
+        })
+      }
+    } catch {
+      /* ignore */
+    }
+    const classic = join(directory, 'WeChat Files')
+    try {
+      if (existsSync(classic)) {
+        roots.push({
+          kind: 'wechat3',
+          path: resolve(classic),
+          label: `WeChat Files (${directory.slice(0, 2)})`,
+          mode: 'recursive',
+          maxDepth: DEFAULT_MAX_DEPTH,
+        })
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return roots
 }
 
 /**

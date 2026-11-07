@@ -15,6 +15,12 @@ export const name = 'dsh-cortex'
 export const inject = ['webServer', 'tools']
 
 export function apply(ctx, config) {
+  // The mini-program scanner also looks for WeChat's `Documents\xwechat_files`
+  // data directory on other drives. This is opt-in so tests and embedders with
+  // a synthetic env stay hermetic.
+  if (process.env.CORTEX_MINIAPP_EXTRA_DRIVES === undefined) {
+    process.env.CORTEX_MINIAPP_EXTRA_DRIVES = '1'
+  }
   let host
   try {
     host = createCortexHost({ config })

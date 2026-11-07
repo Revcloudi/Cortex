@@ -73,6 +73,14 @@ export interface MiniappScanError {
   message: string
 }
 
+export interface MiniappScanRoot {
+  kind: string
+  path: string
+  exists: boolean
+  filesFound?: number
+  errors?: number
+}
+
 export interface MiniappScanResponse {
   ok: boolean
   scannedAt: string
@@ -82,6 +90,8 @@ export interface MiniappScanResponse {
   updated: number
   unchanged: number
   errors: MiniappScanError[]
+  roots?: MiniappScanRoot[]
+  appCount?: number
   miniapps: MiniappRow[]
 }
 

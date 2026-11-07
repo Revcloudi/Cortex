@@ -39,6 +39,7 @@ import {
   type MiniappListResponse,
   type MiniappRootsResponse,
   type MiniappRow,
+  type MiniappScanRoot,
   type MiniappStatus
 } from '@renderer/lib/miniappApi'
 import { useDebouncedValue } from '@renderer/hooks/useDebouncedValue'
@@ -80,6 +81,7 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
   const [scanPending, setScanPending] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
   const [roots, setRoots] = useState<MiniappRootsResponse | null>(null)
+  const [scanRoots, setScanRoots] = useState<MiniappScanRoot[] | null>(null)
   const [addRootOpen, setAddRootOpen] = useState(false)
   const [addRootValue, setAddRootValue] = useState('')
   const [addRootPending, setAddRootPending] = useState(false)
@@ -160,6 +162,7 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
     setScanError(null)
     try {
       const result = await scanMiniapps(customRoots)
+      setScanRoots(Array.isArray(result.roots) ? result.roots : null)
       const scannedRows = result.miniapps ?? []
       setData((prev) => {
         const base = prev ?? EMPTY_LIST
@@ -175,6 +178,7 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
       setError(null)
       toast.success(
         t('miniapp.scan.done', {
+          total: result.totalPackages,
           added: result.added,
           updated: result.updated,
           unchanged: result.unchanged
@@ -304,6 +308,16 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
     count: visibleMiniapps.length,
     apps: new Set(visibleMiniapps.map((row) => row.appid)).size
   })
+  const headerCountLabel =
+    data === null
+      ? '—'
+      : !showExtras && extraCount > 0
+        ? t('miniapp.page.countVisible', {
+            visible: visibleMiniapps.length,
+            total: data.total,
+            apps: data.appCount
+          })
+        : t('miniapp.page.count', { count: data.total, apps: data.appCount })
 
   return (
     <section
@@ -320,7 +334,7 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
               {t('nav.miniapps')}
             </h1>
             <span className="font-mono text-[11px] tabular-nums text-foreground/70">
-              {visibleCountLabel}
+              {headerCountLabel}
             </span>
           </div>
           <p className="mt-1 text-[11.5px] text-muted-foreground">{t('miniapp.page.description')}</p>
@@ -347,6 +361,24 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
               : null}
           </p>
         </div>
+      </div>
+
+      <div className="mt-2 flex flex-col gap-0.5 text-[10.5px] leading-relaxed text-muted-foreground">
+        <p>{t('miniapp.page.scopeHint')}</p>
+        {scanRoots !== null && scanRoots.length > 0 ? (
+          <p className="break-all font-mono text-[10px] text-muted-foreground/80">
+            {t('miniapp.page.rootsSummary', {
+              summary: scanRoots
+                .map(
+                  (root) =>
+                    `${root.path.split(/[\\/]/).filter(Boolean).pop() ?? root.kind} ${
+                      root.exists ? (root.filesFound ?? 0) : '—'
+                    }`
+                )
+                .join(' · ')
+            })}
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -525,6 +557,9 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
                     apps: new Set(visibleMiniapps.map((row) => row.appid)).size
                   })
                 : visibleCountLabel}
+            {!showExtras && extraCount > 0
+              ? ` · ${t('miniapp.page.hiddenExtras', { count: extraCount })}`
+              : ''}
           </span>
         </div>
 
