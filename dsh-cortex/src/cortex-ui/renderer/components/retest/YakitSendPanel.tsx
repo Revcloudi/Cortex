@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CornerDownRight, Loader2, Play } from 'lucide-react'
+import { ArrowRight, Braces, CornerDownRight, Loader2, Play } from 'lucide-react'
 import type { Vulnerability } from '@shared/types'
 import type { RepeaterSendResult } from '@shared/repeater'
 import { Button } from '@renderer/components/ui/button'
@@ -7,7 +7,11 @@ import { Checkbox } from '@renderer/components/ui/checkbox'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { useI18n } from '@renderer/i18n'
 import { getApi } from '@renderer/lib/api'
-import { parseRawRequest, stripDerivedHeaders } from '@renderer/lib/repeaterRaw'
+import {
+  formatRequestBody,
+  parseRawRequest,
+  stripDerivedHeaders
+} from '@renderer/lib/repeaterRaw'
 import {
   defaultRequestIndex,
   extractRepeaterRequests,
@@ -67,7 +71,8 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
     }
     const nextStep = defaultRequestIndex(vuln, requests)
     setStep(nextStep)
-    setRaw(requests[nextStep]?.raw ?? '')
+    const initial = requests[nextStep]?.raw ?? ''
+    setRaw(formatRequestBody(initial) ?? initial)
     // Reset only when the selected vulnerability changes; user edits must survive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vuln?.id])
@@ -76,8 +81,19 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
     const next = requests[nextStep]
     if (next === undefined) return
     setStep(nextStep)
-    setRaw(next.raw)
+    setRaw(formatRequestBody(next.raw) ?? next.raw)
     setResult(null)
+    setError(null)
+  }
+
+  /** Pretty-print the JSON request body while keeping the request line/headers. */
+  const formatRequest = (): void => {
+    const formatted = formatRequestBody(raw)
+    if (formatted === null) {
+      setError(t('retest.repeater.formatRequestFailed'))
+      return
+    }
+    setRaw(formatted)
     setError(null)
   }
 
@@ -140,7 +156,12 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
         followRedirects
       })
       setResult(response)
-      setBodyView('raw')
+      // Formatted JSON is the default response view; raw stays one click away.
+      setBodyView(
+        prettyJsonBody(response.response.body, headerValue(response.response.headers, 'content-type')) !== null
+          ? 'pretty'
+          : 'raw'
+      )
     } catch (cause) {
       setError(describeSendError(cause, t('retest.repeater.connectionFailed')))
       setResult(null)
@@ -200,6 +221,17 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             />
             {t('retest.repeater.followRedirects')}
           </label>
+          <Button
+            variant="outline"
+            size="xs"
+            data-testid="fuzzer-format-request"
+            title={t('retest.repeater.formatRequestTitle')}
+            onClick={formatRequest}
+            className="shrink-0 gap-1"
+          >
+            <Braces aria-hidden="true" className="h-3 w-3" />
+            {t('retest.repeater.formatRequest')}
+          </Button>
           <span className="shrink-0 rounded border border-border bg-sidebar px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
             {vuln.id}
           </span>

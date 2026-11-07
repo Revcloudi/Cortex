@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
+  Braces,
   Clock,
   CornerDownRight,
   FileInput,
@@ -18,7 +19,11 @@ import { useCopy } from '@renderer/hooks/useCopy'
 import { useI18n } from '@renderer/i18n'
 import { getApi } from '@renderer/lib/api'
 import { buildCurlCommand } from '@renderer/lib/curl'
-import { parseRawRequest, stripDerivedHeaders } from '@renderer/lib/repeaterRaw'
+import {
+  formatRequestBody,
+  parseRawRequest,
+  stripDerivedHeaders
+} from '@renderer/lib/repeaterRaw'
 import {
   defaultRequestIndex,
   extractRepeaterRequests,
@@ -137,7 +142,8 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
     setError(null)
     const nextStep = defaultRequestIndex(vuln, requests)
     setStep(nextStep)
-    setRaw(requests[nextStep]?.raw ?? '')
+    const initial = requests[nextStep]?.raw ?? ''
+    setRaw(formatRequestBody(initial) ?? initial)
     // Reset only when the selected vulnerability changes; user edits must survive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vuln.id])
@@ -146,8 +152,19 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
     const next = requests[nextStep]
     if (next === undefined) return
     setStep(nextStep)
-    setRaw(next.raw)
+    setRaw(formatRequestBody(next.raw) ?? next.raw)
     setResult(null)
+    setError(null)
+  }
+
+  /** Pretty-print the JSON request body while keeping the request line/headers. */
+  const formatRequest = (): void => {
+    const formatted = formatRequestBody(raw)
+    if (formatted === null) {
+      setError(t('retest.repeater.formatRequestFailed'))
+      return
+    }
+    setRaw(formatted)
     setError(null)
   }
 
@@ -231,7 +248,12 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
         followRedirects
       })
       setResult(response)
-      setBodyView('raw')
+      // Formatted JSON is the default response view; raw stays one click away.
+      setBodyView(
+        prettyJsonBody(response.response.body, headerValue(response.response.headers, 'content-type')) !== null
+          ? 'pretty'
+          : 'raw'
+      )
     } catch (cause) {
       setError(describeSendError(cause, t('retest.repeater.connectionFailed')))
       setResult(null)
@@ -325,6 +347,17 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
             </Button>
 
             <div className="flex flex-wrap items-center gap-1">
+              <Button
+                variant="outline"
+                size="xs"
+                data-testid="retest-repeater-format"
+                title={t('retest.repeater.formatRequestTitle')}
+                onClick={formatRequest}
+                className="gap-1 text-[10.5px]"
+              >
+                <Braces aria-hidden="true" className="h-3 w-3" />
+                {t('retest.repeater.formatRequest')}
+              </Button>
               <Button
                 variant="outline"
                 size="xs"

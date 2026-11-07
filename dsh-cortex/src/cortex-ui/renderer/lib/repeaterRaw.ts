@@ -80,3 +80,23 @@ export function stripDerivedHeaders(headers: Record<string, string>): Record<str
     Object.entries(headers).filter(([name]) => !DERIVED_HEADERS.has(name.toLowerCase()))
   )
 }
+
+/**
+ * Pretty-print a JSON request body while keeping the request line and headers
+ * untouched. Returns null when the request has no body or the body is not JSON.
+ */
+export function formatRequestBody(raw: string): string | null {
+  const text = raw.replace(/\r\n/g, '\n')
+  const separator = text.indexOf('\n\n')
+  if (separator < 0) return null
+  const head = text.slice(0, separator)
+  const body = text.slice(separator + 2).trim()
+  if (body === '') return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return null
+  }
+  return `${head}\n\n${JSON.stringify(parsed, null, 2)}`
+}

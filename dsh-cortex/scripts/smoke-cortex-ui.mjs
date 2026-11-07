@@ -323,7 +323,8 @@ function fullVulnerability(id) {
     affected_interfaces: [],
     description: '## 漏洞概述\n\nmock record for UI smoke',
     impact: 'mock impact',
-    reproduction_steps: '### 步骤 1\n\n```http\nGET / HTTP/1.1\n```',
+    reproduction_steps:
+      '### 步骤 1\n\n```http\nPOST /api/items HTTP/1.1\nHost: 127.0.0.1:8080\nContent-Type: application/json\n\n{"a":1,"b":{"c":2}}\n```',
     remediation: ['mock remediation'],
     crypto_details: '',
     test_boundaries: '',
@@ -1595,10 +1596,39 @@ export async function runCortexUiSmoke(options = {}) {
         label: 'fuzzer request editor',
         timeoutMs: 10_000
       })
-      const raw = 'GET /api/items?id=1 HTTP/1.1\nHost: 127.0.0.1:8080\nAccept: */*\n\n'
+      // The report request is JSON; its body must be pretty-printed by default.
+      await waitFor(
+        act,
+        () =>
+          requestEditor.value.includes('"a": 1') && requestEditor.value.includes('"c": 2')
+            ? true
+            : null,
+        { label: 'default formatted request body', timeoutMs: 5_000 }
+      )
+      const raw =
+        'POST /api/items HTTP/1.1\nHost: 127.0.0.1:8080\nContent-Type: application/json\n\n{"a":1,"b":{"c":2}}\n'
       await act(async () => {
         setControlValue(window, requestEditor, raw)
       })
+      const formatButton = byTestId('fuzzer-format-request')
+      assert.ok(formatButton, 'missing request-body format button')
+      await act(async () => {
+        formatButton.click()
+      })
+      await waitFor(
+        act,
+        () =>
+          requestEditor.value.includes('"a": 1') && requestEditor.value.includes('"c": 2')
+            ? true
+            : null,
+        { label: 'formatted request body after button click', timeoutMs: 5_000 }
+      )
+      assert.match(requestEditor.value, /^POST \/api\/items HTTP\/1\.1/)
+      assert.ok(
+        requestEditor.value.includes('Content-Type: application/json'),
+        'request formatting must keep the headers'
+      )
+
       await act(async () => {
         sendButton.click()
       })
@@ -1607,33 +1637,11 @@ export async function runCortexUiSmoke(options = {}) {
         timeoutMs: 10_000
       })
       assert.equal(textOf(status), '200')
-      const responseBody = await waitFor(act, () => byTestId('fuzzer-response-body'), {
-        label: 'fuzzer response body',
-        timeoutMs: 10_000
-      })
-      assert.ok(
-        (responseBody.textContent || '').includes('"ok":true'),
-        `unexpected response body: ${textOf(responseBody)}`
-      )
-      assert.ok(
-        (responseBody.className || '').includes('flex-1'),
-        'raw response box must fill the response pane height'
-      )
-      assert.ok(
-        (responseBody.textContent || '').includes('HTTP/1.1 200'),
-        'raw response must keep the status line'
-      )
-      assert.ok(
-        (responseBody.textContent || '').includes('x-smoke: send'),
-        'raw response must keep the response headers'
-      )
-      assert.ok(byTestId('fuzzer-view-json'), 'missing JSON view button for the JSON response')
-      await act(async () => {
-        byTestId('fuzzer-view-json').click()
-      })
+
+      // JSON is the default response view and keeps status + headers.
       const formatted = await waitFor(act, () => byTestId('fuzzer-response-json'), {
-        label: 'formatted JSON response',
-        timeoutMs: 5_000
+        label: 'default formatted JSON response',
+        timeoutMs: 10_000
       })
       assert.match(formatted.textContent || '', /"ok": true/)
       assert.ok(
@@ -1647,6 +1655,31 @@ export async function runCortexUiSmoke(options = {}) {
       assert.ok(
         (formatted.textContent || '').includes('content-type: application/json'),
         'JSON view must keep the response headers'
+      )
+
+      // Raw view is one block (status + headers + body) and also fills the pane.
+      await act(async () => {
+        byTestId('fuzzer-view-raw').click()
+      })
+      const responseBody = await waitFor(act, () => byTestId('fuzzer-response-body'), {
+        label: 'raw response body',
+        timeoutMs: 5_000
+      })
+      assert.ok(
+        (responseBody.className || '').includes('flex-1'),
+        'raw response box must fill the response pane height'
+      )
+      assert.ok(
+        (responseBody.textContent || '').includes('HTTP/1.1 200'),
+        'raw response must keep the status line'
+      )
+      assert.ok(
+        (responseBody.textContent || '').includes('x-smoke: send'),
+        'raw response must keep the response headers'
+      )
+      assert.ok(
+        (responseBody.textContent || '').includes('"ok":true'),
+        `unexpected raw response body: ${textOf(responseBody)}`
       )
       assert.ok(
         (shadow.querySelector('main')?.textContent || '').includes('Web Fuzzer'),

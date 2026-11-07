@@ -462,6 +462,9 @@ export const retestMessages: MessageBundle = {
     // Appended block; existing keys above are untouched.
     // ------------------------------------------------------------------
     'retest.repeater.requestSection': '请求',
+    'retest.repeater.formatRequest': '格式化',
+    'retest.repeater.formatRequestTitle': '格式化请求体（JSON）',
+    'retest.repeater.formatRequestFailed': '请求体不是合法的 JSON，无法格式化',
 
     // Send history
     'retest.repeater.history.open': '历史',
@@ -1006,6 +1009,9 @@ export const retestMessages: MessageBundle = {
     // Appended block; existing keys above are untouched.
     // ------------------------------------------------------------------
     'retest.repeater.requestSection': 'Request',
+    'retest.repeater.formatRequest': 'Format',
+    'retest.repeater.formatRequestTitle': 'Format the JSON request body',
+    'retest.repeater.formatRequestFailed': 'The request body is not valid JSON and cannot be formatted',
 
     // Send history
     'retest.repeater.history.open': 'History',
