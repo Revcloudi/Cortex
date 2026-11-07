@@ -993,7 +993,10 @@ export async function runCortexUiSmoke(options = {}) {
     await check('no CSS/script jsdom failures beyond CSS parsing', () => {
       const nonCss = jsdomErrors.filter((error) => {
         const message = `${(error && error.type) || ''} ${(error && error.message) || error}`
-        return !/css parsing|Could not parse CSS stylesheet/i.test(message)
+        // jsdom cannot render canvas/WebGL, so the nebula guard below triggers
+        // its "Not implemented" diagnostics; they are environment limits, not
+        // application failures (the real page has WebGL2).
+        return !/css parsing|Could not parse CSS stylesheet|Not implemented:/i.test(message)
       })
       assert.deepEqual(
         nonCss.map((error) => (error && error.message) || String(error)),

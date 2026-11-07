@@ -85,6 +85,9 @@ const ROUTES = [
 
   { pattern: /^\/snapshots$/, methods: { GET: snapshots.handleList } },
   { pattern: /^\/snapshots\/([^/]+)\/archive$/, methods: { POST: snapshots.handleArchive } },
+  // Both spellings exist: the vendored renderer's original Web API uses
+  // `/restore`, while the desktop contract names it `restore-previous`.
+  { pattern: /^\/snapshots\/([^/]+)\/restore$/, methods: { POST: snapshots.handleRestorePrevious } },
   {
     pattern: /^\/snapshots\/([^/]+)\/restore-previous$/,
     methods: { POST: snapshots.handleRestorePrevious },
