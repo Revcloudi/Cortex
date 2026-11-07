@@ -1615,6 +1615,18 @@ export async function runCortexUiSmoke(options = {}) {
         (responseBody.textContent || '').includes('"ok":true'),
         `unexpected response body: ${textOf(responseBody)}`
       )
+      assert.ok(
+        (responseBody.className || '').includes('flex-1'),
+        'raw response box must fill the response pane height'
+      )
+      assert.ok(
+        (responseBody.textContent || '').includes('HTTP/1.1 200'),
+        'raw response must keep the status line'
+      )
+      assert.ok(
+        (responseBody.textContent || '').includes('x-smoke: send'),
+        'raw response must keep the response headers'
+      )
       assert.ok(byTestId('fuzzer-view-json'), 'missing JSON view button for the JSON response')
       await act(async () => {
         byTestId('fuzzer-view-json').click()
@@ -1624,6 +1636,18 @@ export async function runCortexUiSmoke(options = {}) {
         timeoutMs: 5_000
       })
       assert.match(formatted.textContent || '', /"ok": true/)
+      assert.ok(
+        (formatted.className || '').includes('flex-1'),
+        'formatted JSON response box must fill the response pane height'
+      )
+      assert.ok(
+        (formatted.textContent || '').includes('HTTP/1.1 200'),
+        'JSON view must keep the status line'
+      )
+      assert.ok(
+        (formatted.textContent || '').includes('content-type: application/json'),
+        'JSON view must keep the response headers'
+      )
       assert.ok(
         (shadow.querySelector('main')?.textContent || '').includes('Web Fuzzer'),
         'page heading missing'

@@ -167,16 +167,25 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
     () => (result === null ? '' : buildHtmlPreview(result.response.body, vuln.target_url)),
     [result, vuln.target_url]
   )
-  /** Raw response as one block: status line + headers + blank line + body. */
-  const rawResponse = useMemo(() => {
+  /** Status line + response headers, shared by the raw and formatted views. */
+  const responseHead = useMemo(() => {
     if (result === null) return ''
     const lines = [`HTTP/1.1 ${result.response.status}`]
     for (const [name, value] of Object.entries(result.response.headers)) {
       lines.push(`${name}: ${value}`)
     }
-    lines.push('', result.response.body)
     return lines.join('\n')
   }, [result])
+  /** Raw response as one block: status + headers + blank line + body. */
+  const rawResponse = useMemo(
+    () => (result === null ? '' : `${responseHead}\n\n${result.response.body}`),
+    [result, responseHead]
+  )
+  /** JSON view keeps the status/header block and only formats the body. */
+  const jsonResponse = useMemo(
+    () => (formattedJson === null ? '' : `${responseHead}\n\n${formattedJson}`),
+    [formattedJson, responseHead]
+  )
 
   /** Parsed request used by the favorites dialog (null while the editor is invalid). */
   const currentRequest = useMemo<RepeaterSendResult['request'] | null>(() => {
@@ -460,26 +469,26 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
             {t('retest.repeater.emptyResponse')}
           </p>
         ) : (
-          <div className="min-h-0 flex-1 overflow-auto p-3">
+          <div className="flex min-h-0 flex-1 flex-col p-3">
             {responseIsHtml && bodyView === 'html' ? (
               <iframe
                 title={t('retest.repeater.htmlPreview')}
                 sandbox=""
                 referrerPolicy="no-referrer"
                 srcDoc={htmlPreview}
-                className="h-[min(60vh,520px)] min-h-[320px] w-full rounded-md border border-border bg-white"
+                className="min-h-0 w-full flex-1 rounded-md border border-border bg-white"
               />
             ) : formattedJson !== null && bodyView === 'pretty' ? (
               <pre
                 data-testid="retest-repeater-json"
-                className="whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
+                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
               >
-                {formattedJson}
+                {jsonResponse}
               </pre>
             ) : (
               <pre
                 data-testid="retest-repeater-response"
-                className="whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
+                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
               >
                 {rawResponse.slice(0, 200_000)}
               </pre>

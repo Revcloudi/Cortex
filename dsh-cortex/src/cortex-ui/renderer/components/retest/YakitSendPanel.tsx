@@ -100,16 +100,25 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
         : buildHtmlPreview(result.response.body, vuln.target_url),
     [result, vuln]
   )
-  /** Raw response as one block: status line + headers + blank line + body. */
-  const rawResponse = useMemo(() => {
+  /** Status line + response headers, shared by the raw and formatted views. */
+  const responseHead = useMemo(() => {
     if (result === null) return ''
     const lines = [`HTTP/1.1 ${result.response.status}`]
     for (const [name, value] of Object.entries(result.response.headers)) {
       lines.push(`${name}: ${value}`)
     }
-    lines.push('', result.response.body)
     return lines.join('\n')
   }, [result])
+  /** Raw response as one block: status + headers + blank line + body. */
+  const rawResponse = useMemo(
+    () => (result === null ? '' : `${responseHead}\n\n${result.response.body}`),
+    [result, responseHead]
+  )
+  /** JSON view keeps the status/header block and only formats the body. */
+  const jsonResponse = useMemo(
+    () => (formattedJson === null ? '' : `${responseHead}\n\n${formattedJson}`),
+    [formattedJson, responseHead]
+  )
 
   const send = async (): Promise<void> => {
     if (vuln === null || sending) return
@@ -338,7 +347,7 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             {t('retest.repeater.emptyResponse')}
           </p>
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3">
+          <div className="flex min-h-0 flex-1 flex-col p-3">
             {responseIsHtml && bodyView === 'html' ? (
               <iframe
                 title={t('retest.repeater.htmlPreview')}
@@ -350,14 +359,14 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             ) : formattedJson !== null && bodyView === 'pretty' ? (
               <pre
                 data-testid="fuzzer-response-json"
-                className="whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
+                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
               >
-                {formattedJson}
+                {jsonResponse}
               </pre>
             ) : (
               <pre
                 data-testid="fuzzer-response-body"
-                className="whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
+                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground"
               >
                 {rawResponse.slice(0, 200_000)}
               </pre>
