@@ -10,7 +10,8 @@ import {
   Play,
   RefreshCcw,
   Square,
-  TriangleAlert
+  TriangleAlert,
+  X
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Vulnerability } from '@shared/types'
@@ -67,6 +68,7 @@ import {
   type ExpectedCasesError
 } from '@renderer/lib/fuzz'
 import { parseRawRequest, stripDerivedHeaders } from '@renderer/lib/repeaterRaw'
+import { statusTone } from '@renderer/lib/retestResponse'
 import { defaultRequestIndex, extractRepeaterRequests } from '@renderer/lib/retestRequest'
 import { cn } from '@renderer/lib/utils'
 import { FuzzResultDetail } from './FuzzResultDetail'
@@ -94,6 +96,8 @@ type PrepareStartResult =
   | { ok: true; request: PreparedRequest; payloadSets: string[][]; origin: string }
   | { ok: false; issue: ValidationIssue }
 
+type BottomTab = 'results' | 'history'
+
 const JOB_STATUS_TONE: Record<FuzzJobStatus, string> = {
   running: 'border-sky-300 bg-sky-50 text-sky-900',
   completed: 'border-emerald-300 bg-emerald-50 text-emerald-900',
@@ -109,17 +113,20 @@ const STOPPED_REASON_KEYS: Record<string, string> = {
 }
 
 /**
- * Fuzzer workbench: raw request with § injection markers, per-position payload
- * sets, attack-mode count preview, a mandatory start confirmation, background
- * polling (1s), a sortable result table with a full detail inspector, CSV/JSON
- * export and recent-job history.
+ * Yakit-style Fuzzer workbench: request editor + configuration on the left,
+ * the selected result's response on the right, and a fixed bottom panel with
+ * results / recent jobs.
  *
- * All network access goes through `lib/fuzzerApi` and all copy through the
- * `fuzzer.*` i18n keys.
+ * The raw editor marks injection points with paired `§` characters, attack
+ * modes expand payload sets, a mandatory confirmation dialog precedes every
+ * job, and the job is polled every second while it runs. All network access
+ * goes through `lib/fuzzerApi`; all copy comes from the `fuzzer.*` i18n keys.
  */
 export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
   const { t } = useI18n()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  /** Job whose baseline was auto-selected once (closing it must not re-select). */
+  const autoBaselineRef = useRef<string | null>(null)
 
   const [raw, setRaw] = useState('')
   const [mode, setMode] = useState<FuzzMode>('sniper')
@@ -134,6 +141,7 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
   const [markerError, setMarkerError] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [bottomTab, setBottomTab] = useState<BottomTab>('results')
 
   const [jobId, setJobId] = useState<string | null>(null)
   const [reloadNonce, setReloadNonce] = useState(0)
@@ -169,6 +177,7 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
     setMarkerError(null)
     setAttempted(false)
     setPayloadTexts([])
+    setBottomTab('results')
     if (vuln === null) return
     const index = defaultRequestIndex(vuln, requests)
     setRaw(requests[index]?.raw ?? '')
@@ -291,6 +300,22 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminalKey])
 
+  // Auto-inspect the baseline exactly once per job. The ref means closing the
+  // response pane afterwards does not immediately reopen it.
+  useEffect(() => {
+    if (job === null) return
+    if (job.baseline === null || job.baseline === undefined) return
+    if (autoBaselineRef.current === job.jobId) return
+    autoBaselineRef.current = job.jobId
+    setSelected((current) => (current === null ? 'baseline' : current))
+  }, [job])
+
+  const selectedSummary = useMemo(() => {
+    if (selected === null || job === null) return null
+    if (selected === 'baseline') return job.baseline
+    return results.find((result) => result.index === selected) ?? null
+  }, [selected, job, results])
+
   const describeStartIssue = (): ValidationIssue | null => {
     if (vuln === null) return { key: 'fuzzer.error.api', params: { error: 'no finding' } }
     if (markerScan.open) return { key: 'fuzzer.error.unclosedMarkers' }
@@ -408,6 +433,7 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
       setJobError(null)
       setJobId(created.jobId)
       setReloadNonce((value) => value + 1)
+      setBottomTab('results')
       void refreshHistory()
     } catch (cause) {
       setActionError(t('fuzzer.error.startFailed', { error: fuzzerErrorMessage(cause) }))
@@ -464,6 +490,7 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
     setJobError(null)
     setJobId(item.jobId)
     setReloadNonce((value) => value + 1)
+    setBottomTab('results')
   }
 
   const bytes = useMemo(() => utf8ByteLength(raw), [raw])
@@ -494,31 +521,46 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
   if (vuln === null) {
     return (
       <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border bg-background/60 text-[12px] text-muted-foreground">
-        {t('retest.repeater.empty')}
+        {t('fuzzer.empty')}
       </div>
     )
   }
 
   const showExpectedIssue =
     expectedIssue !== null && (attempted || expectedIssue.key !== 'fuzzer.error.noMarkers')
+  const selectedLabel =
+    selected === null
+      ? ''
+      : selected === 'baseline'
+        ? t('fuzzer.result.baseline')
+        : t('fuzzer.detail.index', { index: selected })
+  const selectedHasError =
+    selectedSummary !== null &&
+    (selectedSummary.status === null || selectedSummary.error !== null)
 
   return (
-    <div
-      data-testid="fuzzer-panel"
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-1 pr-0.5"
-    >
-      <div className="grid gap-3 3xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
-        <section className="flex flex-col rounded-lg border border-border bg-background">
+    <div data-testid="fuzzer-panel" className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
+        {/* ---------------------------------------------------------- request */}
+        <section
+          data-testid="fuzzer-request-pane"
+          aria-label={t('fuzzer.request.paneAria')}
+          className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background"
+        >
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
             <span className="text-[12px] font-medium text-foreground">{t('fuzzer.request.title')}</span>
             <span className="rounded border border-border bg-sidebar px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
               {vuln.id}
             </span>
-            <span className="min-w-0 flex-1 truncate text-right text-[10px] text-muted-foreground" title={t('fuzzer.subtitle')}>
+            <span
+              className="min-w-0 flex-1 truncate text-right text-[10px] text-muted-foreground"
+              title={t('fuzzer.subtitle')}
+            >
               {t('fuzzer.subtitle')}
             </span>
           </div>
-          <div className="p-3">
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <textarea
               ref={textareaRef}
               data-testid="fuzzer-request"
@@ -530,7 +572,7 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
                 setMarkerError(null)
                 setActionError(null)
               }}
-              className="min-h-[196px] w-full resize-y rounded-lg border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-[hsl(220_14%_92%)] caret-[hsl(174_77%_45%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="min-h-[176px] w-full resize-y rounded-lg border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-[hsl(220_14%_92%)] caret-[hsl(174_77%_45%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             />
 
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -587,7 +629,31 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
               </p>
             ) : null}
 
-            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
+            <div className="mt-3">
+              <PayloadSetEditor
+                positions={positions}
+                mode={mode}
+                values={payloadTexts}
+                disabled={starting}
+                onChange={(index, value) =>
+                  setPayloadTexts((current) =>
+                    current.map((entry, entryIndex) => (entryIndex === index ? value : entry))
+                  )
+                }
+                onClear={(index) =>
+                  setPayloadTexts((current) =>
+                    current.map((entry, entryIndex) => (entryIndex === index ? '' : entry))
+                  )
+                }
+                onApplyPreset={(text) =>
+                  setPayloadTexts((current) =>
+                    Array.from({ length: Math.max(positions, 0) }, (_, index) => text || current[index] || '')
+                  )
+                }
+              />
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-2">
               <span className="text-[10px] text-muted-foreground">{t('fuzzer.attack.label')}</span>
               <Select
                 value={mode}
@@ -632,144 +698,265 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
               {t(`fuzzer.attack.hint.${mode}`)}
             </p>
             {showExpectedIssue ? (
-              <p role="alert" className={cn('mt-1.5 text-[10px] leading-relaxed', attempted ? 'text-red-700' : 'text-muted-foreground')}>
+              <p
+                role="alert"
+                className={cn(
+                  'mt-1.5 text-[10px] leading-relaxed',
+                  attempted ? 'text-red-700' : 'text-muted-foreground'
+                )}
+              >
                 {t(expectedIssue.key, expectedIssue.params)}
               </p>
+            ) : null}
+
+            <section className="mt-3 rounded-lg border border-border bg-background">
+              <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+                <span className="text-[12px] font-medium text-foreground">{t('fuzzer.options.title')}</span>
+                <span className="text-[10px] text-muted-foreground">{t('fuzzer.options.hint')}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 px-3 pt-3">
+                <label className="flex flex-col gap-1 text-[10px] text-muted-foreground">
+                  {t('fuzzer.options.concurrency')}
+                  <Input
+                    type="number"
+                    min={1}
+                    max={MAX_FUZZ_CONCURRENCY}
+                    step={1}
+                    data-testid="fuzzer-concurrency"
+                    value={concurrency}
+                    onChange={(event) =>
+                      setConcurrency(clampInt(Number(event.target.value), 1, MAX_FUZZ_CONCURRENCY, 5))
+                    }
+                    className="h-7 w-full px-2 font-mono text-[11px] tabular-nums"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[10px] text-muted-foreground">
+                  {t('fuzzer.options.delay')}
+                  <Input
+                    type="number"
+                    min={0}
+                    max={MAX_FUZZ_DELAY_MS}
+                    step={50}
+                    data-testid="fuzzer-delay"
+                    value={delayMs}
+                    onChange={(event) =>
+                      setDelayMs(clampInt(Number(event.target.value), 0, MAX_FUZZ_DELAY_MS, 0))
+                    }
+                    className="h-7 w-full px-2 font-mono text-[11px] tabular-nums"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2">
+                <label className="flex cursor-pointer items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                  <Checkbox
+                    data-testid="fuzzer-follow-redirects"
+                    checked={followRedirects}
+                    onChange={(event) => setFollowRedirects(event.target.checked)}
+                  />
+                  {t('fuzzer.options.followRedirects')}
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                  <Checkbox
+                    data-testid="fuzzer-stop-on-errors"
+                    checked={stopOnConsecutiveErrors}
+                    onChange={(event) => setStopOnConsecutiveErrors(event.target.checked)}
+                  />
+                  {t('fuzzer.options.stopOnErrors')}
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 border-t border-border px-3 py-2">
+                <Button
+                  size="sm"
+                  data-testid="fuzzer-start"
+                  disabled={starting || isRunning}
+                  onClick={handleStartClick}
+                  className="gap-1.5"
+                >
+                  {starting ? (
+                    <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin poc-spinner" />
+                  ) : (
+                    <Play aria-hidden="true" className="h-3.5 w-3.5" />
+                  )}
+                  {starting ? t('fuzzer.action.starting') : t('fuzzer.action.start')}
+                </Button>
+                {isRunning ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-testid="fuzzer-stop"
+                    disabled={cancelling}
+                    onClick={() => void stopJob()}
+                    className="gap-1.5"
+                  >
+                    {cancelling ? (
+                      <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin poc-spinner" />
+                    ) : (
+                      <Square aria-hidden="true" className="h-3.5 w-3.5" />
+                    )}
+                    {cancelling ? t('fuzzer.action.stopping') : t('fuzzer.action.stop')}
+                  </Button>
+                ) : null}
+                <span className="ml-auto font-mono text-[9.5px] text-muted-foreground">
+                  {t('fuzzer.attack.positions')} · {positions}
+                </span>
+              </div>
+
+              {actionError !== null ? (
+                <p role="alert" className="mx-3 mb-3 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10.5px] leading-relaxed text-red-700">
+                  {actionError}
+                </p>
+              ) : null}
+            </section>
+
+            {job !== null ? (
+              <div
+                data-testid="fuzzer-progress"
+                data-status={job.status}
+                data-completed={job.completed}
+                data-total={job.total}
+                data-percent={progressPercent}
+                className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-sidebar/40 px-2.5 py-1.5"
+              >
+                <div
+                  role="progressbar"
+                  aria-label={t('fuzzer.result.progress')}
+                  aria-valuemin={0}
+                  aria-valuemax={job.total}
+                  aria-valuenow={job.completed}
+                  className="h-1.5 min-w-[80px] flex-1 overflow-hidden rounded-full bg-muted"
+                >
+                  <div
+                    className="h-full rounded-full bg-accent transition-[width] duration-300"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">
+                  {t('fuzzer.result.completed', { completed: job.completed, total: job.total })} ·{' '}
+                  {t('fuzzer.result.percent', { percent: progressPercent })}
+                </span>
+                {stoppedReasonLabel !== null ? (
+                  <span className="font-mono text-[9.5px] text-amber-700">
+                    {t('fuzzer.status.stoppedReason', { reason: stoppedReasonLabel })}
+                  </span>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </section>
 
-        <div className="flex min-w-0 flex-col gap-3">
-          <PayloadSetEditor
-            positions={positions}
-            mode={mode}
-            values={payloadTexts}
-            disabled={starting}
-            onChange={(index, value) =>
-              setPayloadTexts((current) =>
-                current.map((entry, entryIndex) => (entryIndex === index ? value : entry))
-              )
-            }
-            onClear={(index) =>
-              setPayloadTexts((current) =>
-                current.map((entry, entryIndex) => (entryIndex === index ? '' : entry))
-              )
-            }
-            onApplyPreset={(text) =>
-              setPayloadTexts((current) =>
-                Array.from({ length: Math.max(positions, 0) }, (_, index) => text || current[index] || '')
-              )
-            }
-          />
-
-          <section className="rounded-lg border border-border bg-background">
-            <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-              <span className="text-[12px] font-medium text-foreground">{t('fuzzer.options.title')}</span>
-              <span className="text-[10px] text-muted-foreground">{t('fuzzer.options.hint')}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 px-3 pt-3">
-              <label className="flex flex-col gap-1 text-[10px] text-muted-foreground">
-                {t('fuzzer.options.concurrency')}
-                <Input
-                  type="number"
-                  min={1}
-                  max={MAX_FUZZ_CONCURRENCY}
-                  step={1}
-                  data-testid="fuzzer-concurrency"
-                  value={concurrency}
-                  onChange={(event) =>
-                    setConcurrency(clampInt(Number(event.target.value), 1, MAX_FUZZ_CONCURRENCY, 5))
-                  }
-                  className="h-7 w-full px-2 font-mono text-[11px] tabular-nums"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-[10px] text-muted-foreground">
-                {t('fuzzer.options.delay')}
-                <Input
-                  type="number"
-                  min={0}
-                  max={MAX_FUZZ_DELAY_MS}
-                  step={50}
-                  data-testid="fuzzer-delay"
-                  value={delayMs}
-                  onChange={(event) =>
-                    setDelayMs(clampInt(Number(event.target.value), 0, MAX_FUZZ_DELAY_MS, 0))
-                  }
-                  className="h-7 w-full px-2 font-mono text-[11px] tabular-nums"
-                />
-              </label>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2">
-              <label className="flex cursor-pointer items-center gap-1.5 text-[10.5px] text-muted-foreground">
-                <Checkbox
-                  data-testid="fuzzer-follow-redirects"
-                  checked={followRedirects}
-                  onChange={(event) => setFollowRedirects(event.target.checked)}
-                />
-                {t('fuzzer.options.followRedirects')}
-              </label>
-              <label className="flex cursor-pointer items-center gap-1.5 text-[10.5px] text-muted-foreground">
-                <Checkbox
-                  data-testid="fuzzer-stop-on-errors"
-                  checked={stopOnConsecutiveErrors}
-                  onChange={(event) => setStopOnConsecutiveErrors(event.target.checked)}
-                />
-                {t('fuzzer.options.stopOnErrors')}
-              </label>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 border-t border-border px-3 py-2">
-              <Button
-                size="sm"
-                data-testid="fuzzer-start"
-                disabled={starting || isRunning}
-                onClick={handleStartClick}
-                className="gap-1.5"
-              >
-                {starting ? (
-                  <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin poc-spinner" />
-                ) : (
-                  <Play aria-hidden="true" className="h-3.5 w-3.5" />
-                )}
-                {starting ? t('fuzzer.action.starting') : t('fuzzer.action.start')}
-              </Button>
-              {isRunning ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid="fuzzer-stop"
-                  disabled={cancelling}
-                  onClick={() => void stopJob()}
-                  className="gap-1.5"
-                >
-                  {cancelling ? (
-                    <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin poc-spinner" />
-                  ) : (
-                    <Square aria-hidden="true" className="h-3.5 w-3.5" />
-                  )}
-                  {cancelling ? t('fuzzer.action.stopping') : t('fuzzer.action.stop')}
-                </Button>
-              ) : null}
-              <span className="ml-auto font-mono text-[9.5px] text-muted-foreground">
-                {t('fuzzer.attack.positions')} · {positions}
-              </span>
-            </div>
-
-            {actionError !== null ? (
-              <p role="alert" className="mx-3 mb-3 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10.5px] leading-relaxed text-red-700">
-                {actionError}
-              </p>
+        {/* --------------------------------------------------------- response */}
+        <section
+          data-testid="fuzzer-response-pane"
+          aria-label={t('fuzzer.response.aria')}
+          className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background"
+        >
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+            <span className="text-[12px] font-medium text-foreground">{t('fuzzer.response.title')}</span>
+            {selected !== null ? (
+              <>
+                <span className="truncate text-[10px] text-muted-foreground">{selectedLabel}</span>
+                {selectedSummary !== null ? (
+                  <span
+                    data-status={selectedSummary.status ?? ''}
+                    className={cn(
+                      'rounded border px-1.5 py-0.5 font-mono text-[10px] tabular-nums',
+                      selectedHasError
+                        ? 'border-red-300 bg-red-50 text-red-800'
+                        : selectedSummary.status === null
+                          ? 'border-border bg-sidebar text-muted-foreground'
+                          : statusTone(selectedSummary.status)
+                    )}
+                  >
+                    {selectedSummary.status ?? 'ERR'}
+                  </span>
+                ) : null}
+              </>
             ) : null}
-          </section>
-        </div>
+            {selected !== null ? (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                data-testid="fuzzer-response-close"
+                aria-label={t('fuzzer.response.close')}
+                onClick={() => setSelected(null)}
+                className="ml-auto h-6 w-6 shrink-0"
+              >
+                <X aria-hidden="true" className="h-3.5 w-3.5" />
+              </Button>
+            ) : null}
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col">
+            {selected !== null && jobId !== null ? (
+              job !== null ? (
+                <FuzzResultDetail
+                  embedded
+                  jobId={jobId}
+                  index={selected}
+                  targetUrl={vuln.target_url}
+                  onClose={() => setSelected(null)}
+                />
+              ) : (
+                <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-40 w-full" />
+                </div>
+              )
+            ) : (
+              <p className="flex flex-1 items-center justify-center px-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                {t('fuzzer.response.empty')}
+              </p>
+            )}
+          </div>
+        </section>
       </div>
 
+      {/* ------------------------------------------------------------ bottom */}
       <section
-        data-testid="fuzzer-results"
-        className="flex h-[min(56vh,560px)] min-h-[340px] flex-col overflow-hidden rounded-lg border border-border bg-background"
+        data-testid="fuzzer-results-pane"
+        aria-label={t('fuzzer.results.paneAria')}
+        className="flex h-[min(40vh,380px)] min-h-[220px] shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-background"
       >
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-          <span className="text-[12px] font-medium text-foreground">{t('fuzzer.result.title')}</span>
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
+          <div
+            role="tablist"
+            aria-label={t('fuzzer.bottom.aria')}
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-muted p-0.5"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={bottomTab === 'results'}
+              data-testid="fuzzer-bottom-tab-results"
+              onClick={() => setBottomTab('results')}
+              className={cn(
+                'h-6 rounded px-2.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                bottomTab === 'results'
+                  ? 'bg-background font-medium text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {t('fuzzer.bottom.results')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={bottomTab === 'history'}
+              data-testid="fuzzer-bottom-tab-history"
+              onClick={() => setBottomTab('history')}
+              className={cn(
+                'h-6 rounded px-2.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                bottomTab === 'history'
+                  ? 'bg-background font-medium text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {t('fuzzer.bottom.history')}
+            </button>
+          </div>
+
           {job !== null ? (
             <>
               <span
@@ -786,11 +973,15 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
                   {t('fuzzer.result.failed', { count: job.failed })}
                 </span>
               ) : null}
-              <span className="max-w-[300px] truncate font-mono text-[9.5px] text-muted-foreground" title={job.target.origin}>
+              <span
+                className="hidden max-w-[240px] truncate font-mono text-[9.5px] text-muted-foreground 3xl:inline"
+                title={job.target.origin}
+              >
                 {job.target.origin}
               </span>
             </>
           ) : null}
+
           <div className="ml-auto flex items-center gap-1.5">
             <Button
               variant="outline"
@@ -825,57 +1016,36 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
           </div>
         </div>
 
-        {job !== null ? (
-          <div
-            data-testid="fuzzer-progress"
-            data-status={job.status}
-            data-completed={job.completed}
-            data-total={job.total}
-            data-percent={progressPercent}
-            className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5"
-          >
+        {/* Both panels stay mounted so tab switches never lose table/history
+            state; the inactive one is hidden. */}
+        <div
+          data-testid="fuzzer-results"
+          role="tabpanel"
+          aria-label={t('fuzzer.bottom.results')}
+          className={cn(
+            'min-h-0 flex-1 flex-col',
+            bottomTab === 'results' ? 'flex' : 'hidden'
+          )}
+        >
+          {jobError !== null ? (
             <div
-              role="progressbar"
-              aria-label={t('fuzzer.result.progress')}
-              aria-valuemin={0}
-              aria-valuemax={job.total}
-              aria-valuenow={job.completed}
-              className="h-1.5 min-w-[80px] flex-1 overflow-hidden rounded-full bg-muted"
+              role="alert"
+              className="flex flex-wrap items-center gap-2 border-b border-red-200 bg-red-50 px-3 py-1.5 text-[10.5px] text-red-700"
             >
-              <div
-                className="h-full rounded-full bg-accent transition-[width] duration-300"
-                style={{ width: `${progressPercent}%` }}
-              />
+              <span>{t('fuzzer.error.loadJob', { error: jobError })}</span>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => setReloadNonce((value) => value + 1)}
+                className="ml-auto h-5 px-1.5 text-[10px]"
+              >
+                {t('fuzzer.action.retry')}
+              </Button>
             </div>
-            <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">
-              {t('fuzzer.result.completed', { completed: job.completed, total: job.total })} ·{' '}
-              {t('fuzzer.result.percent', { percent: progressPercent })}
-            </span>
-            {stoppedReasonLabel !== null ? (
-              <span className="font-mono text-[9.5px] text-amber-700">
-                {t('fuzzer.status.stoppedReason', { reason: stoppedReasonLabel })}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
 
-        {jobError !== null ? (
-          <div role="alert" className="flex flex-wrap items-center gap-2 border-b border-red-200 bg-red-50 px-3 py-1.5 text-[10.5px] text-red-700">
-            <span>{t('fuzzer.error.loadJob', { error: jobError })}</span>
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={() => setReloadNonce((value) => value + 1)}
-              className="ml-auto h-5 px-1.5 text-[10px]"
-            >
-              {t('fuzzer.action.retry')}
-            </Button>
-          </div>
-        ) : null}
-
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           {jobId === null ? (
-            <p className="flex flex-1 items-center justify-center px-3 py-8 text-[11.5px] text-muted-foreground">
+            <p className="flex flex-1 items-center justify-center px-3 py-6 text-[11.5px] text-muted-foreground">
               {t('fuzzer.result.empty')}
             </p>
           ) : job === null ? (
@@ -888,121 +1058,119 @@ export function FuzzerPanel({ vuln, loading }: FuzzerPanelProps) {
               </p>
             </div>
           ) : (
-            <>
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <FuzzResultsTable
-                  job={job}
-                  results={results}
-                  totalResults={resultsCount}
-                  selected={selected}
-                  onSelect={setSelected}
-                />
-              </div>
-              {selected !== null ? (
-                <FuzzResultDetail
-                  jobId={job.jobId}
-                  index={selected}
-                  targetUrl={vuln.target_url}
-                  onClose={() => setSelected(null)}
-                />
-              ) : null}
-            </>
+            <FuzzResultsTable
+              job={job}
+              results={results}
+              totalResults={resultsCount}
+              selected={selected}
+              onSelect={setSelected}
+            />
           )}
         </div>
-      </section>
 
-      <section data-testid="fuzzer-history" className="rounded-lg border border-border bg-background">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-          <History aria-hidden="true" className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-[12px] font-medium text-foreground">{t('fuzzer.history.title')}</span>
-          {history !== null && history.length > 0 ? (
-            <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">{history.length}</span>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="xs"
-            data-testid="fuzzer-history-refresh"
-            disabled={historyLoading}
-            onClick={() => void refreshHistory()}
-            className="ml-auto h-6 gap-1 px-2 text-[10px]"
-          >
-            <RefreshCcw
-              aria-hidden="true"
-              className={cn('h-3 w-3', historyLoading && 'animate-spin poc-spinner')}
-            />
-            {t('fuzzer.action.refreshHistory')}
-          </Button>
-        </div>
-        {historyError !== null ? (
-          <p role="alert" className="px-3 py-2 text-[10.5px] text-red-700">
-            {t('fuzzer.error.loadHistory', { error: historyError })}
-          </p>
-        ) : history === null ? (
-          <p className="px-3 py-2 text-[10.5px] text-muted-foreground">{t('fuzzer.history.loading')}</p>
-        ) : history.length === 0 ? (
-          <p className="px-3 py-2 text-[10.5px] text-muted-foreground">{t('fuzzer.history.empty')}</p>
-        ) : (
-          <ul className="max-h-[150px] divide-y divide-border overflow-y-auto">
-            {history.map((item) => {
-              const current = item.jobId === jobId
-              return (
-                <li
-                  key={item.jobId}
-                  data-testid="fuzzer-history-row"
-                  data-job-id={item.jobId}
-                  data-status={item.status}
-                  onClick={() => openHistoryJob(item)}
-                  className={cn(
-                    'flex cursor-pointer flex-wrap items-center gap-2 px-3 py-1.5 text-[10.5px] transition-colors hover:bg-muted',
-                    current && 'bg-accent-soft/50'
-                  )}
-                >
-                  <span className="font-mono text-[9.5px] text-muted-foreground">
-                    {item.jobId.slice(0, 8)}
-                  </span>
-                  <span
-                    className="min-w-0 flex-1 truncate font-mono text-[10px] text-foreground"
-                    title={item.targetUrl}
-                  >
-                    {item.targetUrl}
-                  </span>
-                  {item.vulnId !== vuln.id ? (
-                    <span className="rounded border border-border bg-sidebar px-1 py-0.5 text-[9px] text-muted-foreground">
-                      {t('fuzzer.history.otherVuln')}
-                    </span>
-                  ) : null}
-                  <span className={cn('rounded border px-1 py-0.5 font-mono text-[9px]', JOB_STATUS_TONE[item.status])}>
-                    {t(`fuzzer.status.${item.status}`)}
-                  </span>
-                  <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">
-                    {t('fuzzer.history.progress', { completed: item.completed, total: item.total })}
-                  </span>
-                  <span className="font-mono text-[9px] tabular-nums text-muted-foreground">
-                    {formatJobTime(item.createdAt)}
-                  </span>
-                  {current ? (
-                    <span className="rounded border border-accent/40 bg-accent-soft px-1 py-0.5 text-[9px] text-accent">
-                      {t('fuzzer.history.current')}
-                    </span>
-                  ) : null}
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    data-testid="fuzzer-history-open"
-                    aria-label={t('fuzzer.history.openAria', { jobId: item.jobId })}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      openHistoryJob(item)
-                    }}
-                    className="h-5 px-1.5 text-[10px]"
-                  >
-                    {t('fuzzer.history.open')}
-                  </Button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
+        <section
+          data-testid="fuzzer-history"
+          role="tabpanel"
+          aria-label={t('fuzzer.bottom.history')}
+          className={cn(
+            'min-h-0 flex-1 flex-col',
+            bottomTab === 'history' ? 'flex' : 'hidden'
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
+            <History aria-hidden="true" className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-[11px] font-medium text-foreground">{t('fuzzer.history.title')}</span>
+            {history !== null && history.length > 0 ? (
+              <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">{history.length}</span>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="xs"
+              data-testid="fuzzer-history-refresh"
+              disabled={historyLoading}
+              onClick={() => void refreshHistory()}
+              className="ml-auto h-6 gap-1 px-2 text-[10px]"
+            >
+              <RefreshCcw
+                aria-hidden="true"
+                className={cn('h-3 w-3', historyLoading && 'animate-spin poc-spinner')}
+              />
+              {t('fuzzer.action.refreshHistory')}
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {historyError !== null ? (
+              <p role="alert" className="px-3 py-2 text-[10.5px] text-red-700">
+                {t('fuzzer.error.loadHistory', { error: historyError })}
+              </p>
+            ) : history === null ? (
+              <p className="px-3 py-2 text-[10.5px] text-muted-foreground">{t('fuzzer.history.loading')}</p>
+            ) : history.length === 0 ? (
+              <p className="px-3 py-2 text-[10.5px] text-muted-foreground">{t('fuzzer.history.empty')}</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {history.map((item) => {
+                  const current = item.jobId === jobId
+                  return (
+                    <li
+                      key={item.jobId}
+                      data-testid="fuzzer-history-row"
+                      data-job-id={item.jobId}
+                      data-status={item.status}
+                      onClick={() => openHistoryJob(item)}
+                      className={cn(
+                        'flex cursor-pointer flex-wrap items-center gap-2 px-3 py-1.5 text-[10.5px] transition-colors hover:bg-muted',
+                        current && 'bg-accent-soft/50'
+                      )}
+                    >
+                      <span className="font-mono text-[9.5px] text-muted-foreground">
+                        {item.jobId.slice(0, 8)}
+                      </span>
+                      <span
+                        className="min-w-0 flex-1 truncate font-mono text-[10px] text-foreground"
+                        title={item.targetUrl}
+                      >
+                        {item.targetUrl}
+                      </span>
+                      {item.vulnId !== vuln.id ? (
+                        <span className="rounded border border-border bg-sidebar px-1 py-0.5 text-[9px] text-muted-foreground">
+                          {t('fuzzer.history.otherVuln')}
+                        </span>
+                      ) : null}
+                      <span className={cn('rounded border px-1 py-0.5 font-mono text-[9px]', JOB_STATUS_TONE[item.status])}>
+                        {t(`fuzzer.status.${item.status}`)}
+                      </span>
+                      <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">
+                        {t('fuzzer.history.progress', { completed: item.completed, total: item.total })}
+                      </span>
+                      <span className="font-mono text-[9px] tabular-nums text-muted-foreground">
+                        {formatJobTime(item.createdAt)}
+                      </span>
+                      {current ? (
+                        <span className="rounded border border-accent/40 bg-accent-soft px-1 py-0.5 text-[9px] text-accent">
+                          {t('fuzzer.history.current')}
+                        </span>
+                      ) : null}
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        data-testid="fuzzer-history-open"
+                        aria-label={t('fuzzer.history.openAria', { jobId: item.jobId })}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openHistoryJob(item)
+                        }}
+                        className="h-5 px-1.5 text-[10px]"
+                      >
+                        {t('fuzzer.history.open')}
+                      </Button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
       </section>
 
       <DialogPrimitive.Root

@@ -33,42 +33,12 @@ import {
   statusTone
 } from '@renderer/lib/retestResponse'
 import { CurlImportDialog } from './CurlImportDialog'
-import { FuzzerPanel } from './FuzzerPanel'
 import { RepeaterCollectionsDialog } from './RepeaterCollectionsDialog'
 import { RepeaterHistoryDialog } from './RepeaterHistoryDialog'
 
 interface RepeaterPanelProps {
   vuln: Vulnerability | null
   loading: boolean
-}
-
-type RepeaterMode = 'single' | 'fuzzer'
-
-const MODE_STORAGE_KEY = 'cortex.retest.mode'
-
-/** Static ids (and aliases) keep the smoke test selectors stable. */
-const MODE_OPTIONS = [
-  {
-    value: 'single',
-    testId: 'fuzzer-mode-single',
-    alias: 'repeater-mode-single',
-    labelKey: 'retest.repeater.modeSingle'
-  },
-  {
-    value: 'fuzzer',
-    testId: 'fuzzer-mode-fuzzer',
-    alias: 'repeater-mode-fuzzer',
-    labelKey: 'retest.repeater.modeFuzzer'
-  }
-] as const
-
-/** Remember the last used mode; storage failures must never break the panel. */
-function readStoredMode(): RepeaterMode {
-  try {
-    return window.localStorage.getItem(MODE_STORAGE_KEY) === 'fuzzer' ? 'fuzzer' : 'single'
-  } catch {
-    return 'single'
-  }
 }
 
 function describeSendError(cause: unknown, connectionRefused: string): string {
@@ -93,54 +63,11 @@ interface SavedRepeaterEntry {
  * report (all HTTP request steps are selectable) instead of the old generated-JS
  * pipeline. The user edits the raw request and sends it through the retest proxy.
  *
- * This wrapper owns the 单次请求 / Fuzzer mode switch; the single-Repeater body
- * below is the original panel plus history, favorites and curl tools.
+ * The batch Fuzzer lives on its own Web Fuzzer page; this panel stays a
+ * single-request repeater (plus history, favorites and curl tools).
  */
 export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
   const { t } = useI18n()
-  const [mode, setMode] = useState<RepeaterMode>(readStoredMode)
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(MODE_STORAGE_KEY, mode)
-    } catch {
-      /* localStorage may be unavailable in a hardened WebView */
-    }
-  }, [mode])
-
-  const modeSwitch = (
-    <div
-      data-testid="fuzzer-mode"
-      role="tablist"
-      aria-label={t('retest.repeater.modeAria')}
-      className="inline-flex shrink-0 rounded-md border border-border bg-muted p-0.5"
-    >
-      {MODE_OPTIONS.map((option) => (
-        <span
-          key={option.value}
-          data-testid={option.alias}
-          role="presentation"
-          onClick={() => setMode(option.value)}
-          className="inline-flex"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === option.value}
-            data-testid={option.testId}
-            onClick={() => setMode(option.value)}
-            className={`h-7 rounded px-2.5 text-[11.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              mode === option.value
-                ? 'bg-background font-medium text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t(option.labelKey)}
-          </button>
-        </span>
-      ))}
-    </div>
-  )
 
   const header = (
     <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -150,7 +77,6 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
           {vuln.id}
         </span>
       ) : null}
-      <div className="ml-auto">{modeSwitch}</div>
     </div>
   )
 
@@ -175,11 +101,7 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       {header}
-      {mode === 'single' ? (
-        <SingleRepeater vuln={vuln} />
-      ) : (
-        <FuzzerPanel vuln={vuln} loading={loading} />
-      )}
+      <SingleRepeater vuln={vuln} />
     </div>
   )
 }

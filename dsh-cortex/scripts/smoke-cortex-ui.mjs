@@ -1262,14 +1262,14 @@ export async function runCortexUiSmoke(options = {}) {
       return 'brand-free top nav'
     })
 
-    await check('top nav: all 7 workbench cards, correct order + lucide SVG icons', () => {
+    await check('top nav: all 8 workbench cards, correct order + lucide SVG icons', () => {
       const topnav = byTestId('cortex-topnav')
       const buttons = Array.from(topnav.querySelectorAll('nav button'))
       const ids = buttons.map((button) => button.getAttribute('data-testid'))
-      const expected = ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-retest', 'nav-miniapps']
+      const expected = ['nav-dashboard', 'nav-internal', 'nav-nebula', 'nav-assets', 'nav-snapshots', 'nav-retest', 'nav-fuzzer', 'nav-miniapps']
       assert.deepEqual(ids, expected, `nav items: ${ids.join(',')}`)
       const labels = buttons.map((button) => squash(button.textContent, 40))
-      assert.deepEqual(labels, ['漏洞看板', '内网作战', '记忆星云', '资产库', '认知快照', '漏洞复测', '小程序逆向'], `nav labels: ${labels.join('|')}`)
+      assert.deepEqual(labels, ['漏洞看板', '内网作战', '记忆星云', '资产库', '认知快照', '漏洞复测', 'Web Fuzzer', '小程序逆向'], `nav labels: ${labels.join('|')}`)
       const iconClasses = buttons.map((button) => {
         const svg = button.querySelector('svg')
         assert.ok(svg, `nav item ${button.getAttribute('data-testid')} has no lucide <svg> icon`)
@@ -1282,6 +1282,7 @@ export async function runCortexUiSmoke(options = {}) {
         'lucide-boxes',
         'lucide-brain',
         'lucide-flask-conical',
+        'lucide-zap',
         'lucide-package-search'
       ]
       expectedIcons.forEach((iconName, index) => {
@@ -1289,9 +1290,10 @@ export async function runCortexUiSmoke(options = {}) {
       })
       const navEntries = ids.map((id, index) => ({ id, label: labels[index], icon: expectedIcons[index] }))
       // `navItems` stays the original workbench set: test/client/cortex-ui.test.mjs
-      // (outside this change's write scope) pins that list. The feature addition
-      // is reported through `navItemsAll` + `miniappNav` below.
-      structural.navItems = navEntries.filter((entry) => entry.id !== 'nav-miniapps')
+      // pins that list. The feature additions are reported through `navItemsAll`.
+      structural.navItems = navEntries.filter(
+        (entry) => entry.id !== 'nav-miniapps' && entry.id !== 'nav-fuzzer'
+      )
       structural.navItemsAll = navEntries
       structural.activeNav = buttons.filter((button) => button.getAttribute('aria-current') === 'page').map((b) => b.getAttribute('data-testid'))
       assert.deepEqual(structural.activeNav, ['nav-dashboard'], 'dashboard must be the active nav item')
@@ -1317,8 +1319,8 @@ export async function runCortexUiSmoke(options = {}) {
       assert.ok(header, 'missing <header> top nav')
       assert.equal(header.getAttribute('data-testid'), 'cortex-topnav', `header: ${header.className}`)
       const buttons = header.querySelectorAll('button')
-      // 7 nav cards + the language toggle, no window controls.
-      assert.equal(buttons.length, 8, `expected 7 nav buttons + 1 language toggle, found ${buttons.length}`)
+      // 8 nav cards + the language toggle, no window controls.
+      assert.equal(buttons.length, 9, `expected 8 nav buttons + 1 language toggle, found ${buttons.length}`)
       structural.titlebarButtons = 0
       return 'single header row, no window controls'
     })
@@ -1662,17 +1664,32 @@ export async function runCortexUiSmoke(options = {}) {
       return `mounted: ${mounted.join(', ')}`
     })
 
-    await check('retest: single/Fuzzer switch, markers, attack modes and a mocked job', async () => {
+    await check('fuzzer page: Yakit layout, markers, attack modes and a mocked job', async () => {
       const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
       const windowBefore = windowErrors.length
-      assert.ok(byTestId('fuzzer-mode'), 'missing single/Fuzzer mode switch')
-      assert.ok(byTestId('fuzzer-mode-single'), 'missing 单次请求 mode button')
-      const fuzzerButton = byTestId('fuzzer-mode-fuzzer')
-      assert.ok(fuzzerButton, 'missing Fuzzer mode button')
-      assert.equal(byTestId('fuzzer-mode-single').getAttribute('aria-selected'), 'true', 'single mode must be the default')
+      const navFuzzer = byTestId('nav-fuzzer')
+      assert.ok(navFuzzer, 'missing Web Fuzzer nav card')
+      assert.equal(navFuzzer.getAttribute('aria-current'), null)
       await act(async () => {
-        fuzzerButton.click()
+        navFuzzer.click()
       })
+      await waitFor(act, () => byTestId('fuzzer-page'), { label: 'fuzzer page', timeoutMs: 10_000 })
+      assert.equal(byTestId('nav-fuzzer').getAttribute('aria-current'), 'page', 'Web Fuzzer card must become active')
+      const targetRow = await waitFor(act, () => shadow.querySelector('[data-testid="fuzzer-candidate-row"]'), {
+        label: 'fuzzer target row',
+        timeoutMs: 10_000
+      })
+      assert.ok(byTestId('fuzzer-target-search'), 'missing target finding search')
+      assert.ok(targetRow, 'missing target finding row')
+      const requestPane = await waitFor(act, () => byTestId('fuzzer-request-pane'), {
+        label: 'fuzzer request pane',
+        timeoutMs: 10_000
+      })
+      const responsePane = byTestId('fuzzer-response-pane')
+      const resultsPane = byTestId('fuzzer-results-pane')
+      assert.ok(requestPane, 'missing fuzzer request pane')
+      assert.ok(responsePane, 'missing fuzzer response pane')
+      assert.ok(resultsPane, 'missing fuzzer results pane')
       const requestEditor = await waitFor(act, () => byTestId('fuzzer-request'), {
         label: 'fuzzer request editor',
         timeoutMs: 10_000
@@ -1803,11 +1820,31 @@ export async function runCortexUiSmoke(options = {}) {
       })
       assert.ok(byTestId('fuzzer-detail-request'), 'result detail lacks the replaced request')
       assert.ok((detail.textContent || '').includes('200'), 'result detail lacks the response status')
-
-      // Back to the original single repeater: its editor must be intact and the
-      // new history / favorites / curl tools must be available.
+      assert.ok(
+        byTestId('fuzzer-response-pane').contains(detail),
+        'result detail must render in the right-hand response pane'
+      )
+      assert.equal(
+        byTestId('fuzzer-bottom-tab-results').getAttribute('aria-selected'),
+        'true',
+        'results tab must be selected by default'
+      )
       await act(async () => {
-        byTestId('fuzzer-mode-single').click()
+        byTestId('fuzzer-bottom-tab-history').click()
+      })
+      await waitFor(act, () => byTestId('fuzzer-history-row'), {
+        label: 'fuzzer bottom history row',
+        timeoutMs: 10_000
+      })
+
+      // The Repeater card is single-request only now; its editor and the
+      // history / favorites / curl tools must still be available.
+      await act(async () => {
+        byTestId('nav-retest').click()
+      })
+      await waitFor(act, () => byTestId('retest-page'), {
+        label: 'retest page after the fuzzer',
+        timeoutMs: 10_000
       })
       const historyButton = await waitFor(act, () => byTestId('repeater-history-open'), {
         label: 'single-mode history button',
@@ -1880,12 +1917,14 @@ export async function runCortexUiSmoke(options = {}) {
         `page error during the fuzzer flow: ${windowErrors.slice(windowBefore).join(' | ')}`
       )
       structural.fuzzer = {
+        page: true,
+        layout: 'request-left/response-right',
         markers: 2,
         modes: ['sniper', 'battering_ram', 'cluster_bomb'],
         totalCases: 3,
         resultRows: resultRows.length
       }
-      return 'mode switch, 2 markers, Sniper/Battering Ram/Cluster Bomb totals, confirm, progress, results, detail, single-mode tools'
+      return 'Web Fuzzer card, request/response split, 2 markers, Sniper/Battering Ram/Cluster Bomb totals, confirm, progress, results, detail, history tab, single-mode tools'
     })
 
     await check('main view stays isolated inside the shadow root after navigation', () => {
@@ -1895,12 +1934,13 @@ export async function runCortexUiSmoke(options = {}) {
     })
 
     /* ------------------------------------------------- mini-program feature */
-    await check('mini programs: nav entry sits after retest and is visible', () => {
+    await check('mini programs: nav entry sits after the Web Fuzzer and is visible', () => {
       const topnav = byTestId('cortex-topnav')
       const ids = Array.from(topnav.querySelectorAll('nav button')).map((button) =>
         button.getAttribute('data-testid')
       )
-      assert.equal(ids[ids.indexOf('nav-retest') + 1], 'nav-miniapps', `nav order: ${ids.join(',')}`)
+      assert.equal(ids[ids.indexOf('nav-retest') + 1], 'nav-fuzzer', `nav order: ${ids.join(',')}`)
+      assert.equal(ids[ids.indexOf('nav-fuzzer') + 1], 'nav-miniapps', `nav order: ${ids.join(',')}`)
       const button = byTestId('nav-miniapps')
       assert.ok(button, 'mini-program nav entry missing')
       assert.equal(textOf(button), '小程序逆向')
@@ -1910,7 +1950,7 @@ export async function runCortexUiSmoke(options = {}) {
         'mini-program nav entry must use the PackageSearch icon'
       )
       structural.miniappNav = { page: 'miniapps', icon: 'package-search' }
-      return 'nav-miniapps after nav-retest'
+      return 'nav-miniapps after nav-fuzzer'
     })
 
     await check('mini programs: page renders mocked sources and the authorization banner', async () => {

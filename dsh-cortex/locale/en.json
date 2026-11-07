@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Cortex",
-    "description": "The original Cortex workbench in DeepSeek Harness: vulnerability board, internal operations, Memory Nebula, assets, snapshots, retest and mini-program reversing (wxapkg detect/decrypt/unpack/analyze), with 22 native cortex_* agent tools and no MCP."
+    "description": "The original Cortex workbench in DeepSeek Harness: vulnerability board, internal operations, Memory Nebula, assets, snapshots, retest, Web Fuzzer and mini-program reversing (wxapkg detect/decrypt/unpack/analyze), with 22 native cortex_* agent tools and no MCP."
   }
 }

@@ -31,6 +31,15 @@ const RetestPage = lazy(async () => {
 })
 
 /**
+ * The dedicated Web Fuzzer page stays out of the first-screen bundle for the
+ * same reason as the retest lab: it is a desktop-only workbench.
+ */
+const FuzzerPage = lazy(async () => {
+  const module = await import('@renderer/pages/FuzzerPage')
+  return { default: module.FuzzerPage }
+})
+
+/**
  * Mini-program reverse engineering is desktop-only too (it reads local WeChat
  * caches through the Host), so it stays out of the first-screen bundle.
  */
@@ -104,6 +113,10 @@ export default function App() {
                 ) : page === 'retest' ? (
                   <Suspense fallback={<RetestPageFallback />}>
                     <RetestPage dataVersion={dataVersion} />
+                  </Suspense>
+                ) : page === 'fuzzer' ? (
+                  <Suspense fallback={<RetestPageFallback />}>
+                    <FuzzerPage dataVersion={dataVersion} />
                   </Suspense>
                 ) : page === 'miniapps' ? (
                   <Suspense fallback={<MiniappPageFallback />}>

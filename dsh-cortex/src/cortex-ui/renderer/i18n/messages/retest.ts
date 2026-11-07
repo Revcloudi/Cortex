@@ -461,9 +461,7 @@ export const retestMessages: MessageBundle = {
     // Repeater mode switch + single-Repeater additions (history / favorites /
     // curl import+export). Appended block; existing keys above are untouched.
     // ------------------------------------------------------------------
-    'retest.repeater.modeAria': '重放模式',
     'retest.repeater.modeSingle': '单次请求',
-    'retest.repeater.modeFuzzer': 'Fuzzer',
     'retest.repeater.requestSection': '请求',
 
     // Send history
@@ -1008,9 +1006,7 @@ export const retestMessages: MessageBundle = {
     // Repeater mode switch + single-Repeater additions (history / favorites /
     // curl import+export). Appended block; existing keys above are untouched.
     // ------------------------------------------------------------------
-    'retest.repeater.modeAria': 'Replay mode',
     'retest.repeater.modeSingle': 'Single request',
-    'retest.repeater.modeFuzzer': 'Fuzzer',
     'retest.repeater.requestSection': 'Request',
 
     // Send history

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { useI18n } from '@renderer/i18n'
@@ -27,6 +27,12 @@ interface FuzzResultDetailProps {
   /** Finding target URL, used as the HTML preview base origin. */
   targetUrl: string
   onClose: () => void
+  /**
+   * Embedded inside the Fuzzer response pane: fill the parent and let the
+   * parent card provide the title/close header. Defaults to the standalone
+   * card used before the Yakit-style layout.
+   */
+  embedded?: boolean
 }
 
 /**
@@ -34,7 +40,13 @@ interface FuzzResultDetailProps {
  * raw / pretty-JSON / sandboxed-HTML views. The iframe never gets permissions
  * (`sandbox=""`) and never loads the body as a same-origin document.
  */
-export function FuzzResultDetail({ jobId, index, targetUrl, onClose }: FuzzResultDetailProps) {
+export function FuzzResultDetail({
+  jobId,
+  index,
+  targetUrl,
+  onClose,
+  embedded = false
+}: FuzzResultDetailProps) {
   const { t } = useI18n()
   const [detail, setDetail] = useState<FuzzResultDetailData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -92,22 +104,29 @@ export function FuzzResultDetail({ jobId, index, targetUrl, onClose }: FuzzResul
       data-testid="fuzzer-detail"
       data-index={String(index)}
       aria-label={t('fuzzer.detail.title')}
-      className="flex min-h-0 w-full shrink-0 flex-col border-t border-border bg-background lg:w-[46%] lg:min-w-[320px] lg:max-w-[680px] lg:border-l lg:border-t-0"
+      className={cn(
+        'flex min-h-0 flex-col bg-background',
+        embedded
+          ? 'flex-1'
+          : 'w-full shrink-0 border-t border-border lg:w-[46%] lg:min-w-[320px] lg:max-w-[680px] lg:border-l lg:border-t-0'
+      )}
     >
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <span className="text-[12px] font-medium text-foreground">{t('fuzzer.detail.title')}</span>
-        <span className="truncate text-[10px] text-muted-foreground">{title}</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          data-testid="fuzzer-detail-close"
-          aria-label={t('fuzzer.detail.closeAria')}
-          onClick={onClose}
-          className="ml-auto h-6 w-6 shrink-0"
-        >
-          <X aria-hidden="true" className="h-3.5 w-3.5" />
-        </Button>
-      </div>
+      {embedded ? null : (
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <span className="text-[12px] font-medium text-foreground">{t('fuzzer.detail.title')}</span>
+          <span className="truncate text-[10px] text-muted-foreground">{title}</span>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            data-testid="fuzzer-detail-close"
+            aria-label={t('fuzzer.detail.closeAria')}
+            onClick={onClose}
+            className="ml-auto h-6 w-6 shrink-0"
+          >
+            <X aria-hidden="true" className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
 
       <div className="flex items-center gap-1 border-b border-border bg-muted/40 px-3 py-1">
         <span className="mr-auto text-[9.5px] text-muted-foreground">{t('fuzzer.detail.viewAria')}</span>

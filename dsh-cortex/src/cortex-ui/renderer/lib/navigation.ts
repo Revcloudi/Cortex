@@ -1,4 +1,4 @@
-import { Bot, Boxes, Brain, FlaskConical, Network, Orbit, PackageSearch, ShieldAlert, type LucideIcon } from 'lucide-react'
+import { Bot, Boxes, Brain, FlaskConical, Network, Orbit, PackageSearch, ShieldAlert, Zap, type LucideIcon } from 'lucide-react'
 
 export type AppPage =
   | 'dashboard'
@@ -8,6 +8,7 @@ export type AppPage =
   | 'snapshots'
   | 'mcp'
   | 'retest'
+  | 'fuzzer'
   | 'miniapps'
   | 'ai-config'
 
@@ -38,6 +39,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { page: 'assets', labelKey: 'nav.assets', icon: Boxes },
   { page: 'snapshots', labelKey: 'nav.snapshots', icon: Brain },
   { page: 'retest', labelKey: 'nav.retest', icon: FlaskConical },
+  { page: 'fuzzer', labelKey: 'nav.fuzzer', icon: Zap },
   { page: 'miniapps', labelKey: 'nav.miniapps', icon: PackageSearch },
   { page: 'ai-config', labelKey: 'retest.aiConfig.nav', icon: Bot }
 ]
@@ -66,6 +68,10 @@ export const PAGE_META: Record<AppPage, { titleKey: string; descriptionKey: stri
   retest: {
     titleKey: 'nav.retest',
     descriptionKey: 'retest.page.repeaterSubtitle'
+  },
+  fuzzer: {
+    titleKey: 'nav.fuzzer',
+    descriptionKey: 'fuzzer.page.description'
   },
   miniapps: {
     titleKey: 'nav.miniapps',
