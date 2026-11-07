@@ -52,7 +52,12 @@ import {
   normalizeAssetIdentifier,
   normalizeAssetInterfaces,
 } from './shared/types.js'
-import { normalizeInterfaces, normalizeLeaks, normalizeTestParameters } from './normalize-asset.js'
+import {
+  normalizeInterfaces,
+  normalizeLeaks,
+  normalizeProjectName,
+  normalizeTestParameters,
+} from './normalize-asset.js'
 import {
   INTERNAL_LIMITS,
   buildCredentialSuggestions,
@@ -171,7 +176,7 @@ const toLootImportStatus = (value) => toStringList(LOOT_IMPORT_STATUSES, value, 
 function snapshotPayloadFromRow(row) {
   const str = (value) => (typeof value === 'string' ? value : '')
   return {
-    project_name: str(row.project_name),
+    project_name: normalizeProjectName(str(row.project_name)),
     target_hosts: parseJsonArray(row.target_hosts).filter((item) => typeof item === 'string'),
     current_phase: str(row.current_phase),
     unfinished_tasks: parseJsonArray(row.unfinished_tasks),
@@ -254,7 +259,7 @@ function mapAssetRow(row) {
   return {
     host_port: row.host_port,
     host: row.host || deriveAssetHost(row.host_port),
-    project_name: row.project_name,
+    project_name: normalizeProjectName(row.project_name),
     tech_stack: row.tech_stack ?? '',
     auth_required: row.auth_required === 1,
     status: toAssetStatus(row.status),
@@ -283,7 +288,7 @@ function mapSnapshotRow(row) {
 function mapFootholdRow(row, hostIds) {
   return {
     id: row.id,
-    project_name: row.project_name,
+    project_name: normalizeProjectName(row.project_name),
     entry_host_port: row.entry_host_port,
     entry_vuln_id: row.entry_vuln_id,
     access_type: toFootholdAccessType(row.access_type),
@@ -302,7 +307,7 @@ function mapFootholdRow(row, hostIds) {
 function mapInternalHostRow(row) {
   return {
     id: row.id,
-    project_name: row.project_name,
+    project_name: normalizeProjectName(row.project_name),
     ip: row.ip,
     hostname: row.hostname,
     os: row.os,
@@ -320,7 +325,7 @@ function mapInternalHostRow(row) {
 function mapInternalServiceRow(row) {
   return {
     id: row.id,
-    project_name: row.project_name,
+    project_name: normalizeProjectName(row.project_name),
     host_id: row.host_id,
     port: row.port,
     protocol: row.protocol,
@@ -343,7 +348,7 @@ function mapInternalServiceRow(row) {
 function mapCredentialRow(row) {
   return {
     id: row.id,
-    project_name: row.project_name,
+    project_name: normalizeProjectName(row.project_name),
     type: toCredentialType(row.type),
     username: row.username,
     domain: row.domain,
@@ -363,7 +368,7 @@ function mapCredentialRow(row) {
 function mapPivotRow(row, hops, reachableSubnets) {
   return {
     id: row.id,
-    project_name: row.project_name,
+    project_name: normalizeProjectName(row.project_name),
     foothold_id: row.foothold_id,
     kind: toPivotKind(row.kind),
     local_host: row.local_host,
@@ -396,7 +401,7 @@ function mapCredentialTrialRow(row) {
 function mapLootImportRow(row) {
   return {
     id: row.id,
-    project_name: row.project_name,
+    project_name: normalizeProjectName(row.project_name),
     entry_host_port: row.entry_host_port,
     filename: row.filename,
     sha256: row.sha256,
@@ -663,7 +668,7 @@ function listInternalProjects(db) {
     )
     .all()
   return rows.map((row) => ({
-    project_name: row.project_name,
+    project_name: normalizeProjectName(row.project_name),
     counts: countInternalScope(db, row.project_name),
   }))
 }

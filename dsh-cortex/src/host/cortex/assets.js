@@ -21,7 +21,12 @@ import {
   sendJson,
 } from '../http.js'
 import { jsonArray, likePattern, text, vulnListItem } from './vulns.js'
-import { normalizeInterfaces, normalizeLeaks, normalizeTestParameters } from './normalize-asset.js'
+import {
+  normalizeInterfaces,
+  normalizeLeaks,
+  normalizeProjectName,
+  normalizeTestParameters,
+} from './normalize-asset.js'
 
 const ASSET_STATUSES = ['Alive', 'Dead', 'WAF_Blocked']
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']
@@ -105,7 +110,7 @@ function assetListItem(row) {
   return {
     host_port: text(source.host_port),
     host: text(source.host),
-    project_name: text(source.project_name),
+    project_name: normalizeProjectName(text(source.project_name)),
     tech_stack: text(source.tech_stack),
     auth_required: bool01(source.auth_required),
     status: ASSET_STATUSES.includes(text(source.status)) ? text(source.status) : 'Alive',
@@ -125,7 +130,7 @@ function assetContext(row) {
   return {
     host_port: text(source.host_port),
     host: text(source.host),
-    project_name: text(source.project_name),
+    project_name: normalizeProjectName(text(source.project_name)),
     tech_stack: text(source.tech_stack),
     auth_required: bool01(source.auth_required),
     status: ASSET_STATUSES.includes(text(source.status)) ? text(source.status) : 'Alive',

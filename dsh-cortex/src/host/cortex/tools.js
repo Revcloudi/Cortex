@@ -7,7 +7,13 @@
  * honours the same schema-v5 guard and read-only mode as the HTTP API.
  */
 import { withBusyRetry } from '../db.js'
-import { normalizeInterfaces, normalizeLeaks, normalizeTestParameters } from './normalize-asset.js'
+import {
+  normalizeInterfaces,
+  normalizeLeaks,
+  normalizeProjectName,
+  normalizeTestParameters,
+} from './normalize-asset.js'
+import { auditCompleteness, syncInternalScope } from './data-tools.js'
 
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 const STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed']
@@ -403,9 +409,53 @@ export function createCortexToolDefinitions({ holder, config }) {
       tech_stack: { type: 'string' },
       auth_required: { type: 'boolean' },
       status: { type: 'string', enum: ['Alive', 'Dead', 'WAF_Blocked'] },
-      interfaces: { type: 'array', items: { type: 'object', description: '{path (required), method?, params? (query/body string), request? (complete raw HTTP request)}' }, description: 'Structured API interfaces; raw static files are not interfaces' },
-      leaked_infos: { type: 'array', items: { type: 'object', description: '{info_type (Credential|API_Key|Token|PII|Internal_IP|Other), value, source, potential_impact}' } },
-      test_parameters: { type: 'array', items: { type: 'object', description: '{name, endpoint, location, values[], pattern?, source, tested?, notes?, related_vuln_ids?}' } },
+      interfaces: {
+        type: 'array',
+        description: 'Structured API interfaces; raw static files are not interfaces. Example: {path: "/api/login", method: "POST", params: "{\\"user\\":\\"a\\"}", request: "POST /api/login HTTP/1.1\nHost: host\n\n{...}"}',
+        items: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'API path (required)' },
+            method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'] },
+            params: { type: 'string', description: 'Query string or body fields' },
+            request: { type: 'string', description: 'Complete raw HTTP request (request line + headers + blank line + body)' },
+          },
+          required: ['path'],
+        },
+      },
+      leaked_infos: {
+        type: 'array',
+        description: 'Secrets/PII/internal IPs. Example: {info_type: "Token", value: "eyJ...", source: "/js/app.js", potential_impact: "可伪造会话"}',
+        items: {
+          type: 'object',
+          properties: {
+            info_type: { type: 'string', enum: ['Credential', 'API_Key', 'Token', 'PII', 'Internal_IP', 'Other'] },
+            value: { type: 'string' },
+            source: { type: 'string', description: 'Where it was found (URL/file/JS bundle)' },
+            potential_impact: { type: 'string' },
+          },
+          required: ['info_type', 'value', 'source', 'potential_impact'],
+        },
+      },
+      test_parameters: {
+        type: 'array',
+        description: 'Non-secret seeds for authz tests. Example: {name: "orderId", endpoint: "GET /api/orders/{id}", location: "path", values: ["1001"], source: "/js/app.js", pattern: "sequential numeric"}',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            endpoint: { type: 'string' },
+            location: { type: 'string', enum: ['path', 'query', 'body', 'header', 'cookie'] },
+            values: { type: 'array', items: { type: 'string' } },
+            pattern: { type: 'string' },
+            source: { type: 'string' },
+            tested: { type: 'boolean' },
+            notes: { type: 'string' },
+            related_vuln_ids: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['name', 'endpoint', 'location', 'source'],
+        },
+      },
       related_vuln_ids: { type: 'array', items: { type: 'string' } },
       mode: { type: 'string', enum: ['merge', 'replace'] },
     },
@@ -414,7 +464,7 @@ export function createCortexToolDefinitions({ holder, config }) {
       assertWritable(holder)
       const db = ensureDb(holder)
       const hostPort = text(args.host_port).trim()
-      const project = text(args.project_name).trim()
+      const project = normalizeProjectName(text(args.project_name))
       if (!hostPort || !project) throw new Error('host_port and project_name are required')
       const merge = args.mode !== 'replace'
       const existing = db.prepare('SELECT * FROM assets WHERE host_port = ?').get(hostPort)
@@ -456,8 +506,30 @@ export function createCortexToolDefinitions({ holder, config }) {
         }
       })
       holder.refreshFileStamp()
+      const counts = {
+        interfaces: jsonArray(values.interfaces).length,
+        leaks: jsonArray(values.leaked_infos).length,
+        parameters: jsonArray(values.test_parameters).length,
+      }
+      const warnings = []
+      for (const [name, key] of [
+        ['interfaces', 'interfaces'],
+        ['leaked_infos', 'leaks'],
+        ['test_parameters', 'parameters'],
+      ]) {
+        if (args[name] === undefined) continue
+        const sent = Array.isArray(args[name]) ? args[name].length : 0
+        if (sent > counts[key]) warnings.push(`${name}: ${sent - counts[key]} invalid entries dropped by normalization`)
+      }
+      if (counts.interfaces === 0) warnings.push('interfaces is empty — add {path, method, params?, request?} for each API')
+      if (counts.leaks === 0) warnings.push('leaked_infos is empty — record secrets/tokens/internal IPs with value+source+impact')
+      if (counts.parameters === 0) warnings.push('test_parameters is empty — record id/tenant/order seeds with name+endpoint+location+values+source')
       return {
-        text: `${LOG} ${existing ? (merge ? 'merged' : 'replaced') : 'created'} asset ${hostPort} (project ${project})`,
+        text: [
+          `${LOG} ${existing ? (merge ? 'merged' : 'replaced') : 'created'} asset ${hostPort} (project ${project})`,
+          `stored: interfaces=${counts.interfaces}, leaked_infos=${counts.leaks}, test_parameters=${counts.parameters}`,
+          ...warnings.map((warning) => `warning: ${warning}`),
+        ].join('\n'),
       }
     },
   )
@@ -483,7 +555,7 @@ export function createCortexToolDefinitions({ holder, config }) {
     async (args) => {
       assertWritable(holder)
       const db = ensureDb(holder)
-      const project = text(args.project_name).trim()
+      const project = normalizeProjectName(text(args.project_name))
       if (!project) throw new Error('project_name is required')
       const stringList = (name) =>
         args[name] === undefined
@@ -618,7 +690,7 @@ export function createCortexToolDefinitions({ holder, config }) {
         .all(...params)
       const lines = rows.map(
         (row) =>
-          `${row.host_port} | ${row.status} | ${row.project_name} | ifaces=${jsonArray(row.interfaces).length} leaks=${jsonArray(row.leaked_infos).length} params=${jsonArray(row.test_parameters).length} vulns=${jsonArray(row.related_vuln_ids).length} | ${row.tech_stack}`,
+          `${row.host_port} | ${row.status} | ${normalizeProjectName(row.project_name)} | ifaces=${jsonArray(row.interfaces).length} leaks=${jsonArray(row.leaked_infos).length} params=${jsonArray(row.test_parameters).length} vulns=${jsonArray(row.related_vuln_ids).length} | ${row.tech_stack}`,
       )
       return { text: [`${LOG} ${rows.length} assets`, ...lines].join('\n') }
     },
@@ -639,7 +711,7 @@ export function createCortexToolDefinitions({ holder, config }) {
       const relatedIds = jsonArray(row.related_vuln_ids).filter((entry) => typeof entry === 'string')
       const parts = [
         `# ${row.host_port}`,
-        `host: ${row.host} · project: ${row.project_name}`,
+        `host: ${row.host} · project: ${normalizeProjectName(row.project_name)}`,
         `status: ${row.status} · auth_required: ${row.auth_required ? 'true' : 'false'} · last_seen: ${row.last_seen}`,
         `tech_stack: ${row.tech_stack}`,
         '',
@@ -779,6 +851,120 @@ export function createCortexToolDefinitions({ holder, config }) {
     },
   )
 
+  const auditTool = defineTool(
+    'cortex_audit_completeness',
+    'Audit local Cortex data completeness: per project assets missing interfaces/leaks/test parameters, vulnerability records with incomplete evidence, internal-scope entity counts and snapshot counts. Run this after a testing phase and fill every reported gap before finishing.',
+    { project_name: { type: 'string', description: 'Optional project filter (canonical name)' } },
+    [],
+    async (args) => ({ text: auditCompleteness({ holder, args }).text }),
+  )
+
+  const internalSyncTool = defineTool(
+    'cortex_sync_internal_scope',
+    'Register internal operations data for a project (schema v3): internal_hosts, internal_services, footholds, credentials and pivots. Call it after initial access and whenever new internal hosts/services/credentials are found. Arrays are upserted; footholds accept host_ips to link reachable hosts, pivots accept hops [{ref_kind, ref_id, label?, via?}].',
+    {
+      project_name: { type: 'string', minLength: 1, maxLength: 120 },
+      internal_hosts: {
+        type: 'array',
+        description: 'Example: {ip: "10.0.0.5", hostname: "db01", os: "Ubuntu 22.04", subnet: "10.0.0.0/24", state: "alive", source: "nmap"}',
+        items: {
+          type: 'object',
+          properties: {
+            ip: { type: 'string' },
+            hostname: { type: 'string' },
+            os: { type: 'string' },
+            subnet: { type: 'string' },
+            state: { type: 'string', enum: ['unknown', 'alive', 'compromised', 'unreachable', 'firewalled'] },
+            source: { type: 'string' },
+            confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+          },
+          required: ['ip'],
+        },
+      },
+      internal_services: {
+        type: 'array',
+        description: 'Example: {ip: "10.0.0.5", port: 6379, protocol: "tcp", service: "redis", banner: "Redis 7.4", state: "open"}',
+        items: {
+          type: 'object',
+          properties: {
+            ip: { type: 'string' },
+            host_id: { type: 'string' },
+            port: { type: 'integer' },
+            protocol: { type: 'string' },
+            service: { type: 'string' },
+            banner: { type: 'string' },
+            state: { type: 'string', enum: ['open', 'closed', 'filtered', 'unknown'] },
+            source: { type: 'string' },
+          },
+          required: ['port'],
+        },
+      },
+      footholds: {
+        type: 'array',
+        description: 'Example: {entry_host_port: "https://target/", entry_vuln_id: "VULN-...", access_type: "rce", privilege_level: "admin", host_ips: ["10.0.0.5"], evidence: "id; whoami", notes: "..."}',
+        items: {
+          type: 'object',
+          properties: {
+            entry_host_port: { type: 'string' },
+            entry_vuln_id: { type: 'string' },
+            access_type: { type: 'string', enum: ['rce', 'webshell', 'ssrf_proxy', 'credential', 'vpn', 'other'] },
+            privilege_level: { type: 'string', enum: ['user', 'admin', 'system', 'domain_admin', 'unknown'] },
+            status: { type: 'string', enum: ['planned', 'established', 'degraded', 'lost'] },
+            evidence: { type: 'string' },
+            notes: { type: 'string' },
+            host_ips: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['entry_host_port'],
+        },
+      },
+      credentials: {
+        type: 'array',
+        description: 'Example: {type: "password", username: "deploy", secret: "***", host: "10.0.0.5", service: "ssh", source: "backup.sh", confidence: "high", status: "valid"}',
+        items: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['password', 'ntlm_hash', 'netntlmv2', 'kerberos_ticket', 'ssh_key', 'cert', 'api_key', 'other'] },
+            username: { type: 'string' },
+            domain: { type: 'string' },
+            secret: { type: 'string' },
+            host: { type: 'string' },
+            port: { type: 'integer' },
+            protocol: { type: 'string' },
+            service: { type: 'string' },
+            source: { type: 'string' },
+            confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+            status: { type: 'string', enum: ['untested', 'valid', 'invalid', 'expired'] },
+            notes: { type: 'string' },
+          },
+        },
+      },
+      pivots: {
+        type: 'array',
+        description: 'Example: {entry_host_port: "https://target/", kind: "proxy", local_port: 1080, local_protocol: "socks5", tool: "chisel", status: "established"}',
+        items: {
+          type: 'object',
+          properties: {
+            foothold_id: { type: 'string' },
+            entry_host_port: { type: 'string' },
+            kind: { type: 'string', enum: ['chain', 'proxy'] },
+            local_host: { type: 'string' },
+            local_port: { type: 'integer' },
+            local_protocol: { type: 'string' },
+            tool: { type: 'string' },
+            status: { type: 'string', enum: ['planned', 'established', 'degraded', 'lost'] },
+            notes: { type: 'string' },
+            hops: { type: 'array', items: { type: 'object' } },
+          },
+        },
+      },
+    },
+    ['project_name'],
+    async (args) => {
+      assertWritable(holder)
+      return { text: syncInternalScope({ holder, args }).text }
+    },
+  )
+
   const tools = [
     listVulns,
     getVuln,
@@ -793,6 +979,8 @@ export function createCortexToolDefinitions({ holder, config }) {
     saveSnapshot,
     internalOverview,
     graphSummary,
+    auditTool,
+    internalSyncTool,
   ]
   return readOnly ? tools.map((tool) => ({ ...tool, description: `${tool.description} (current host: read-only)` })) : tools
 }

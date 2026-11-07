@@ -39,6 +39,8 @@ test('registers the Cortex agent tool surface without MCP', () => {
     'cortex_save_snapshot',
     'cortex_internal_overview',
     'cortex_graph_summary',
+    'cortex_audit_completeness',
+    'cortex_sync_internal_scope',
   ])
   for (const tool of tools) {
     assert.ok(tool.description.length > 20)
@@ -234,6 +236,44 @@ test('cortex_save_snapshot creates, updates and guards existing projects', async
   assert.match(forced.text, /snapshot saved:/)
   const listed = await call('cortex_list_snapshots', { project: 'tool-snapshot-test' })
   assert.match(listed.text, /2 snapshots/)
+})
+
+test('cortex_sync_internal_scope registers hosts/services/footholds/credentials/pivots', async () => {
+  await call('cortex_sync_asset_info', {
+    host_port: 'http://internal.example.test:9443/',
+    project_name: '__tool_internal_test__',
+    interfaces: [{ path: '/', method: 'GET' }],
+  })
+  const synced = await call('cortex_sync_internal_scope', {
+    project_name: '__tool_internal_test__',
+    internal_hosts: [{ ip: '10.9.9.9', hostname: 'db01', os: 'Ubuntu 22.04', state: 'alive' }],
+    internal_services: [{ ip: '10.9.9.9', port: 6379, protocol: 'tcp', service: 'redis', banner: 'Redis 7.4' }],
+    footholds: [
+      {
+        entry_host_port: 'http://internal.example.test:9443/',
+        access_type: 'rce',
+        privilege_level: 'admin',
+        evidence: 'id; whoami',
+        host_ips: ['10.9.9.9'],
+      },
+    ],
+    credentials: [{ type: 'password', username: 'deploy', secret: 'demo', host: '10.9.9.9', source: 'backup.sh', status: 'valid' }],
+    pivots: [{ entry_host_port: 'http://internal.example.test:9443/', kind: 'proxy', local_port: 1080, local_protocol: 'socks5' }],
+  })
+  assert.match(synced.text, /internal scope updated/)
+  assert.match(synced.text, /hosts \+1/)
+  assert.match(synced.text, /footholds \+1/)
+  assert.match(synced.text, /credentials \+1/)
+  const audit = await call('cortex_audit_completeness', { project_name: '__tool_internal_test__' })
+  assert.match(audit.text, /footholds 1, hosts 1, services 1, credentials 1, pivots 1/)
+  assert.match(audit.text, /snapshots 0/)
+})
+
+test('cortex_audit_completeness reports gaps in current library data', async () => {
+  const audit = await call('cortex_audit_completeness', {})
+  assert.match(audit.text, /completeness audit/)
+  assert.match(audit.text, /vulnerabilities:/)
+  assert.match(audit.text, /Fill gaps with cortex_sync_asset_info/)
 })
 
 test('read-only host rejects the write tools', async () => {

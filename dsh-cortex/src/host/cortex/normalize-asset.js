@@ -29,6 +29,20 @@ const pick = (...values) => {
   return ''
 }
 
+/**
+ * Canonical project label: agents sometimes write `Example SRC` and
+ * `Example_SRC`; underscores and repeated spaces are display noise. The
+ * graph groups by this value, so normalizing it merges variant roots.
+ */
+export function normalizeProjectName(value) {
+  const label = (typeof value === 'string' ? value : '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  // CJK projects often get written as `Example_SRC` vs `Example SRC`;
+  // merge those variants without renaming pure-ASCII projects like `app_web`.
+  return /[\u4e00-\u9fff]/.test(label) ? label.replace(/_/g, ' ').replace(/\s+/g, ' ').trim() : label
+}
+
 export function parseJsonArray(value) {
   if (Array.isArray(value)) return value
   if (typeof value === 'string' && value.trim().length > 0) {
