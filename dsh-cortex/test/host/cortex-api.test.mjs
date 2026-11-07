@@ -1420,6 +1420,33 @@ describe('cortex: security fences', () => {
     assert.equal(json && json.code, 'FORBIDDEN_PEER')
   })
 
+  it('accepts writes from the DSH app origin (Sec-Fetch-Site same-origin)', async () => {
+    // The DSH page runs on the custom `dsh-app://app` origin, so its writes are
+    // same-origin but not loopback http(s); the fence must trust Sec-Fetch-Site
+    // instead of the scheme or every UI write (delete/status/archive) fails.
+    const dshHeaders = { Origin: 'dsh-app://app', 'Sec-Fetch-Site': 'same-origin' }
+    const missing = expectOk(
+      await readServer.request('/cortex-api/cortex/vulns/VULN-NOT-EXIST', {
+        method: 'DELETE',
+        headers: dshHeaders,
+      }),
+    )
+    assert.equal(missing.deleted, false, 'unknown id reports deleted:false instead of a fence 403')
+
+    const patchMissing = await readServer.request('/cortex-api/cortex/vulns/VULN-NOT-EXIST/status', {
+      method: 'PATCH',
+      headers: { ...dshHeaders, 'Content-Type': 'application/json' },
+      body: { status: 'Confirmed' },
+    })
+    expectCode(patchMissing, 404, 'NOT_FOUND')
+
+    const crossSite = await readServer.request('/cortex-api/cortex/vulns/VULN-NOT-EXIST', {
+      method: 'DELETE',
+      headers: { Origin: 'dsh-app://app', 'Sec-Fetch-Site': 'cross-site' },
+    })
+    expectCode(crossSite, 403, 'FORBIDDEN_ORIGIN')
+  })
+
   it('rejects cross-site writes, foreign Origins and non-JSON bodies', async () => {
     let res = await server.request('/cortex-api/cortex/vulns/VULN-20261101-001/status', {
       method: 'PATCH',

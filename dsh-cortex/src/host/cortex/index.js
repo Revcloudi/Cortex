@@ -132,19 +132,21 @@ function assertWriteFence(req, method) {
   }
   const headers = (req && req.headers) || {}
   const origin = headers.origin
+  const fetchSite = String(headers['sec-fetch-site'] || '').trim().toLowerCase()
   if (origin !== undefined && origin !== null && String(origin).trim().length > 0) {
     if (!isLoopbackOrigin(String(origin))) {
-      throw forbidden('FORBIDDEN_ORIGIN', 'write request origin is not allowed')
+      // DSH renders the plugin from the custom `dsh-app://app` origin; its
+      // same-origin DELETE carries `Sec-Fetch-Site: same-origin`, which is the
+      // signal we trust (a cross-site page would report cross-site).
+      if (fetchSite !== 'same-origin' && fetchSite !== 'none') {
+        throw forbidden('FORBIDDEN_ORIGIN', 'write request origin is not allowed')
+      }
     }
   }
-  const fetchSite = headers['sec-fetch-site']
-  if (fetchSite !== undefined && fetchSite !== null && String(fetchSite).trim().length > 0) {
-    const site = String(fetchSite).trim().toLowerCase()
-    if (site !== 'same-origin' && site !== 'none') {
-      throw forbidden('FORBIDDEN_ORIGIN', 'cross-site write requests are not allowed', {
-        header: 'Sec-Fetch-Site',
-      })
-    }
+  if (fetchSite.length > 0 && fetchSite !== 'same-origin' && fetchSite !== 'none') {
+    throw forbidden('FORBIDDEN_ORIGIN', 'cross-site write requests are not allowed', {
+      header: 'Sec-Fetch-Site',
+    })
   }
 }
 

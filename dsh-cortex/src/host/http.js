@@ -135,7 +135,14 @@ export function assertSameOriginWrite(req) {
   const origin = headers.origin
   if (origin !== undefined && origin !== null && String(origin).trim().length > 0) {
     if (!isLoopbackOrigin(String(origin))) {
-      throw forbidden('FORBIDDEN_ORIGIN', 'write request origin is not allowed')
+      // The DSH page origin is the custom `dsh-app://app` scheme, not a
+      // loopback http(s) origin. Its same-origin fetch still carries
+      // `Sec-Fetch-Site: same-origin`; trust that rather than the scheme, so
+      // UI writes are not rejected while cross-site pages stay blocked.
+      const site = String(headers['sec-fetch-site'] || '').trim().toLowerCase()
+      if (site !== 'same-origin' && site !== 'none') {
+        throw forbidden('FORBIDDEN_ORIGIN', 'write request origin is not allowed')
+      }
     }
   }
 
