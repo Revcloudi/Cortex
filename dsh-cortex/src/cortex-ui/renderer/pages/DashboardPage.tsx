@@ -304,7 +304,7 @@ export function DashboardPage({
     [items]
   )
 
-  const handleExportSelected = async (outputDir?: string) => {
+  const handleExportSelected = async (outputDir?: string, format?: 'md' | 'docx' | 'pdf') => {
     const ids = [...selectedIds]
     if (ids.length === 0) return
     const api = getApi()
@@ -315,7 +315,7 @@ export function DashboardPage({
     }
     setExporting(true)
     try {
-      const result = await api.exportVulnerabilities(ids, outputDir)
+      const result = await api.exportVulnerabilities(ids, { outputDir, format })
       const savedPath = result.savedPaths?.[0]
       if (!result.cancelled) {
         const message =
@@ -536,7 +536,7 @@ export function DashboardPage({
         count={selectedCount}
         pending={exporting}
         onOpenChange={setExportOpen}
-        onConfirm={(outputDir) => void handleExportSelected(outputDir)}
+        onConfirm={(outputDir, format) => void handleExportSelected(outputDir, format)}
       />
     </>
   )

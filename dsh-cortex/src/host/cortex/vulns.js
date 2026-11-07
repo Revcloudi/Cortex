@@ -34,6 +34,7 @@ import {
 } from '../http.js'
 import * as dto from '../dto.js'
 import { buildVulnReport, reportFilename } from '../reports.js'
+import { renderDocxReport, renderPdfReport } from '../reports-office.js'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -49,6 +50,7 @@ const MAX_ID_LENGTH = 100
 const MAX_BULK_IDS = 500
 const MAX_HOST_FILTER = 255
 const MAX_EXPORT_IDS = 200
+const EXPORT_FORMATS = ['md', 'docx', 'pdf']
 
 const VULN_ORDER = 'ORDER BY created_at DESC, rowid DESC'
 
@@ -499,6 +501,11 @@ export async function handleDeleteMany({ req, res, holder, bumpRev }) {
 export async function handleExport({ req, res, holder, bumpRev }) {
   const body = await readJsonBody(req)
   const ids = requireIdList(body, 'ids', MAX_EXPORT_IDS)
+  /** Report format: Markdown by default; Word/PDF are generated Host-side. */
+  const format = body.format === undefined ? 'md' : String(body.format).trim().toLowerCase()
+  if (!EXPORT_FORMATS.includes(format)) {
+    throw badRequest('format must be md, docx or pdf', { field: 'format' })
+  }
   /** Optional user-selected output directory (absolute path, `~` allowed). */
   let requestedDir
   if (body.outputDir !== undefined) {
@@ -542,16 +549,24 @@ export async function handleExport({ req, res, holder, bumpRev }) {
       targetUrl: item.target_url,
       host: item.host,
     }))
-    files.push({
-      id,
-      filename: reportFilename(row.vuln_name && /^[\x20-\x7e]+$/.test(String(row.vuln_name)) ? String(row.vuln_name) : id),
-      content: buildVulnReport(detail, related),
-    })
+    const baseName = reportFilename(
+      row.vuln_name && /^[\x20-\x7e]+$/.test(String(row.vuln_name)) ? String(row.vuln_name) : id,
+    ).replace(/\.md$/, '')
+    const markdown = buildVulnReport(detail, related)
+    const title = String(row.vuln_name || id)
+    if (format === 'md') {
+      files.push({ id, filename: `${baseName}.md`, content: markdown })
+      continue
+    }
+    const buffer =
+      format === 'docx'
+        ? await renderDocxReport(markdown, { title })
+        : await renderPdfReport(markdown, { title })
+    files.push({ id, filename: `${baseName}.${format}`, format, buffer })
   }
   // The DSH desktop WebView may block browser downloads, so the Host also
-  // writes the Markdown reports to ~/.cortex/exports/<timestamp>/ and returns
-  // the absolute paths. The renderer still attempts a normal download, but the
-  // toast can then point at a real file that always exists.
+  // writes the reports to the selected directory (or ~/.cortex/exports/<stamp>)
+  // and returns the absolute paths. The toast then points at a real file.
   const savedPaths = []
   if (files.length > 0) {
     try {
@@ -566,14 +581,13 @@ export async function handleExport({ req, res, holder, bumpRev }) {
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index]
         const safeName = String(file.filename).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 120) || file.id
-        const baseName = safeName.endsWith('.md') ? safeName : `${safeName}.md`
-        const target = join(exportDir, files.length > 1 ? `${String(index + 1).padStart(2, '0')}-${baseName}` : baseName)
-        writeFileSync(target, file.content, 'utf8')
+        const target = join(exportDir, files.length > 1 ? `${String(index + 1).padStart(2, '0')}-${safeName}` : safeName)
+        writeFileSync(target, file.buffer ?? file.content, file.buffer ? undefined : 'utf8')
         savedPaths.push(target)
       }
     } catch (error) {
       // Filesystem failure must not break the export response; the inline
-      // files still let the browser download attempt proceed. A selected
+      // Markdown still lets the browser download attempt proceed. A selected
       // directory failure is reported so the user can correct the path.
       if (requestedDir !== undefined) {
         throw badRequest(`cannot write to outputDir: ${error instanceof Error ? error.message : String(error)}`, {
@@ -582,9 +596,15 @@ export async function handleExport({ req, res, holder, bumpRev }) {
       }
     }
   }
+  // Binary formats carry no inline body: the saved file is the deliverable.
+  const responseFiles = files.map((file) =>
+    file.buffer
+      ? { id: file.id, filename: file.filename, format: file.format, size: file.buffer.length }
+      : { id: file.id, filename: file.filename, content: file.content },
+  )
   // Export is a read-only projection: no revision bump.
   void bumpRev
-  sendJson(res, 200, { cancelled: files.length === 0, files, savedPaths })
+  sendJson(res, 200, { cancelled: files.length === 0, files: responseFiles, savedPaths })
 }
 
 export { SEVERITIES, STATUSES, REALM_FILTERS, VULN_ORDER }

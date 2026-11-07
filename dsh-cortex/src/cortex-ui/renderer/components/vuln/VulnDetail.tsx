@@ -254,16 +254,17 @@ export function VulnDetail({
     }
   }
 
-  const handleExport = async (outputDir?: string) => {
+  const handleExport = async (outputDir?: string, format?: 'md' | 'docx' | 'pdf') => {
     if (!detail || loading) return
     const api = getApi()
     if (!api) {
       toast.error(apiUnavailableMessage(t))
+      setExportOpen(false)
       return
     }
     setExporting(true)
     try {
-      const result = await api.exportVulnerabilities([detail.id], outputDir)
+      const result = await api.exportVulnerabilities([detail.id], { outputDir, format })
       if (!result.cancelled) {
         const savedPath = result.savedPaths?.[0]
         toast.success(
@@ -629,7 +630,7 @@ export function VulnDetail({
         count={1}
         pending={exporting}
         onOpenChange={setExportOpen}
-        onConfirm={(outputDir) => void handleExport(outputDir)}
+        onConfirm={(outputDir, format) => void handleExport(outputDir, format)}
       />
     </>
   )

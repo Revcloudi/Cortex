@@ -1018,6 +1018,15 @@ export interface DeleteVulnsResult {
   deleted: number
 }
 
+export type ExportReportFormat = 'md' | 'docx' | 'pdf'
+
+export interface ExportReportOptions {
+  /** Absolute output directory chosen by the user; empty means the default. */
+  outputDir?: string
+  /** Markdown (default), Word or PDF. */
+  format?: ExportReportFormat
+}
+
 export interface ExportReportsResult {
   cancelled: boolean
   /** File names (or absolute paths for desktop transports) of exported reports. */

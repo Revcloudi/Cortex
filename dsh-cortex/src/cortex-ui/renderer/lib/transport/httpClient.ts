@@ -263,7 +263,7 @@ export function createHttpApi(): CortexApi {
      */
     exportVulnerabilities: async (
       ids: string[],
-      _outputDir?: string
+      _options?: { outputDir?: string; format?: string }
     ): Promise<ExportReportsResult> => {
       const response = await request<WebExportResponse>(WEB_API_PATHS.vulnerabilitiesExport, {
         method: 'POST',

@@ -13,7 +13,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import http from 'node:http'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -944,6 +944,37 @@ describe('cortex: vulnerability writes', () => {
       })
       assert.equal(relative.status, 400)
       assert.match(String(relative.json?.error || ''), /absolute path/)
+
+      const wordDir = join(fixture.dir, 'word-reports')
+      const word = expectOk(
+        await server.request('/cortex-api/cortex/vulns/export', {
+          method: 'POST',
+          body: { ids: [FIXTURE.vulnMultiHttp], outputDir: wordDir, format: 'docx' },
+        }),
+      )
+      assert.equal(word.files[0].format, 'docx')
+      assert.equal(word.files[0].content, undefined)
+      assert.equal(word.savedPaths[0].endsWith('.docx'), true)
+      assert.equal(readFileSync(word.savedPaths[0]).subarray(0, 2).toString(), 'PK')
+
+      const pdfDir = join(fixture.dir, 'pdf-reports')
+      const pdf = expectOk(
+        await server.request('/cortex-api/cortex/vulns/export', {
+          method: 'POST',
+          body: { ids: [FIXTURE.vulnMultiHttp], outputDir: pdfDir, format: 'pdf' },
+        }),
+      )
+      assert.equal(pdf.files[0].format, 'pdf')
+      assert.equal(pdf.savedPaths[0].endsWith('.pdf'), true)
+      const pdfBytes = readFileSync(pdf.savedPaths[0])
+      assert.equal(pdfBytes.subarray(0, 5).toString(), '%PDF-')
+      assert.ok(pdfBytes.length > 1_000, 'PDF should contain real content')
+
+      const unsupported = await server.request('/cortex-api/cortex/vulns/export', {
+        method: 'POST',
+        body: { ids: [FIXTURE.vulnMultiHttp], format: 'exe' },
+      })
+      assert.equal(unsupported.status, 400)
 
       const empty = expectOk(
         await server.request('/cortex-api/cortex/vulns/export', {
