@@ -26,6 +26,19 @@ export interface ProbeFailure {
   code: string | null
 }
 
+export interface DatabaseCandidate {
+  id: string
+  label: string
+  exists: boolean
+  sizeBytes: number
+}
+
+export interface DatabaseCandidates {
+  platform: string
+  defaultPath: string
+  candidates: DatabaseCandidate[]
+}
+
 export class DatabaseApiError extends Error {
   readonly code: string
   readonly status: number
@@ -134,5 +147,36 @@ export async function configureDatabase(path: string): Promise<DatabaseStatus> {
     readOnly: status.readOnly === true,
     readOnlyFallback: status.readOnlyFallback === true,
     openError: typeof status.openError === 'string' ? status.openError : null
+  }
+}
+
+/**
+ * Candidate checks are cheap on the Host (file stat only); labels stay in
+ * `~` form so the UI works on Windows, macOS and Linux and does not expose an
+ * absolute server path.
+ */
+export async function getDatabaseCandidates(): Promise<DatabaseCandidates> {
+  const response = await fetch(`${BASE}/db/candidates`, { cache: 'no-store' })
+  const payload = await readEnvelope(response)
+  if (!response.ok) {
+    throw new DatabaseApiError(
+      typeof payload.error === 'string' ? payload.error : `HTTP ${response.status}`,
+      typeof payload.code === 'string' ? payload.code : `HTTP_${response.status}`,
+      response.status
+    )
+  }
+  const rawCandidates = Array.isArray(payload.candidates) ? payload.candidates : []
+  return {
+    platform: typeof payload.platform === 'string' ? payload.platform : '',
+    defaultPath: typeof payload.defaultPath === 'string' ? payload.defaultPath : '~/.cortex/data.db',
+    candidates: rawCandidates
+      .filter((entry): entry is Record<string, unknown> => entry !== null && typeof entry === 'object')
+      .map((entry) => ({
+        id: typeof entry.id === 'string' ? entry.id : '',
+        label: typeof entry.label === 'string' ? entry.label : '',
+        exists: entry.exists === true,
+        sizeBytes: typeof entry.sizeBytes === 'number' ? entry.sizeBytes : 0
+      }))
+      .filter((entry) => entry.id !== '' && entry.label !== '')
   }
 }

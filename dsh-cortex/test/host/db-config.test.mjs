@@ -3,6 +3,7 @@
  * switch the Host database and persist the choice.
  */
 import assert from 'node:assert/strict'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import { getConfiguredDbPath } from '../../src/host/cortex/settings.js'
@@ -35,6 +36,22 @@ describe('database setup (web DSH)', () => {
     assert.equal(typeof body.dbPath, 'string')
     assert.equal(body.dbPath.includes('\\'), false)
     assert.equal(body.dbPath.includes('/'), false)
+  })
+
+  it('GET /db/candidates returns host-relative labels for the current platform', async () => {
+    const res = await server.request('/cortex-api/cortex/db/candidates')
+    const body = expectOk(res)
+    assert.equal(body.platform, process.platform)
+    assert.equal(body.defaultPath, '~/.cortex/data.db')
+    assert.ok(Array.isArray(body.candidates))
+    assert.ok(body.candidates.some((candidate) => candidate.id === 'cortex-home'))
+    for (const candidate of body.candidates) {
+      assert.ok(candidate.label.startsWith('~'), candidate.label)
+      assert.equal(typeof candidate.exists, 'boolean')
+      assert.equal(typeof candidate.sizeBytes, 'number')
+    }
+    assert.equal(JSON.stringify(body).includes(homedir()), false)
+    assert.equal(res.text.includes(homedir()), false)
   })
 
   it('POST /db/configure switches to another Cortex database and persists it', async () => {

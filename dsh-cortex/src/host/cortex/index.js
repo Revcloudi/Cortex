@@ -104,6 +104,7 @@ const ROUTES = [
   { pattern: /^\/loot\/import$/, methods: { POST: misc.unsupportedHandler }, db: false },
 
   { pattern: /^\/db\/info$/, methods: { GET: misc.handleDbInfo }, db: false },
+  { pattern: /^\/db\/candidates$/, methods: { GET: misc.handleDbCandidates }, db: false },
   { pattern: /^\/db\/configure$/, methods: { POST: misc.handleDbConfigure }, db: false },
   { pattern: /^\/app\/info$/, methods: { GET: misc.handleAppInfo }, db: false },
   { pattern: /^\/setup\/info$/, methods: { GET: misc.handleSetupInfo }, db: false },

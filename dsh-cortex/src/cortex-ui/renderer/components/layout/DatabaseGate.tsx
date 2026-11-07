@@ -6,8 +6,10 @@ import { useI18n } from '@renderer/i18n'
 import {
   DatabaseApiError,
   configureDatabase,
+  getDatabaseCandidates,
   getDatabaseStatus,
   probeDatabase,
+  type DatabaseCandidates,
   type DatabaseStatus,
   type ProbeFailure
 } from '@renderer/lib/databaseApi'
@@ -19,7 +21,19 @@ interface DatabaseGateProps {
 type GateState =
   | { kind: 'checking' }
   | { kind: 'ready'; readOnly: boolean }
-  | { kind: 'error'; failure: ProbeFailure; database: DatabaseStatus | null }
+  | {
+      kind: 'error'
+      failure: ProbeFailure
+      database: DatabaseStatus | null
+      candidates: DatabaseCandidates | null
+    }
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 /**
  * Turns a non-functional page set into one actionable setup screen when the
@@ -45,7 +59,8 @@ export function DatabaseGate({ children }: DatabaseGateProps) {
         readOnly: database !== null && (database.readOnly || database.readOnlyFallback)
       })
     } else {
-      setState({ kind: 'error', failure: probe.failure, database })
+      const candidates = await getDatabaseCandidates().catch(() => null)
+      setState({ kind: 'error', failure: probe.failure, database, candidates })
     }
   }, [])
 
@@ -69,7 +84,8 @@ export function DatabaseGate({ children }: DatabaseGateProps) {
           detail: database.openError,
           code: 'INCOMPATIBLE'
         }
-        setState({ kind: 'error', failure, database })
+        const candidates = await getDatabaseCandidates().catch(() => null)
+        setState({ kind: 'error', failure, database, candidates })
       }
     } catch (cause) {
       if (cause instanceof DatabaseApiError && (cause.status === 404 || cause.code === 'NOT_FOUND')) {
@@ -115,6 +131,7 @@ export function DatabaseGate({ children }: DatabaseGateProps) {
 
   const database = state.database
   const failure = state.failure
+  const candidates = state.candidates
   const schemaLine =
     database !== null && database.schemaVersion > 0
       ? t('dbGate.schema', { version: database.schemaVersion })
@@ -165,6 +182,54 @@ export function DatabaseGate({ children }: DatabaseGateProps) {
             {database?.exists === true ? t('dbGate.exists') : t('dbGate.missing')}
           </dd>
         </dl>
+
+        {candidates !== null ? (
+          <div className="mt-4 rounded-lg border border-border bg-sidebar/50 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[10.5px] font-medium text-foreground">{t('dbGate.candidates')}</p>
+              <p className="text-[10px] text-muted-foreground">
+                {t('dbGate.platform')}: <span className="font-mono">{candidates.platform}</span>
+              </p>
+            </div>
+            {candidates.candidates.length > 0 ? (
+              <div className="mt-2 space-y-1">
+                {candidates.candidates.map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    data-testid="db-gate-candidate"
+                    disabled={!candidate.exists || busy}
+                    onClick={() => {
+                      setPath(candidate.label)
+                      void apply(candidate.label)
+                    }}
+                    className="flex w-full min-w-0 items-center justify-between gap-3 rounded-md border border-transparent px-2 py-1.5 text-left transition-colors hover:border-border hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="min-w-0 truncate font-mono text-[10.5px] text-foreground">
+                      {candidate.label}
+                    </span>
+                    <span
+                      className={
+                        candidate.exists
+                          ? 'shrink-0 text-[10px] text-emerald-700'
+                          : 'shrink-0 text-[10px] text-muted-foreground'
+                      }
+                    >
+                      {candidate.exists
+                        ? `${t('dbGate.exists')} · ${formatBytes(candidate.sizeBytes)}`
+                        : t('dbGate.missing')}
+                    </span>
+                    <span className="shrink-0 text-[10px] font-medium text-foreground">
+                      {t('dbGate.useCandidate')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-[10.5px] text-muted-foreground">{t('dbGate.noCandidates')}</p>
+            )}
+          </div>
+        ) : null}
 
         <label htmlFor="db-gate-path" className="mt-4 block text-[10.5px] font-medium text-foreground">
           {t('dbGate.pathLabel')}

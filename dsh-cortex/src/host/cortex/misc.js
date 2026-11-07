@@ -22,10 +22,10 @@
  */
 
 import { statSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { basename, isAbsolute, join, resolve } from 'node:path'
+import { basename, isAbsolute, resolve } from 'node:path'
 import { badRequest, readJsonBody, sendJson } from '../http.js'
 import { rememberDbPath } from './settings.js'
+import { DEFAULT_DB_LABEL, candidateDatabasePaths, expandHome } from './db-paths.js'
 
 /** Execution limits mirroring `POC_LIMITS` in shared/poc.ts. */
 const POC_LIMITS = {
@@ -111,15 +111,32 @@ function resolveConfiguredPath(rawPath, defaultPath) {
   if (value.length > MAX_DB_PATH_LENGTH) {
     throw badRequest('database path is too long', { field: 'path', max: MAX_DB_PATH_LENGTH })
   }
-  let expanded = value
-  if (value === '~') expanded = homedir()
-  else if (value.startsWith('~/') || value.startsWith('~\\')) {
-    expanded = join(homedir(), value.slice(2))
+  // A Windows drive path is never meaningful to a POSIX Host. Give a direct
+  // hint instead of the generic "must be absolute" message: the Web DSH host
+  // may be a Linux container while the file lives on the user's PC.
+  if (process.platform !== 'win32' && /^[A-Za-z]:[\\/]/.test(value)) {
+    throw badRequest(
+      `this Host is ${process.platform}; a Windows drive path cannot be opened. Copy the database to this Host or use its Linux/macOS path.`,
+      { field: 'path', platform: process.platform }
+    )
   }
+  const expanded = expandHome(value)
   if (!isAbsolute(expanded)) {
-    throw badRequest('database path must be absolute or start with ~', { field: 'path' })
+    throw badRequest('database path must be absolute or start with ~', {
+      field: 'path',
+      platform: process.platform,
+    })
   }
   return resolve(expanded)
+}
+
+/** GET /db/candidates -> existing Cortex DB candidates on this Host. */
+export function handleDbCandidates({ res }) {
+  sendJson(res, 200, {
+    platform: process.platform,
+    defaultPath: DEFAULT_DB_LABEL,
+    candidates: candidateDatabasePaths(),
+  })
 }
 
 /**

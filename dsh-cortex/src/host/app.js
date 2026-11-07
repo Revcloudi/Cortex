@@ -25,6 +25,7 @@ import { sendError } from './http.js'
 import { Repository } from './repository.js'
 import { createRouter } from './router.js'
 import { getConfiguredDbPath } from './cortex/settings.js'
+import { expandHome } from './cortex/db-paths.js'
 
 export const PLUGIN_NAME = 'dsh-cortex'
 
@@ -62,6 +63,7 @@ export function resolveHostConfig(config) {
     if (typeof saved === 'string' && saved.length > 0) dbPath = saved
   }
   if (dbPath === undefined) dbPath = join(homedir(), '.cortex', 'data.db')
+  dbPath = expandHome(dbPath)
   const readOnly = cfg.readOnly === true || process.env.CORTEX_DB_READONLY === '1'
   const allowNetwork = cfg.allowNetwork === false ? false : true
   return { dbPath, readOnly, allowNetwork }
