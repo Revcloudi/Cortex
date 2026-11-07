@@ -36,6 +36,7 @@ test('registers the Cortex agent tool surface without MCP', () => {
     'cortex_get_asset',
     'cortex_list_snapshots',
     'cortex_get_snapshot',
+    'cortex_save_snapshot',
     'cortex_internal_overview',
     'cortex_graph_summary',
   ])
@@ -172,6 +173,67 @@ test('cortex_sync_asset_info merges and replaces asset snapshots', async () => {
   })
   asset = await call('cortex_get_asset', { hostPort })
   assert.match(asset.text, /## interfaces \(1\)\n\[\n  \{\n    "path": "\/c"/)
+})
+
+test('cortex_sync_asset_info normalizes agent alias shapes on write', async () => {
+  const hostPort = 'http://example.test:9100/'
+  await call('cortex_sync_asset_info', {
+    host_port: hostPort,
+    project_name: 'tool-normalize-test',
+    interfaces: [{ method: 'POST', path: '/login', raw: 'POST /login HTTP/1.1\nHost: x\n\n{"a":1}' }],
+    leaked_infos: [{ type: 'Token', value: 'abc', file: '/js/app.js', note: 'demo' }],
+    test_parameters: [{ param: 'memberId', where: 'json', example: 'M-1' }],
+  })
+  const asset = await call('cortex_get_asset', { hostPort })
+  assert.match(asset.text, /"path": "\/login"/)
+  assert.match(asset.text, /"request": "POST \/login/)
+  assert.match(asset.text, /"info_type": "Token"/)
+  assert.match(asset.text, /"source": "\/js\/app\.js"/)
+  assert.match(asset.text, /"name": "memberId"/)
+  assert.match(asset.text, /"location": "body"/)
+  assert.match(asset.text, /"values": \[\n\s+"M-1"/)
+  assert.match(asset.text, /"related_vuln_ids": \[\]/)
+})
+
+test('cortex_save_snapshot creates, updates and guards existing projects', async () => {
+  const created = await call('cortex_save_snapshot', {
+    project_name: 'tool-snapshot-test',
+    current_phase: 'recon',
+    target_hosts: ['example.test'],
+    unfinished_tasks: ['check /admin'],
+    notes: 'first save',
+    next_steps: 'continue recon',
+  })
+  const sessionId = created.text.match(/snapshot saved: ([^\s|]+)/)[1]
+  const detail = await call('cortex_get_snapshot', { sessionId })
+  assert.match(detail.text, /phase: recon/)
+  assert.match(detail.text, /first save/)
+  assert.match(detail.text, /check \/admin/)
+
+  const guard = await call('cortex_save_snapshot', { project_name: 'tool-snapshot-test', current_phase: 'recon2' })
+  assert.match(guard.text, /already has snapshots/)
+  assert.match(guard.text, new RegExp(sessionId))
+
+  const updated = await call('cortex_save_snapshot', {
+    session_id: sessionId,
+    project_name: 'tool-snapshot-test',
+    current_phase: 'exploit',
+    next_steps: 'run exploit',
+  })
+  assert.match(updated.text, /snapshot updated/)
+  const after = await call('cortex_get_snapshot', { sessionId })
+  assert.match(after.text, /phase: exploit/)
+  assert.match(after.text, /run exploit/)
+  assert.match(after.text, /first save/)
+
+  const forced = await call('cortex_save_snapshot', {
+    project_name: 'tool-snapshot-test',
+    current_phase: 'second-session',
+    force_new: true,
+  })
+  assert.match(forced.text, /snapshot saved:/)
+  const listed = await call('cortex_list_snapshots', { project: 'tool-snapshot-test' })
+  assert.match(listed.text, /2 snapshots/)
 })
 
 test('read-only host rejects the write tools', async () => {

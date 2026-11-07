@@ -67,7 +67,9 @@ function TestParameterCard({
 }) {
   const { t, locationLabel } = useI18n()
   const { copied, copy } = useCopy()
-  const valuesText = testParameterValuesText(parameter.values)
+  const values = parameter.values ?? []
+  const relatedVulnIds = parameter.related_vuln_ids ?? []
+  const valuesText = testParameterValuesText(values)
 
   return (
     <article
@@ -120,11 +122,11 @@ function TestParameterCard({
         <div className="min-w-0">
           <p className="text-[11px] font-medium text-foreground/70">
             {t('asset.parameter.values')}
-            {parameter.values.length > 0 ? ` · ${parameter.values.length}` : ''}
+            {values.length > 0 ? ` · ${values.length}` : ''}
           </p>
-          {parameter.values.length > 0 ? (
+          {values.length > 0 ? (
             <div className="mt-1 flex flex-wrap gap-1">
-              {parameter.values.map((value, index) => (
+              {values.map((value, index) => (
                 <span
                   key={`${value}-${index}`}
                   data-testid="asset-test-parameter-value"
@@ -153,13 +155,13 @@ function TestParameterCard({
           />
         ) : null}
 
-        {parameter.related_vuln_ids.length > 0 ? (
+        {relatedVulnIds.length > 0 ? (
           <div className="min-w-0">
             <p className="text-[11px] font-medium text-foreground/70">
               {t('asset.parameter.relatedVulns')}
             </p>
             <div className="mt-1 flex flex-wrap gap-1.5">
-              {parameter.related_vuln_ids.map((vulnId) => (
+              {relatedVulnIds.map((vulnId) => (
                 <Button
                   key={vulnId}
                   variant="outline"

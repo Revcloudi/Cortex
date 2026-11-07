@@ -260,10 +260,24 @@ function createMockFetch() {
         tech_stack: asset.tech_stack,
         auth_required: asset.auth_required,
         status: asset.status,
-        interfaces: [],
+        // Legacy/agent alias shapes: the drawer must normalize them instead of
+        // blanking the panel (the field bug reported after an SRC session).
+        interfaces: [
+          {
+            method: 'POST',
+            path: '/api/login/CheckLogin',
+            raw: 'POST /api/login/CheckLogin HTTP/1.1\r\nHost: 127.0.0.1:8080\r\n\r\n{"memberNumber":"B1"}',
+            auth: 'none',
+            result: '200',
+          },
+          { path: '/api/legacy-path' },
+        ],
         interface_dir: [],
-        leaked_infos: [],
-        test_parameters: [],
+        leaked_infos: [{ type: 'Token', value: 'demo-token', file: '/js/app.js', note: 'demo leak' }],
+        test_parameters: [
+          { param: 'memberNumber', where: 'json', example: 'B28434010', note: 'login body' },
+          { name: 'orderId', location: 'query', values: ['1001', '1002'], interface: '/api/order' },
+        ],
         related_vuln_ids: [],
         last_seen: asset.last_seen
       })
@@ -907,6 +921,80 @@ export async function runCortexUiSmoke(options = {}) {
       assert.ok(assetRow.textContent.includes(PROJECT), 'asset row does not show project name')
       structural.assetPage = { rows: allTestIds('asset-row').length, hostPort: assetRow.getAttribute('data-host-port') }
       return `${ASSET_HOST_PORT} rendered by the original AssetPage`
+    })
+
+    await check('asset drawer renders legacy interfaces and test parameters without crashing', async () => {
+      // Regression for the post-SRC-session report: agents write aliased JSON
+      // (raw/type/param/where/example); opening 测试参数 used to blank the panel.
+      const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
+      const windowBefore = windowErrors.length
+      const row = await waitFor(act, () => shadow.querySelector('[data-testid="asset-row"]'), {
+        label: 'asset row for drawer',
+        timeoutMs: 10_000,
+      })
+      await act(async () => {
+        row.click()
+      })
+      const parametersTab = await waitFor(act, () => byTestId('asset-tab-parameters'), {
+        label: 'asset test-parameters tab',
+        timeoutMs: 10_000,
+      })
+      const activateTab = async (element) => {
+        // Radix Tabs activates on mousedown/focus, not on a synthetic click().
+        await act(async () => {
+          element.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+          element.click()
+        })
+      }
+      await activateTab(parametersTab)
+      let parameterCards
+      try {
+        parameterCards = await waitFor(
+          act,
+          () => {
+            const cards = shadow.querySelectorAll('[data-testid="asset-test-parameter"]')
+            return cards.length > 0 ? cards : null
+          },
+          { label: 'asset test-parameter cards', timeoutMs: 10_000 },
+        )
+      } catch (error) {
+        const rootElement = shadow.querySelector('.dshc-cortex-root')
+        const parameterTab = byTestId('asset-tab-parameters')
+        const sheet = byTestId('asset-sheet')
+        assert.fail(
+          `asset test-parameter cards missing; sheet=${Boolean(sheet)} tab=${Boolean(parameterTab)} state=${
+            parameterTab ? parameterTab.getAttribute('data-state') : '-'
+          } rootText=${(rootElement ? rootElement.textContent : '').replace(/\s+/g, ' ').slice(-900)}`,
+        )
+      }
+      assert.equal(parameterCards.length, 2, `expected 2 normalized parameter cards, got ${parameterCards.length}`)
+      const cardText = parameterCards[0].textContent || ''
+      assert.ok(cardText.includes('memberNumber'), 'normalized parameter name missing')
+      assert.ok(cardText.includes('B28434010'), 'normalized parameter value missing')
+
+      const interfacesTab = byTestId('asset-tab-interfaces')
+      await activateTab(interfacesTab)
+      const interfaceRow = await waitFor(
+        act,
+        () => shadow.querySelector('[data-testid="asset-interface-row"]'),
+        { label: 'asset interface row', timeoutMs: 10_000 },
+      )
+      assert.ok((interfaceRow.textContent || '').includes('/api/login/CheckLogin'), 'interface path missing')
+      assert.ok(
+        (interfaceRow.textContent || '').includes('B1'),
+        'interface params were not derived from the captured raw request',
+      )
+      assert.equal(consoleErrors.filter(isFatalConsoleMessage).length, fatalBefore, 'React error in asset drawer')
+      assert.equal(windowErrors.length, windowBefore, `page error in asset drawer: ${windowErrors.slice(windowBefore).join(' | ')}`)
+      const closeButton = Array.from(shadow.querySelectorAll('[data-testid="asset-sheet"] button')).find((button) =>
+        /关闭|Close/.test(button.getAttribute('aria-label') || ''),
+      )
+      if (closeButton) {
+        await act(async () => {
+          closeButton.click()
+        })
+      }
+      return 'aliased interfaces/leaks/test parameters normalized and rendered'
     })
 
     await check('delete confirmation dialog is portaled inside the shadow root', async () => {

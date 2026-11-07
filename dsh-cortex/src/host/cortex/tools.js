@@ -7,6 +7,7 @@
  * honours the same schema-v5 guard and read-only mode as the HTTP API.
  */
 import { withBusyRetry } from '../db.js'
+import { normalizeInterfaces, normalizeLeaks, normalizeTestParameters } from './normalize-asset.js'
 
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 const STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed']
@@ -394,7 +395,7 @@ export function createCortexToolDefinitions({ holder, config }) {
 
   const syncAsset = defineTool(
     'cortex_sync_asset_info',
-    'Insert or update local Cortex asset context (fingerprints, structured interfaces, leaked info, test parameters, related vulns). mode=merge (default) appends new array entries and only overwrites provided scalars; mode=replace replaces the whole asset snapshot.',
+    'Insert or update local Cortex asset context. mode=merge (default) appends canonicalized array entries and only overwrites provided scalars; mode=replace replaces the whole asset snapshot. Canonical fields: interfaces[] = {path, method?, params?, request?} where request is a complete raw HTTP request; leaked_infos[] = {info_type, value, source, potential_impact}; test_parameters[] = {name, endpoint, location (path|query|body|header|cookie), values[], pattern?, source, tested?, notes?, related_vuln_ids?}. Common aliases are normalized (raw->request, type->info_type, file->source, param->name, where->location, example->values[0]).',
     {
       host_port: { type: 'string', description: 'Full URL/authority, e.g. http://127.0.0.1:8080/' },
       project_name: { type: 'string' },
@@ -402,9 +403,9 @@ export function createCortexToolDefinitions({ holder, config }) {
       tech_stack: { type: 'string' },
       auth_required: { type: 'boolean' },
       status: { type: 'string', enum: ['Alive', 'Dead', 'WAF_Blocked'] },
-      interfaces: { type: 'array', items: { type: 'object' } },
-      leaked_infos: { type: 'array', items: { type: 'object' } },
-      test_parameters: { type: 'array', items: { type: 'object' } },
+      interfaces: { type: 'array', items: { type: 'object', description: '{path (required), method?, params? (query/body string), request? (complete raw HTTP request)}' }, description: 'Structured API interfaces; raw static files are not interfaces' },
+      leaked_infos: { type: 'array', items: { type: 'object', description: '{info_type (Credential|API_Key|Token|PII|Internal_IP|Other), value, source, potential_impact}' } },
+      test_parameters: { type: 'array', items: { type: 'object', description: '{name, endpoint, location, values[], pattern?, source, tested?, notes?, related_vuln_ids?}' } },
       related_vuln_ids: { type: 'array', items: { type: 'string' } },
       mode: { type: 'string', enum: ['merge', 'replace'] },
     },
@@ -418,10 +419,9 @@ export function createCortexToolDefinitions({ holder, config }) {
       const merge = args.mode !== 'replace'
       const existing = db.prepare('SELECT * FROM assets WHERE host_port = ?').get(hostPort)
       const now = new Date().toISOString()
-      const arrayField = (name) => {
-        const value = Array.isArray(args[name]) ? args[name] : undefined
+      const arrayField = (name, normalize) => {
+        const value = args[name] !== undefined && normalize ? normalize(args[name]) : undefined
         if (merge && existing) return jsonColumn(uniqueJsonMerge(existing[name], value))
-        if (merge && !existing) return jsonColumn(value)
         return jsonColumn(value)
       }
       const scalar = (name, fallback) =>
@@ -432,10 +432,12 @@ export function createCortexToolDefinitions({ holder, config }) {
         tech_stack: args.tech_stack !== undefined ? text(args.tech_stack) : merge && existing ? existing.tech_stack : '',
         auth_required: scalar('auth_required', false) ? 1 : 0,
         status: scalar('status', 'Alive'),
-        interfaces: arrayField('interfaces'),
-        leaked_infos: arrayField('leaked_infos'),
-        test_parameters: arrayField('test_parameters'),
-        related_vuln_ids: arrayField('related_vuln_ids'),
+        interfaces: arrayField('interfaces', normalizeInterfaces),
+        leaked_infos: arrayField('leaked_infos', normalizeLeaks),
+        test_parameters: arrayField('test_parameters', normalizeTestParameters),
+        related_vuln_ids: arrayField('related_vuln_ids', (value) =>
+          Array.isArray(value) ? value.filter((entry) => typeof entry === 'string') : [],
+        ),
         last_seen: now,
       }
       runWrite(db, () => {
@@ -457,6 +459,129 @@ export function createCortexToolDefinitions({ holder, config }) {
       return {
         text: `${LOG} ${existing ? (merge ? 'merged' : 'replaced') : 'created'} asset ${hostPort} (project ${project})`,
       }
+    },
+  )
+
+  const saveSnapshot = defineTool(
+    'cortex_save_snapshot',
+    'Create or update a local Cortex cognitive snapshot (认知快照) for the current task: project, phase, targets, unfinished tasks, failed paths, tested interfaces/notes/next steps and related vulns. Call it at task milestones, before context compaction and at session end. Omit session_id to create a new snapshot; pass session_id to update one; force_new=true creates another session for a project that already has one. Updates keep a previous_state rollback buffer.',
+    {
+      project_name: { type: 'string', minLength: 1, maxLength: 120 },
+      current_phase: { type: 'string', maxLength: 200 },
+      target_hosts: { type: 'array', items: { type: 'string' } },
+      unfinished_tasks: { type: 'array', items: { type: 'string' } },
+      failed_paths: { type: 'array', items: { type: 'string' } },
+      tested_interfaces: { type: 'array', items: { type: 'object' }, description: 'Tested interface matrix entries (endpoint/result/...)' },
+      notes: { type: 'string', maxLength: 30000 },
+      related_vuln_ids: { type: 'array', items: { type: 'string' } },
+      next_steps: { type: 'string', maxLength: 10000 },
+      session_id: { type: 'string', maxLength: 100 },
+      parent_session_id: { type: 'string', maxLength: 100 },
+      force_new: { type: 'boolean' },
+    },
+    ['project_name'],
+    async (args) => {
+      assertWritable(holder)
+      const db = ensureDb(holder)
+      const project = text(args.project_name).trim()
+      if (!project) throw new Error('project_name is required')
+      const stringList = (name) =>
+        args[name] === undefined
+          ? undefined
+          : JSON.stringify(
+              (Array.isArray(args[name]) ? args[name] : [])
+                .filter((entry) => typeof entry === 'string')
+                .map((entry) => entry.trim())
+                .filter((entry) => entry.length > 0),
+            )
+      const objectList = (name) =>
+        args[name] === undefined
+          ? undefined
+          : JSON.stringify((Array.isArray(args[name]) ? args[name] : []).filter((entry) => entry && typeof entry === 'object'))
+      const fields = {
+        project_name: project,
+        current_phase: args.current_phase !== undefined ? text(args.current_phase) : undefined,
+        target_hosts: stringList('target_hosts'),
+        unfinished_tasks: stringList('unfinished_tasks'),
+        failed_paths: stringList('failed_paths'),
+        tested_interfaces: objectList('tested_interfaces'),
+        notes: args.notes !== undefined ? text(args.notes) : undefined,
+        related_vuln_ids: stringList('related_vuln_ids'),
+        next_steps: args.next_steps !== undefined ? text(args.next_steps) : undefined,
+      }
+      const now = new Date().toISOString()
+      const sessionId = text(args.session_id).trim()
+      if (sessionId) {
+        const existing = db.prepare('SELECT * FROM snapshot_sessions WHERE session_id = ?').get(sessionId)
+        if (!existing) throw new Error(`snapshot ${sessionId} not found; omit session_id to create a new one`)
+        const previous = {
+          project_name: existing.project_name,
+          target_hosts: jsonArray(existing.target_hosts),
+          current_phase: existing.current_phase,
+          unfinished_tasks: jsonArray(existing.unfinished_tasks),
+          failed_paths: jsonArray(existing.failed_paths),
+          tested_interfaces: jsonArray(existing.tested_interfaces),
+          notes: existing.notes,
+          related_vuln_ids: jsonArray(existing.related_vuln_ids),
+          next_steps: existing.next_steps,
+        }
+        const sets = []
+        const values = []
+        for (const [column, value] of Object.entries(fields)) {
+          if (value === undefined) continue
+          sets.push(`${column} = ?`)
+          values.push(value)
+        }
+        sets.push('previous_state = ?', 'updated_at = ?')
+        values.push(JSON.stringify(previous), now, sessionId)
+        await runWrite(db, () =>
+          db.prepare(`UPDATE snapshot_sessions SET ${sets.join(', ')} WHERE session_id = ?`).run(...values),
+        )
+        holder.refreshFileStamp()
+        return { text: `${LOG} snapshot updated: ${sessionId} | ${project} | phase: ${fields.current_phase ?? existing.current_phase}` }
+      }
+      if (args.force_new !== true) {
+        const candidates = db
+          .prepare('SELECT session_id, current_phase, updated_at FROM snapshot_sessions WHERE project_name = ? AND archived_at IS NULL ORDER BY updated_at DESC LIMIT 5')
+          .all(project)
+        if (candidates.length > 0) {
+          return {
+            text: `${LOG} project ${project} already has snapshots: ${candidates
+              .map((row) => `${row.session_id} (${row.current_phase || '-'}, ${row.updated_at})`)
+              .join('; ')} — pass session_id to update one, or force_new=true to create a new session.`,
+          }
+        }
+      }
+      const id = globalThis.crypto?.randomUUID?.() ?? `snap-${Date.now()}-${Math.random().toString(16).slice(2)}`
+      const columns = [
+        'session_id', 'project_name', 'target_hosts', 'current_phase', 'unfinished_tasks', 'failed_paths',
+        'tested_interfaces', 'notes', 'related_vuln_ids', 'next_steps', 'previous_state',
+        'parent_session_id', 'archived_at', 'created_at', 'updated_at',
+      ]
+      const values = [
+        id,
+        project,
+        fields.target_hosts ?? '[]',
+        fields.current_phase ?? '',
+        fields.unfinished_tasks ?? '[]',
+        fields.failed_paths ?? '[]',
+        fields.tested_interfaces ?? '[]',
+        fields.notes ?? '',
+        fields.related_vuln_ids ?? '[]',
+        fields.next_steps ?? '',
+        null,
+        text(args.parent_session_id) || null,
+        null,
+        now,
+        now,
+      ]
+      await runWrite(db, () =>
+        db
+          .prepare(`INSERT INTO snapshot_sessions (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`)
+          .run(...values),
+      )
+      holder.refreshFileStamp()
+      return { text: `${LOG} snapshot saved: ${id} | ${project} | phase: ${fields.current_phase || '-'}` }
     },
   )
 
@@ -508,22 +633,26 @@ export function createCortexToolDefinitions({ holder, config }) {
       const db = ensureDb(holder)
       const row = db.prepare('SELECT * FROM assets WHERE host_port = ?').get(text(args.hostPort).trim())
       if (!row) return { text: `${LOG} asset not found: ${args.hostPort}` }
+      const interfaces = normalizeInterfaces(row.interfaces, row.interface_dir)
+      const leaks = normalizeLeaks(row.leaked_infos)
+      const testParameters = normalizeTestParameters(row.test_parameters)
+      const relatedIds = jsonArray(row.related_vuln_ids).filter((entry) => typeof entry === 'string')
       const parts = [
         `# ${row.host_port}`,
         `host: ${row.host} · project: ${row.project_name}`,
         `status: ${row.status} · auth_required: ${row.auth_required ? 'true' : 'false'} · last_seen: ${row.last_seen}`,
         `tech_stack: ${row.tech_stack}`,
         '',
-        `## interfaces (${jsonArray(row.interfaces).length})`,
-        JSON.stringify(jsonArray(row.interfaces), null, 2),
+        `## interfaces (${interfaces.length})`,
+        JSON.stringify(interfaces, null, 2),
         '',
-        `## leaked_infos (${jsonArray(row.leaked_infos).length})`,
-        JSON.stringify(jsonArray(row.leaked_infos), null, 2),
+        `## leaked_infos (${leaks.length})`,
+        JSON.stringify(leaks, null, 2),
         '',
-        `## test_parameters (${jsonArray(row.test_parameters).length})`,
-        JSON.stringify(jsonArray(row.test_parameters), null, 2),
+        `## test_parameters (${testParameters.length})`,
+        JSON.stringify(testParameters, null, 2),
         '',
-        `## related_vuln_ids\n${jsonArray(row.related_vuln_ids).join(', ')}`,
+        `## related_vuln_ids\n${relatedIds.join(', ')}`,
       ]
       return { text: parts.join('\n') }
     },
@@ -661,6 +790,7 @@ export function createCortexToolDefinitions({ holder, config }) {
     getAsset,
     listSnapshots,
     getSnapshot,
+    saveSnapshot,
     internalOverview,
     graphSummary,
   ]

@@ -33,6 +33,8 @@ import { AssetInternalEntry, scopeForEntry } from '@renderer/components/internal
 import {
   INTERFACE_METHOD_STYLES,
   buildInterfaceRequest,
+  normalizeDisplayInterfaces,
+  normalizeDisplayTestParameters,
   techStackTags
 } from '@renderer/lib/assets'
 import { apiUnavailableMessage, getApi, toErrorMessage } from '@renderer/lib/api'
@@ -353,9 +355,9 @@ export function AssetDetail({
   }, [assetProjectName, dataVersion, retryKey, internalRetryKey, t])
 
   const interfaces = asset
-    ? (asset.interfaces ?? normalizeAssetInterfaces([], asset.interface_dir))
+    ? normalizeDisplayInterfaces(asset.interfaces ?? normalizeAssetInterfaces([], asset.interface_dir))
     : []
-  const testParameters = asset?.test_parameters ?? []
+  const testParameters = asset ? normalizeDisplayTestParameters(asset.test_parameters) : []
   const tags = asset ? techStackTags(asset.tech_stack) : []
   const internalScope =
     asset === null

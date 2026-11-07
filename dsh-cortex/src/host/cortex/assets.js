@@ -21,6 +21,7 @@ import {
   sendJson,
 } from '../http.js'
 import { jsonArray, likePattern, text, vulnListItem } from './vulns.js'
+import { normalizeInterfaces, normalizeLeaks, normalizeTestParameters } from './normalize-asset.js'
 
 const ASSET_STATUSES = ['Alive', 'Dead', 'WAF_Blocked']
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']
@@ -51,71 +52,22 @@ function bool01(value) {
 }
 
 /**
- * Normalize stored `interfaces` to the shared `AssetInterface[]` shape.
- * @param {unknown} raw
+ * Normalize stored asset JSON to the canonical shared shapes. Agent-written
+ * records may use aliases (raw/request, type/file, param/where/example); the
+ * shared normalizers keep the drawer and the memory graph crash-free.
  */
 function interfaceList(raw) {
-  const out = []
-  for (const item of jsonArray(raw)) {
-    if (typeof item === 'string') {
-      if (item.trim().length > 0) out.push({ path: item.trim() })
-      continue
-    }
-    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
-    const path = text(item.path).trim()
-    if (path.length === 0) continue
-    /** @type {Record<string, any>} */
-    const entry = { path }
-    if (typeof item.method === 'string' && HTTP_METHODS.includes(item.method)) entry.method = item.method
-    if (typeof item.params === 'string' && item.params.length > 0) entry.params = item.params
-    if (typeof item.request === 'string' && item.request.length > 0) entry.request = item.request
-    out.push(entry)
-  }
-  return out
+  return normalizeInterfaces(raw)
 }
 
 /** @param {unknown} raw */
 function leakedInfoList(raw) {
-  const out = []
-  for (const item of jsonArray(raw)) {
-    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
-    const infoType = text(item.info_type ?? item.infoType)
-    out.push({
-      info_type: LEAKED_INFO_TYPES.includes(infoType) ? infoType : 'Other',
-      value: text(item.value),
-      source: text(item.source),
-      potential_impact: text(item.potential_impact ?? item.potentialImpact),
-    })
-  }
-  return out
+  return normalizeLeaks(raw)
 }
 
 /** @param {unknown} raw */
 function testParameterList(raw) {
-  const out = []
-  for (const item of jsonArray(raw)) {
-    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
-    const location = text(item.location)
-    /** @type {Record<string, any>} */
-    const entry = {
-      name: text(item.name),
-      endpoint: text(item.endpoint),
-      location: TEST_PARAMETER_LOCATIONS.includes(location) ? location : 'query',
-      values: jsonArray(item.values)
-        .filter((value) => typeof value === 'string' || typeof value === 'number')
-        .map((value) => String(value)),
-      source: text(item.source),
-      tested: item.tested === true,
-    }
-    if (typeof item.pattern === 'string' && item.pattern.length > 0) entry.pattern = item.pattern
-    if (typeof item.notes === 'string' && item.notes.length > 0) entry.notes = item.notes
-    const related = jsonArray(item.related_vuln_ids ?? item.relatedVulnIds).filter(
-      (value) => typeof value === 'string',
-    )
-    if (related.length > 0) entry.related_vuln_ids = related
-    out.push(entry)
-  }
-  return out
+  return normalizeTestParameters(raw)
 }
 
 /**

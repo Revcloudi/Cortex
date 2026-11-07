@@ -52,6 +52,7 @@ import {
   normalizeAssetIdentifier,
   normalizeAssetInterfaces,
 } from './shared/types.js'
+import { normalizeInterfaces, normalizeLeaks, normalizeTestParameters } from './normalize-asset.js'
 import {
   INTERNAL_LIMITS,
   buildCredentialSuggestions,
@@ -168,16 +169,17 @@ const toLootImportStatus = (value) => toStringList(LOOT_IMPORT_STATUSES, value, 
 
 /** Extract the nine cognitive-state fields from a stored snapshot row. */
 function snapshotPayloadFromRow(row) {
+  const str = (value) => (typeof value === 'string' ? value : '')
   return {
-    project_name: row.project_name,
-    target_hosts: parseJsonArray(row.target_hosts),
-    current_phase: row.current_phase,
+    project_name: str(row.project_name),
+    target_hosts: parseJsonArray(row.target_hosts).filter((item) => typeof item === 'string'),
+    current_phase: str(row.current_phase),
     unfinished_tasks: parseJsonArray(row.unfinished_tasks),
     failed_paths: parseJsonArray(row.failed_paths),
     tested_interfaces: parseJsonArray(row.tested_interfaces),
-    notes: row.notes ?? '',
-    related_vuln_ids: parseJsonArray(row.related_vuln_ids),
-    next_steps: row.next_steps,
+    notes: str(row.notes),
+    related_vuln_ids: parseJsonArray(row.related_vuln_ids).filter((item) => typeof item === 'string'),
+    next_steps: str(row.next_steps),
   }
 }
 
@@ -228,7 +230,7 @@ function canonicalizeTestParameters(rawValues) {
 }
 
 function parseLeakedInfos(raw) {
-  return parseJsonArray(raw)
+  return normalizeLeaks(raw)
 }
 
 function emptyScopeCounts() {
@@ -248,10 +250,7 @@ function generateInternalId(prefix) {
 /* ---------------------------------------------------------------- mappers -- */
 
 function mapAssetRow(row) {
-  const interfaces = normalizeAssetInterfaces(
-    parseJsonArray(row.interfaces ?? '[]'),
-    parseJsonArray(row.interface_dir),
-  )
+  const interfaces = normalizeInterfaces(row.interfaces, row.interface_dir)
   return {
     host_port: row.host_port,
     host: row.host || deriveAssetHost(row.host_port),
@@ -261,9 +260,9 @@ function mapAssetRow(row) {
     status: toAssetStatus(row.status),
     interfaces,
     interface_dir: interfaceDirFromInterfaces(interfaces),
-    leaked_infos: parseLeakedInfos(row.leaked_infos),
-    test_parameters: canonicalizeTestParameters(parseJsonArray(row.test_parameters ?? '[]')),
-    related_vuln_ids: parseJsonArray(row.related_vuln_ids),
+    leaked_infos: normalizeLeaks(row.leaked_infos),
+    test_parameters: normalizeTestParameters(row.test_parameters),
+    related_vuln_ids: parseJsonArray(row.related_vuln_ids).filter((item) => typeof item === 'string'),
     last_seen: row.last_seen,
   }
 }

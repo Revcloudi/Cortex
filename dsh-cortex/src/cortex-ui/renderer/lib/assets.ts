@@ -192,3 +192,121 @@ export function testParameterValuesText(values: readonly string[]): string {
     .filter((value) => value.length > 0)
     .join('\n')
 }
+
+/* ------------------------------------------------------------------------- */
+/* Defensive normalization for agent-written asset JSON                      */
+/* ------------------------------------------------------------------------- */
+
+/** Derive the query string / body from a captured raw HTTP request. */
+export function extractDisplayParamsFromRaw(raw: string | undefined): string {
+  const source = (raw ?? '').replace(/\r\n/g, '\n').trim()
+  if (source.length === 0) return ''
+  const lines = source.split('\n')
+  const requestLine = lines[0] ?? ''
+  const queryIndex = requestLine.indexOf('?')
+  const query = queryIndex >= 0 ? requestLine.slice(queryIndex).trim() : ''
+  const separator = source.indexOf('\n\n')
+  const body = separator >= 0 ? source.slice(separator + 2).trim() : ''
+  return [query, body].filter((part) => part.length > 0).join('\n')
+}
+
+/**
+ * The Host normalizes asset rows before serving them, but cached responses from
+ * older plugin builds (or an MCP-era database) may still contain aliases such as
+ * `raw` / `param` / `where` / `example`. Normalizing again in the renderer keeps
+ * the drawer and the memory graph crash-free instead of blanking the panel.
+ */
+export function normalizeDisplayInterfaces(raw: unknown): AssetInterface[] {
+  const list = Array.isArray(raw) ? raw : []
+  const result: AssetInterface[] = []
+  for (const value of list) {
+    if (typeof value === 'string') {
+      if (value.trim().length > 0) result.push({ path: value.trim() })
+      continue
+    }
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) continue
+    const item = value as Record<string, unknown>
+    const path = [item.path, item.url, item.route, item.endpoint]
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+      .find((entry) => entry.length > 0)
+    if (!path) continue
+    const entry: AssetInterface = { path }
+    const method = typeof item.method === 'string' ? item.method.trim().toUpperCase() : ''
+    if ((INTERFACE_METHOD_STYLES as Record<string, string>)[method]) {
+      entry.method = method as AssetInterface['method']
+    }
+    const request = [item.request, item.raw, item.http]
+      .map((candidate) => (typeof candidate === 'string' ? candidate : ''))
+      .find((candidate) => candidate.trim().length > 0)
+    const params =
+      [item.params, item.parameters, item.query, item.data]
+        .map((candidate) => (typeof candidate === 'string' ? candidate.trim() : ''))
+        .find((candidate) => candidate.length > 0) || extractDisplayParamsFromRaw(request)
+    if (params) entry.params = params
+    if (request) entry.request = request
+    result.push(entry)
+  }
+  return result
+}
+
+/** Canonical test-parameter candidates from aliased agent records. */
+export function normalizeDisplayTestParameters(raw: unknown): TestParameterCandidate[] {
+  const list = Array.isArray(raw) ? raw : []
+  const result: TestParameterCandidate[] = []
+  const seen = new Set<string>()
+  for (const value of list) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) continue
+    const item = value as Record<string, unknown>
+    const pickText = (names: string[]): string => {
+      for (const name of names) {
+        const candidate = item[name]
+        if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate.trim()
+      }
+      return ''
+    }
+    const name = pickText(['name', 'param', 'key'])
+    const endpoint = pickText(['endpoint', 'interface', 'api', 'path'])
+    const rawValues = Array.isArray(item.values) ? item.values : []
+    const values = (rawValues.length > 0 ? rawValues : [pickText(['example', 'value', 'sample'])])
+      .filter((entry): entry is string | number => typeof entry === 'string' || typeof entry === 'number')
+      .map(String)
+      .slice(0, 50)
+    if (name.length === 0 && endpoint.length === 0 && values.length === 0) continue
+    const locationRaw = pickText(['location', 'where', 'in']).toLowerCase()
+    const locationAliases: Record<string, string> = {
+      json: 'body',
+      form: 'body',
+      formdata: 'body',
+      post: 'body',
+      querystring: 'query',
+      url: 'query',
+      headers: 'header',
+      cookies: 'cookie',
+    }
+    const mappedLocation = locationAliases[locationRaw] || locationRaw
+    const location = (
+      ['path', 'query', 'body', 'header', 'cookie'].includes(mappedLocation) ? mappedLocation : 'query'
+    ) as TestParameterCandidate['location']
+    const source = pickText(['source', 'file', 'interface', 'endpoint']) || endpoint || '(unknown)'
+    const key = `${endpoint}\u0000${name}\u0000${location}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const entry: TestParameterCandidate = {
+      name: name || 'value',
+      endpoint: endpoint || source || '(unknown)',
+      location,
+      values,
+      source,
+      tested: item.tested === true,
+      related_vuln_ids: Array.isArray(item.related_vuln_ids)
+        ? item.related_vuln_ids.filter((entry): entry is string => typeof entry === 'string')
+        : [],
+    }
+    const pattern = pickText(['pattern'])
+    if (pattern) entry.pattern = pattern
+    const notes = pickText(['notes', 'note'])
+    if (notes) entry.notes = notes
+    result.push(entry)
+  }
+  return result
+}
