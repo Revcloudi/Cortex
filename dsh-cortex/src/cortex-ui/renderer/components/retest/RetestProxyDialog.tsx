@@ -5,6 +5,7 @@ import type { PocConfigView } from '@shared/poc'
 import { ProxySection } from '@renderer/components/poc/PocConfigPanel'
 import { useI18n } from '@renderer/i18n'
 import { getApi } from '@renderer/lib/api'
+import { getPortalContainer } from '../../../dsh/portal'
 
 interface RetestProxyDialogProps {
   open: boolean
@@ -43,8 +44,8 @@ export function RetestProxyDialog({ open, onOpenChange }: RetestProxyDialogProps
   }, [open, t])
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange} modal={false}>
+      <DialogPrimitive.Portal container={getPortalContainer()}>
         <DialogPrimitive.Overlay className="sheet-overlay fixed inset-0 z-[85] bg-[hsl(224_18%_10%/0.3)]" />
         <DialogPrimitive.Content className="sheet-content fixed left-1/2 top-1/2 z-[90] flex max-h-[88vh] w-[calc(100vw-32px)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-background">
           <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">

@@ -37,6 +37,7 @@ import { usePocErrorMessage } from '@renderer/components/poc/usePocErrorMessage'
 import { getApi } from '@renderer/lib/api'
 import { useI18n } from '@renderer/i18n'
 import { cn } from '@renderer/lib/utils'
+import { getPortalContainer } from '../../../dsh/portal'
 
 interface PocConfigPanelProps {
   open: boolean
@@ -122,8 +123,8 @@ export function PocConfigPanel({
       : null
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange} modal={false}>
+      <DialogPrimitive.Portal container={getPortalContainer()}>
         <DialogPrimitive.Overlay className="sheet-overlay fixed inset-0 z-[85] bg-[hsl(224_18%_10%/0.3)]" />
         <DialogPrimitive.Content
           data-testid="retest-config-panel"

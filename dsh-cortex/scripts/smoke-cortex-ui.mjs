@@ -909,6 +909,64 @@ export async function runCortexUiSmoke(options = {}) {
       return `${ASSET_HOST_PORT} rendered by the original AssetPage`
     })
 
+    await check('delete confirmation dialog is portaled inside the shadow root', async () => {
+      // Raw Radix dialogs used to portal into document.body, i.e. outside the
+      // shadow root, where Tailwind/theme styles do not apply and the confirm
+      // dialog was invisible — deletes looked like they did nothing.
+      // Earlier checks leave the Asset page mounted; go back to the dashboard
+      // before opening a vulnerability row.
+      await act(async () => {
+        byTestId('nav-dashboard').click()
+      })
+      await waitFor(act, () => byTestId('dashboard-tabs'), { label: 'dashboard after assets', timeoutMs: 10_000 })
+      const row = await waitFor(act, () => shadow.querySelector('tbody tr'), { label: 'dashboard vuln row', timeoutMs: 10_000 })
+      assert.ok(row, 'dashboard has no vulnerability row')
+      await act(async () => {
+        row.click()
+      })
+      const sheet = await waitFor(act, () => shadow.querySelector('[data-testid="vuln-sheet"]'), {
+        label: 'vuln sheet',
+        timeoutMs: 10_000,
+      })
+      const deleteButton = await waitFor(
+        act,
+        () =>
+          Array.from(sheet.querySelectorAll('button')).find(
+            (button) => (button.textContent || '').trim() === '删除',
+          ),
+        { label: 'vuln sheet delete button', timeoutMs: 10_000 },
+      )
+      assert.ok(deleteButton, 'vuln sheet has no delete button')
+      await act(async () => {
+        deleteButton.click()
+      })
+      const dialog = await waitFor(
+        act,
+        () =>
+          Array.from(shadow.querySelectorAll('[role="dialog"]')).find(
+            (element) => element !== sheet && /删除漏洞记录/.test(element.textContent || ''),
+          ),
+        { label: 'delete confirmation dialog', timeoutMs: 5000 },
+      )
+      assert.ok(dialog, 'confirmation dialog must render inside the shadow root')
+      const cancel = Array.from(dialog.querySelectorAll('button')).find((button) =>
+        /取消/.test(button.textContent || ''),
+      )
+      assert.ok(cancel, 'confirmation dialog has no cancel button')
+      await act(async () => {
+        cancel.click()
+      })
+      const closeButton = Array.from(sheet.querySelectorAll('button')).find((button) =>
+        /关闭|Close/.test(button.getAttribute('aria-label') || ''),
+      )
+      if (closeButton) {
+        await act(async () => {
+          closeButton.click()
+        })
+      }
+      return 'ConfirmDeleteDialog portals into the shadow root and is styled'
+    })
+
     await check('nebula route is bundled with the original 3D graph code (not rendered: jsdom has no WebGL2)', () => {
       // The real DSH page has WebGL2 and renders the force-graph canvas. jsdom
       // does not, so the faithfulness gate asserts the code path instead: the

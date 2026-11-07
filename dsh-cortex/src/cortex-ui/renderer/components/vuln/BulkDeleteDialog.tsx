@@ -2,6 +2,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { Loader2, Trash2 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { useI18n } from '@renderer/i18n'
+import { getPortalContainer } from '../../../dsh/portal'
 
 interface BulkDeleteDialogProps {
   open: boolean
@@ -22,8 +23,8 @@ export function BulkDeleteDialog({
   const { t } = useI18n()
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange} modal={false}>
+      <DialogPrimitive.Portal container={getPortalContainer()}>
         <DialogPrimitive.Overlay className="sheet-overlay fixed inset-0 z-[70] bg-[hsl(224_18%_10%/0.3)]" />
         <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[70] w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-5 shadow-panel focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
           <DialogPrimitive.Title className="text-[16px] font-medium tracking-tight text-foreground">
