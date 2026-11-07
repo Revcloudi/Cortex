@@ -5,8 +5,8 @@
     "zh": "Cortex"
   },
   "description": {
-    "en": "Local-first pentest intelligence memory as a native DeepSeek Harness panel: vulnerability board, internal operations, 3D Memory Nebula, assets, snapshots and retest, plus 12 native agent tools that use the local Cortex SQLite without MCP.",
-    "zh": "本地优先的渗透测试情报记忆，作为 DeepSeek Harness 原生面板：漏洞看板、内网作战、3D 记忆星云、资产库、认知快照与漏洞复测，并内置 12 个原生 Agent 工具，直接读写本地 Cortex SQLite，无需 MCP。"
+    "en": "Local-first pentest intelligence memory as a native DeepSeek Harness panel: vulnerability board, internal operations, 3D Memory Nebula, assets, snapshots, retest and mini-program (wxapkg) reversing, plus 22 native agent tools that use the local Cortex SQLite without MCP.",
+    "zh": "本地优先的渗透测试情报记忆，作为 DeepSeek Harness 原生面板：漏洞看板、内网作战、3D 记忆星云、资产库、认知快照、漏洞复测与小程序逆向（wxapkg 检测/解密/解包/分析），并内置 22 个原生 Agent 工具，直接读写本地 Cortex SQLite，无需 MCP。"
   },
   "plugins": [
     {
@@ -16,8 +16,8 @@
         "zh": "Cortex"
       },
       "description": {
-        "en": "Cortex workbench for DSH: the original Cortex UI (vulnerabilities, assets, internal operations, Memory Nebula, snapshots, retest) as a native panel, plus 12 cortex_* agent tools and an injected usage prompt.",
-        "zh": "DSH 版 Cortex 工作台：原版 Cortex UI（漏洞、资产、内网作战、记忆星云、快照、复测）原生面板，外加 12 个 cortex_* Agent 工具与自动注入的使用提示。"
+        "en": "Cortex workbench for DSH: the original Cortex UI (vulnerabilities, assets, internal operations, Memory Nebula, snapshots, retest, mini-program reversing) as a native panel, plus 22 cortex_* agent tools and an injected usage prompt.",
+        "zh": "DSH 版 Cortex 工作台：原版 Cortex UI（漏洞、资产、内网作战、记忆星云、快照、复测、小程序逆向）原生面板，外加 22 个 cortex_* Agent 工具与自动注入的使用提示。"
       },
       "icon": "https://raw.githubusercontent.com/Revcloudi/Cortex/main/dsh-cortex/icon.svg",
       "author": "Revcloudi",
@@ -37,10 +37,27 @@
           "asset-management",
           "snapshot",
           "sqlite",
-          "nebula"
+          "nebula",
+          "miniapp",
+          "wxapkg",
+          "wechat-mini-program",
+          "reverse-engineering"
         ]
       },
       "versions": [
+        {
+          "version": "0.6.0",
+          "publishTimestamp": 1794066521,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/Revcloudi/Cortex",
+            "commit": "f95a4ba6b8ae43c0e7fc113e1479f05a048aaa52",
+            "path": "dsh-cortex"
+          },
+          "engines": {
+            "dsh": "^0.2.2-rc.1"
+          }
+        },
         {
           "version": "0.5.4",
           "publishTimestamp": 1794063895,
