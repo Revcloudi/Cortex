@@ -233,8 +233,11 @@ export interface MiniappFileResponse {
   content: string
   offset: number
   limit: number
+  loadedLines?: number
   totalLines: number
+  hasMore?: boolean
   truncated: boolean
+  sourceTruncated?: boolean
   size: number
   binary: boolean
   formatted?: boolean
@@ -379,10 +382,11 @@ export function readMiniappFile(
   id: string,
   path: string,
   offset = 0,
-  limit = 200
+  limit = 2000,
+  maxBytes = 1024 * 1024
 ): Promise<MiniappFileResponse> {
   return request<MiniappFileResponse>(
-    `/miniapps/${encodeId(id)}/file${toQuery({ path, offset, limit })}`
+    `/miniapps/${encodeId(id)}/file${toQuery({ path, offset, limit, maxBytes })}`
   )
 }
 

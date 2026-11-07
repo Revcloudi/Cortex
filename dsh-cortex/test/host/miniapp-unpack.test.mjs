@@ -410,6 +410,14 @@ test('readTextFile: line paging, byte caps, binary detection and jail', (t) => {
   assert.equal(byteCapped.truncated, true)
   assert.equal(byteCapped.size, 24)
 
+  // Files over the 5 MB preview cap are flagged; smaller files report paging
+  // metadata instead of pretending to be truncated.
+  writeFileSync(join(root, 'big.js'), 'const x=1;\n'.repeat(600_000))
+  const big = readTextFile({ root, path: 'big.js', limit: 2000 })
+  assert.equal(big.sourceTruncated, true)
+  assert.equal(big.formatted, false)
+  assert.equal(big.hasMore, true)
+
   const binary = readTextFile({ root, path: 'logo.bin' })
   assert.equal(binary.binary, true)
   assert.equal(binary.content, '')

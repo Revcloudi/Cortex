@@ -185,10 +185,25 @@ it('GET tree/file/search works inside the workspace and rejects escapes', async 
   assert.ok(file.totalLines > 0)
 
   // JSON/JS previews are pretty-printed server-side (raw bytes stay untouched).
-  const config = expectOk(await call(`/miniapps/${target.id}/file?path=app-config.json&limit=40`))
+  const config = expectOk(await call(`/miniapps/${target.id}/file?path=app-config.json&limit=5`))
   assert.equal(config.formatted, true)
   assert.ok(config.totalLines > 3)
+  assert.ok(config.loadedLines > 0)
+  assert.equal(config.hasMore, true)
   assert.match(config.content, /\n {2}"pages": \[/)
+
+  const nextPage = expectOk(
+    await call(`/miniapps/${target.id}/file?path=app-config.json&offset=5&limit=5`),
+  )
+  assert.equal(nextPage.offset, 5)
+  assert.ok(nextPage.content.length > 0)
+  assert.notEqual(nextPage.content, config.content)
+
+  const smallFile = expectOk(
+    await call(`/miniapps/${target.id}/file?path=pages%2Findex%2Findex.js&limit=2000`),
+  )
+  assert.equal(smallFile.hasMore, false)
+  assert.equal(smallFile.sourceTruncated, false)
 
   const rawConfig = expectOk(
     await call(`/miniapps/${target.id}/file?path=app-config.json&limit=40&format=0`),

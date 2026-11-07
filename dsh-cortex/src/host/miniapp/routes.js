@@ -165,9 +165,15 @@ export function handleFileRoute(ctx) {
   const path = queryString(ctx.searchParams, 'path', { max: MAX_PATH })
   if (!path) throw badRequest('path is required', { field: 'path' })
   const offset = queryInt(ctx.searchParams, 'offset', { min: 0, max: 10_000_000 }) ?? 0
-  const limit = queryInt(ctx.searchParams, 'limit', { min: 1, max: 2000 }) ?? 200
+  const limit = queryInt(ctx.searchParams, 'limit', { min: 1, max: 5000 }) ?? 200
+  const maxBytes = queryInt(ctx.searchParams, 'maxBytes', { min: 1024, max: 5 * 1024 * 1024 }) ?? 1024 * 1024
   const rawFormat = queryBool01(ctx.searchParams, 'format')
-  const result = fileForSource(source, path, { offset, limit, format: rawFormat === false ? false : 'auto' })
+  const result = fileForSource(source, path, {
+    offset,
+    limit,
+    format: rawFormat === false ? false : 'auto',
+    maxBytes,
+  })
   if (result.binary) {
     throw badRequest('binary files cannot be previewed as text', {
       code: 'BINARY_FILE',

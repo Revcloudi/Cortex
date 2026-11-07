@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, UIEvent as ReactUIEvent } from 'react'
 import {
   Archive,
   Check,
@@ -50,7 +50,7 @@ import { formatBytes, formatDateTime, formatDateTimeFull } from '@renderer/lib/f
 import { useI18n } from '@renderer/i18n'
 import { cn } from '@renderer/lib/utils'
 
-const PREVIEW_LINES = 200
+const PREVIEW_LINES = 2000
 
 type DetailTab = 'overview' | 'files' | 'search'
 type DetailAction = 'unpack' | 'analyze' | 'import' | 'open'
@@ -90,8 +90,8 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
 
   const [preview, setPreview] = useState<MiniappFileResponse | null>(null)
   const [previewPath, setPreviewPath] = useState<string | null>(null)
-  const [previewOffset, setPreviewOffset] = useState(0)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewLoadingMore, setPreviewLoadingMore] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -111,9 +111,9 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
     setImportResult(null)
     setPreview(null)
     setPreviewPath(null)
-    setPreviewOffset(0)
     setPreviewError(null)
     setPreviewLoading(false)
+    setPreviewLoadingMore(false)
     setSearchQuery('')
     setSearchRegex(false)
     setSearchGlob('')
@@ -153,18 +153,32 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
   }, [miniappId, retrySeq])
 
   const loadFile = useCallback(
-    async (path: string, offset: number) => {
+    async (path: string, offset: number, append = false) => {
       if (miniappId === null) return
       setPreviewPath(path)
-      setPreviewOffset(offset)
-      setPreviewLoading(true)
+      if (append) setPreviewLoadingMore(true)
+      else setPreviewLoading(true)
       setPreviewError(null)
       try {
         const result = await readMiniappFile(miniappId, path, offset, PREVIEW_LINES)
-        setPreview(result)
+        if (append) {
+          setPreview((current) => {
+            if (current === null || current.path !== path) return result
+            return {
+              ...result,
+              offset: current.offset,
+              content: `${current.content}\n${result.content}`,
+              loadedLines:
+                (current.loadedLines ?? current.content.split('\n').length) +
+                (result.loadedLines ?? result.content.split('\n').length)
+            }
+          })
+        } else {
+          setPreview(result)
+        }
         if (result.binary) setPreviewError(t('miniapp.file.binary'))
       } catch (cause) {
-        setPreview(null)
+        if (!append) setPreview(null)
         setPreviewError(
           cause instanceof MiniappApiError && cause.code === 'BINARY_FILE'
             ? t('miniapp.file.binary')
@@ -172,13 +186,20 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
         )
       } finally {
         setPreviewLoading(false)
+        setPreviewLoadingMore(false)
       }
     },
     [miniappId, t]
   )
 
-  const runSearch = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const handlePreviewScroll = (event: ReactUIEvent<HTMLDivElement>): void => {
+    const element = event.currentTarget
+    if (!preview || previewLoading || previewLoadingMore || preview.binary || !preview.hasMore) return
+    if (element.scrollTop + element.clientHeight < element.scrollHeight - 240) return
+    void loadFile(preview.path, (preview.offset ?? 0) + (preview.loadedLines ?? 0), true)
+  }
+
+  const runSearch = async (event: FormEvent<HTMLFormElement>) => {    event.preventDefault()
     if (miniappId === null) return
     const query = searchQuery.trim()
     if (query.length === 0) {
@@ -848,7 +869,11 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                           </>
                         ) : null}
                       </div>
-                      <div className="min-h-0 flex-1 overflow-auto">
+                      <div
+                        className="min-h-0 flex-1 overflow-auto"
+                        onScroll={handlePreviewScroll}
+                        data-testid="miniapp-file-scroll"
+                      >
                         {previewLoading ? (
                           <div className="flex flex-col gap-2 p-3">
                             <Skeleton className="h-3 w-2/3" />
@@ -873,20 +898,40 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                           </p>
                         )}
                       </div>
-                      {preview !== null && preview.truncated ? (
-                        <div className={cn('flex shrink-0 items-center gap-2 border-t border-border px-3 py-2')}>
+                      {preview !== null && !preview.binary ? (
+                        <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
                           <span className="text-[10.5px] text-muted-foreground">
-                            {t('miniapp.file.truncated', { lines: PREVIEW_LINES })}
+                            {preview.sourceTruncated
+                              ? t('miniapp.file.sourceTruncated')
+                              : preview.hasMore
+                                ? t('miniapp.file.loadedProgress', {
+                                    loaded:
+                                      (preview.offset ?? 0) +
+                                      (preview.loadedLines ?? preview.content.split('\n').length),
+                                    total: preview.totalLines
+                                  })
+                                : t('miniapp.file.allLoaded', { total: preview.totalLines })}
                           </span>
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            className="ml-auto"
-                            disabled={previewLoading}
-                            onClick={() => void loadFile(preview.path, previewOffset + PREVIEW_LINES)}
-                          >
-                            {t('miniapp.file.loadMore')}
-                          </Button>
+                          {preview.hasMore ? (
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              className="ml-auto gap-1"
+                              disabled={previewLoadingMore}
+                              onClick={() =>
+                                void loadFile(
+                                  preview.path,
+                                  (preview.offset ?? 0) + (preview.loadedLines ?? 0),
+                                  true
+                                )
+                              }
+                            >
+                              {previewLoadingMore ? (
+                                <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />
+                              ) : null}
+                              {t('miniapp.file.loadMore')}
+                            </Button>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>

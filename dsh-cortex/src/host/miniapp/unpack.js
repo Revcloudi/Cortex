@@ -789,14 +789,19 @@ export function readTextFile({
   const take = Math.max(0, Math.min(requestedLimit, MAX_TEXT_LINES))
   const page = lines.slice(start, start + take)
   const capped = capContentBytes(page.join('\n'), Math.max(1, numericMaxBytes))
-  const fileCapped = size > MAX_TEXT_READ_BYTES && !formatted
+  const loadedLines = capped.text.length > 0 ? splitLines(capped.text).length : 0
+  const sourceTruncated = !formatted && size > MAX_TEXT_READ_BYTES
+  const hasMore = start + loadedLines < lines.length
   return {
     path: relativePath,
     content: capped.text,
     offset: start,
     limit: take,
+    loadedLines,
     totalLines: lines.length,
-    truncated: capped.capped || start + page.length < lines.length || fileCapped,
+    hasMore,
+    truncated: hasMore || capped.capped || sourceTruncated,
+    sourceTruncated,
     size,
     binary: false,
     formatted,

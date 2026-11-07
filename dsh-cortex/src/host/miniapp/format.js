@@ -60,7 +60,10 @@ function isRegexStart(previousSignificant) {
 export function formatJsText(text) {
   const source = String(text || '')
   if (source.length === 0) return ''
-  let output = ''
+  /** @type {string[]} */
+  const chunks = []
+  let bytes = 0
+  let lastChar = ''
   let indent = 0
   let lineStart = true
   let pendingSpace = false
@@ -71,14 +74,20 @@ export function formatJsText(text) {
   const indentText = () => '  '.repeat(Math.min(indent, 40))
 
   const push = (value) => {
-    if (output.length + value.length > MAX_FORMAT_OUTPUT_BYTES) return false
-    output += value
-    if (value.length > 0) lineStart = value.endsWith('\n')
+    if (bytes + value.length > MAX_FORMAT_OUTPUT_BYTES) return false
+    chunks.push(value)
+    bytes += value.length
+    if (value.length > 0) {
+      lastChar = value[value.length - 1]
+      lineStart = lastChar === '\n'
+    }
     return true
   }
   const newline = () => {
-    if (output.length === 0) return true
-    if (!output.endsWith('\n')) output += '\n'
+    if (bytes === 0 || lastChar === '\n') return true
+    chunks.push('\n')
+    bytes += 1
+    lastChar = '\n'
     lineStart = true
     return true
   }
@@ -214,8 +223,8 @@ export function formatJsText(text) {
       continue
     }
 
-    if (pendingSpace && output.length > 0) {
-      const last = output[output.length - 1]
+    if (pendingSpace && bytes > 0) {
+      const last = lastChar
       if (!/[\s(\[{]/.test(last)) {
         if (!push(' ')) break
       }
@@ -225,8 +234,11 @@ export function formatJsText(text) {
     if (!/\s/.test(char)) previousSignificant = char
     index += 1
   }
-  if (output.length > 0 && !output.endsWith('\n')) output += '\n'
-  return output
+  if (bytes > 0 && lastChar !== '\n') {
+    chunks.push('\n')
+    bytes += 1
+  }
+  return chunks.join('')
 }
 
 /**
