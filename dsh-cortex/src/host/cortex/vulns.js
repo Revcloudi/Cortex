@@ -35,6 +35,7 @@ import {
 import * as dto from '../dto.js'
 import { buildVulnReport, reportFilename } from '../reports.js'
 import { renderDocxReport, renderPdfReport } from '../reports-office.js'
+import { rememberExportDir } from './settings.js'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -585,6 +586,8 @@ export async function handleExport({ req, res, holder, bumpRev }) {
         writeFileSync(target, file.buffer ?? file.content, file.buffer ? undefined : 'utf8')
         savedPaths.push(target)
       }
+      // Remember the directory the user explicitly chose for the next export.
+      if (requestedDir !== undefined) rememberExportDir(exportDir)
     } catch (error) {
       // Filesystem failure must not break the export response; the inline
       // Markdown still lets the browser download attempt proceed. A selected

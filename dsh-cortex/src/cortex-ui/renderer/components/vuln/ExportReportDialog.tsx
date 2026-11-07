@@ -48,11 +48,43 @@ export function ExportReportDialog({
 
   useEffect(() => {
     if (!open) return
-    const stored = window.localStorage.getItem(STORAGE_KEY) ?? ''
-    const storedFormat = window.localStorage.getItem(FORMAT_KEY)
+    let alive = true
+    let stored = ''
+    try {
+      stored = window.localStorage.getItem(STORAGE_KEY) ?? ''
+    } catch {
+      stored = ''
+    }
+    const storedFormat = (() => {
+      try {
+        return window.localStorage.getItem(FORMAT_KEY)
+      } catch {
+        return null
+      }
+    })()
     setDirectory(stored)
     setFormat(storedFormat === 'docx' || storedFormat === 'pdf' ? storedFormat : 'md')
     setInvalid(false)
+    // The Host remembers the last successful export directory; prefer it over
+    // any stale per-browser value so a fresh WebView still defaults correctly.
+    void fetch('/cortex-api/cortex/export/settings')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!alive) return
+        const hostDir = payload && typeof payload.outputDir === 'string' ? payload.outputDir.trim() : ''
+        if (hostDir.length > 0) {
+          setDirectory(hostDir)
+          try {
+            window.localStorage.setItem(STORAGE_KEY, hostDir)
+          } catch {
+            /* ignore */
+          }
+        }
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
   }, [open])
 
   const confirm = (): void => {
@@ -61,9 +93,13 @@ export function ExportReportDialog({
       setInvalid(true)
       return
     }
-    if (trimmed !== '') window.localStorage.setItem(STORAGE_KEY, trimmed)
-    else window.localStorage.removeItem(STORAGE_KEY)
-    window.localStorage.setItem(FORMAT_KEY, format)
+    try {
+      if (trimmed !== '') window.localStorage.setItem(STORAGE_KEY, trimmed)
+      else window.localStorage.removeItem(STORAGE_KEY)
+      window.localStorage.setItem(FORMAT_KEY, format)
+    } catch {
+      /* localStorage may be unavailable; the Host remembers the directory */
+    }
     onConfirm(trimmed === '' ? undefined : trimmed, format)
   }
 

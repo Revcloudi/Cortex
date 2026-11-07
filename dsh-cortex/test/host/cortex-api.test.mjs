@@ -931,8 +931,13 @@ describe('cortex: vulnerability writes', () => {
     const fixture = createFixture()
     const server = await startTestHost({ dbPath: fixture.dbPath })
     const previousExportDir = process.env.CORTEX_EXPORT_DIR
+    const previousSettingsFile = process.env.CORTEX_SETTINGS_FILE
     process.env.CORTEX_EXPORT_DIR = join(fixture.dir, 'exports')
+    process.env.CORTEX_SETTINGS_FILE = join(fixture.dir, 'plugin-settings.json')
     try {
+      const initialSettings = expectOk(await server.request('/cortex-api/cortex/export/settings'))
+      assert.equal(initialSettings.outputDir, null)
+
       const ids = [FIXTURE.vulnMultiHttp, FIXTURE.vulnWithRetest]
       const body = expectOk(
         await server.request('/cortex-api/cortex/vulns/export', {
@@ -964,6 +969,8 @@ describe('cortex: vulnerability writes', () => {
       assert.equal(custom.savedPaths.length, 1)
       assert.equal(custom.savedPaths[0].startsWith(customDir), true)
       assert.equal(existsSync(custom.savedPaths[0]), true)
+      const remembered = expectOk(await server.request('/cortex-api/cortex/export/settings'))
+      assert.equal(remembered.outputDir, customDir)
 
       const relative = await server.request('/cortex-api/cortex/vulns/export', {
         method: 'POST',
@@ -1020,6 +1027,8 @@ describe('cortex: vulnerability writes', () => {
     } finally {
       if (previousExportDir === undefined) delete process.env.CORTEX_EXPORT_DIR
       else process.env.CORTEX_EXPORT_DIR = previousExportDir
+      if (previousSettingsFile === undefined) delete process.env.CORTEX_SETTINGS_FILE
+      else process.env.CORTEX_SETTINGS_FILE = previousSettingsFile
       await server.close()
       cleanupDir(fixture.dir)
     }

@@ -38,6 +38,7 @@ import {
 import * as assets from './assets.js'
 import * as fs from './fs.js'
 import * as misc from './misc.js'
+import * as settings from './settings.js'
 import * as repeater from './repeater.js'
 import * as snapshots from './snapshots.js'
 import * as vulns from './vulns.js'
@@ -118,6 +119,8 @@ const ROUTES = [
 
   // Directory browser for the export-path picker (read-only).
   { pattern: /^\/fs\/list$/, methods: { GET: fs.handleList }, db: false },
+  // Remembered export defaults for the export dialog (plugin-local settings).
+  { pattern: /^\/export\/settings$/, methods: { GET: settings.handleGetExportSettings }, db: false },
 ]
 
 /* ------------------------------------------------------------------------- */
