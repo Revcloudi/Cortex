@@ -115,6 +115,7 @@ function buildPreviewHtml(
 
 type DetailTab = 'overview' | 'files' | 'search'
 type DetailAction = 'unpack' | 'analyze' | 'import' | 'open'
+type ExtractedCategory = 'pages' | 'subPackages' | 'domains' | 'endpoints' | 'secrets' | 'parameters'
 
 interface MiniappDetailProps {
   miniappId: string | null
@@ -145,6 +146,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
   const [tab, setTab] = useState<DetailTab>('overview')
   const [action, setAction] = useState<DetailAction | null>(null)
   const [importResult, setImportResult] = useState<MiniappImportResponse | null>(null)
+  const [overviewCategory, setOverviewCategory] = useState<ExtractedCategory>('domains')
   const [renaming, setRenaming] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const [renamePending, setRenamePending] = useState(false)
@@ -186,6 +188,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
     setFileFindRegex(false)
     setActiveLine(null)
     setActiveMatchIndex(-1)
+    setOverviewCategory('domains')
     setSearchQuery('')
     setSearchRegex(false)
     setSearchGlob('')
@@ -337,8 +340,21 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
     }
   }
 
-  const handleFileFind = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault()
+  const openAnalysisFile = (
+    path: string,
+    options: { find?: string; line?: number | null } = {}
+  ): void => {
+    const line = options.line ?? null
+    setTab('files')
+    void loadFile(
+      path,
+      line !== null ? Math.floor((line - 1) / PREVIEW_LINES) * PREVIEW_LINES : 0,
+      false,
+      { find: options.find ?? '', findRegex: false, scrollLine: line }
+    )
+  }
+
+  const handleFileFind = (event: FormEvent<HTMLFormElement>): void => {    event.preventDefault()
     if (!preview) return
     const query = fileFindInput.trim()
     if (query.length === 0) {
@@ -520,7 +536,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
   const overviewText = detail?.overviewText ?? ''
   const versions = detail?.miniapp.versions ?? []
   const versionCount = versions.length > 0 ? versions.length : (detail?.miniapp.version_count ?? 1)
-  const counts: Array<{ key: string; label: string; value: number }> = [
+  const counts: Array<{ key: ExtractedCategory; label: string; value: number }> = [
     { key: 'pages', label: t('miniapp.detail.count.pages'), value: countOf(analysis, 'pages') },
     { key: 'subPackages', label: t('miniapp.detail.count.subPackages'), value: countOf(analysis, 'subPackages') },
     { key: 'domains', label: t('miniapp.detail.count.domains'), value: countOf(analysis, 'domains') },
@@ -528,6 +544,63 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
     { key: 'secrets', label: t('miniapp.detail.count.secrets'), value: countOf(analysis, 'secrets') },
     { key: 'parameters', label: t('miniapp.detail.count.parameters'), value: countOf(analysis, 'parameters') }
   ]
+
+  const extractedRows: Array<{
+    key: string
+    label: string
+    meta: string
+    file?: string
+    find?: string
+    line?: number
+  }> = (() => {
+    if (!analysis) return []
+    switch (overviewCategory) {
+      case 'pages':
+        return analysis.pages.map((page) => ({ key: `page:${page}`, label: page, meta: '' }))
+      case 'subPackages':
+        return analysis.subPackages.map((entry) => ({
+          key: `sub:${entry.root}`,
+          label: entry.root,
+          meta: t('miniapp.detail.extracted.subPages', { count: entry.pages.length })
+        }))
+      case 'domains':
+        return analysis.domains.map((entry) => ({
+          key: `domain:${entry.host}`,
+          label: entry.host,
+          meta: t('miniapp.detail.extracted.hits', { count: entry.count }),
+          file: entry.files[0],
+          find: entry.host
+        }))
+      case 'endpoints':
+        return analysis.endpoints.map((entry) => ({
+          key: `endpoint:${entry.method || ''}:${entry.path}`,
+          label: `${entry.method || 'GET'} ${entry.path}`,
+          meta: t('miniapp.detail.extracted.hits', { count: entry.count }),
+          file: entry.files[0],
+          find: entry.path
+        }))
+      case 'secrets':
+        return analysis.secrets.map((entry) => ({
+          key: `secret:${entry.source}:${entry.line}:${entry.value_masked}`,
+          label: entry.value_masked || entry.name,
+          meta: `${entry.info_type} · ${entry.source}:${entry.line}`,
+          file: entry.source,
+          line: entry.line
+        }))
+      case 'parameters':
+        return analysis.parameters.map((entry) => ({
+          key: `param:${entry.endpoint}:${entry.name}:${entry.location}`,
+          label: entry.name,
+          meta: `${entry.endpoint} · ${entry.location}${
+            entry.values.length > 0 ? ` · ${entry.values.join(', ')}` : ''
+          }`,
+          file: entry.source,
+          find: entry.endpoint
+        }))
+      default:
+        return []
+    }
+  })()
 
   return (
     <Sheet
@@ -835,10 +908,18 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                     <>
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {counts.map((entry) => (
-                          <div
+                          <button
                             key={entry.key}
+                            type="button"
                             data-testid={`miniapp-count-${entry.key}`}
-                            className="rounded-lg border border-border bg-background px-3 py-2"
+                            aria-pressed={overviewCategory === entry.key}
+                            onClick={() => setOverviewCategory(entry.key)}
+                            className={cn(
+                              'rounded-lg border bg-background px-3 py-2 text-left transition-colors hover:bg-sidebar focus-visible:bg-sidebar focus-visible:outline-none',
+                              overviewCategory === entry.key
+                                ? 'border-accent'
+                                : 'border-border'
+                            )}
                           >
                             <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                               {entry.label}
@@ -846,9 +927,80 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                             <p className="mt-0.5 font-mono text-[17px] tabular-nums text-foreground">
                               {entry.value}
                             </p>
-                          </div>
+                          </button>
                         ))}
                       </div>
+
+                      <section className="mt-4" data-testid="miniapp-extracted">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                            {t('miniapp.detail.extracted.heading')}
+                          </h3>
+                          <span className="text-[10.5px] text-muted-foreground">
+                            {t('miniapp.detail.extracted.hint')}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {counts.map((entry) => (
+                            <button
+                              key={`tab-${entry.key}`}
+                              type="button"
+                              data-testid={`miniapp-extracted-tab-${entry.key}`}
+                              aria-pressed={overviewCategory === entry.key}
+                              onClick={() => setOverviewCategory(entry.key)}
+                              className={cn(
+                                'inline-flex h-6 items-center gap-1 rounded border px-2 text-[10.5px] transition-colors',
+                                overviewCategory === entry.key
+                                  ? 'border-accent bg-accent-soft font-medium text-accent'
+                                  : 'border-border bg-background text-muted-foreground hover:bg-muted'
+                              )}
+                            >
+                              {entry.label}
+                              <span className="font-mono tabular-nums">{entry.value}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-2 max-h-[260px] overflow-y-auto rounded-md border border-border bg-background [scrollbar-gutter:stable]">
+                          {extractedRows.length === 0 ? (
+                            <p className="px-3 py-4 text-[11px] text-muted-foreground">
+                              {t('miniapp.detail.extracted.empty')}
+                            </p>
+                          ) : (
+                            <ul>
+                              {extractedRows.map((row) => (
+                                <li
+                                  key={row.key}
+                                  className="flex items-center gap-2 border-b border-border px-3 py-1.5 last:border-b-0"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <p
+                                      className="truncate font-mono text-[11px] text-foreground"
+                                      title={row.label}
+                                    >
+                                      {row.label}
+                                    </p>
+                                    {row.meta.length > 0 ? (
+                                      <p className="truncate text-[10px] text-muted-foreground">
+                                        {row.meta}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  {row.file ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="xs"
+                                      className="shrink-0"
+                                      onClick={() => openAnalysisFile(row.file!, { find: row.find, line: row.line })}
+                                    >
+                                      {t('miniapp.detail.extracted.open')}
+                                    </Button>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </section>
 
                       <p className="mt-3 font-mono text-[11px] text-muted-foreground">
                         {t('miniapp.detail.overview.filesSummary', {

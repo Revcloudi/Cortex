@@ -1842,6 +1842,16 @@ export async function runCortexUiSmoke(options = {}) {
         (byTestId('miniapp-count-endpoints').textContent || '').includes('2'),
         'endpoints count value missing'
       )
+      assert.ok(byTestId('miniapp-extracted'), 'extracted-data panel missing')
+      const endpointsTab = byTestId('miniapp-extracted-tab-endpoints')
+      assert.ok(endpointsTab, 'extracted endpoints category missing')
+      await act(async () => {
+        endpointsTab.click()
+      })
+      assert.ok(
+        (byTestId('miniapp-extracted').textContent || '').includes('/api/order/list'),
+        'extracted endpoint row missing'
+      )
 
       assert.equal(
         consoleErrors.filter(isFatalConsoleMessage).length,
