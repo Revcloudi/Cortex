@@ -337,7 +337,6 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
               {headerCountLabel}
             </span>
           </div>
-          <p className="mt-1 text-[11.5px] text-muted-foreground">{t('miniapp.page.description')}</p>
         </div>
       </div>
 
@@ -347,9 +346,6 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[12px] font-medium text-foreground">{t('miniapp.banner.title')}</p>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-            {t('miniapp.banner.description')}
-          </p>
           <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground/80">
             {workspaceRoot.length > 0
               ? t('miniapp.banner.workspace', { path: workspaceRoot })
@@ -363,9 +359,8 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
         </div>
       </div>
 
-      <div className="mt-2 flex flex-col gap-0.5 text-[10.5px] leading-relaxed text-muted-foreground">
-        <p>{t('miniapp.page.scopeHint')}</p>
-        {scanRoots !== null && scanRoots.length > 0 ? (
+      {scanRoots !== null && scanRoots.length > 0 ? (
+        <div className="mt-2 flex flex-col gap-0.5 text-[10.5px] leading-relaxed text-muted-foreground">
           <p className="break-all font-mono text-[10px] text-muted-foreground/80">
             {t('miniapp.page.rootsSummary', {
               summary: scanRoots
@@ -378,8 +373,8 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
                 .join(' · ')
             })}
           </p>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button

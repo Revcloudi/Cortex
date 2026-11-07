@@ -1980,7 +1980,7 @@ export async function runCortexUiSmoke(options = {}) {
       assert.ok(byTestId('miniapps-search'), 'search input missing')
       const pageText = byTestId('miniapps-page').textContent || ''
       assert.ok(pageText.includes('仅处理已授权的小程序包'), 'authorization banner title missing')
-      assert.ok(pageText.includes('不上传云端'), 'authorization banner description missing')
+      assert.ok(!pageText.includes('不上传云端'), 'removed banner description must be gone')
       assert.ok(byTestId('miniapps-page').closest('main') !== null, 'page must render inside <main>')
       assert.equal(
         consoleErrors.filter(isFatalConsoleMessage).length,

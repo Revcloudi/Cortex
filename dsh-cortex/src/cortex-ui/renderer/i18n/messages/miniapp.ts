@@ -13,19 +13,14 @@ export const miniappMessages: MessageBundle = {
     // Nav + page chrome
     'nav.miniapps': '小程序逆向',
     'miniapp.page.eyebrow': 'MINI PROGRAM',
-    'miniapp.page.description': '本机小程序包扫描、解包、源码浏览与资产提取',
     'miniapp.page.count': '{count} 个包 · {apps} 个应用',
     'miniapp.page.countVisible': '显示 {visible} / 共 {total} 个包 · {apps} 个应用',
     'miniapp.page.hiddenExtras': '已默认折叠 {count} 个插件/公共库包',
-    'miniapp.page.scopeHint':
-      '只扫描本机已缓存的 wxapkg 文件；手机微信里的小程序不会自动出现，可用“添加自定义目录”指向导出的目录。',
     'miniapp.page.rootsSummary': '扫描范围：{summary}',
     'miniapp.page.loading': '正在加载小程序包…',
 
     // Authorization banner
     'miniapp.banner.title': '仅处理已授权的小程序包',
-    'miniapp.banner.description':
-      '全部解析、解包与预览都在本机完成，不上传云端；请确保对目标小程序拥有合法授权。',
     'miniapp.banner.workspace': '解包工作区：{path}',
     'miniapp.banner.roots': '自定义目录 {count} 个',
 
@@ -195,20 +190,14 @@ export const miniappMessages: MessageBundle = {
     // Nav + page chrome
     'nav.miniapps': 'Mini Programs',
     'miniapp.page.eyebrow': 'MINI PROGRAM',
-    'miniapp.page.description':
-      'Scan local mini-program packages, unpack them, browse source and extract assets',
     'miniapp.page.count': '{count} packages · {apps} apps',
     'miniapp.page.countVisible': 'Showing {visible} of {total} packages · {apps} apps',
     'miniapp.page.hiddenExtras': '{count} plugin/public-library packages folded by default',
-    'miniapp.page.scopeHint':
-      'Only wxapkg files cached on this PC are scanned. Mini programs used only on the phone do not appear automatically; use “Add custom directory” to point at an exported folder.',
     'miniapp.page.rootsSummary': 'Scan roots: {summary}',
     'miniapp.page.loading': 'Loading mini-program packages…',
 
     // Authorization banner
     'miniapp.banner.title': 'Authorized mini-program packages only',
-    'miniapp.banner.description':
-      'All parsing, unpacking and previews happen locally with no cloud upload. Make sure you are authorized to analyze the target mini programs.',
     'miniapp.banner.workspace': 'Unpack workspace: {path}',
     'miniapp.banner.roots': '{count} custom directories',
 
