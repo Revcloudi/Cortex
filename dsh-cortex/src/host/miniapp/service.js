@@ -47,12 +47,13 @@ export function sortSourcesNewest(rows) {
 }
 
 /** Strip heavy internals from a source row for list/detail responses. */
-export function toMiniappSummary(row, { versionCount = 1, isLatest = true, hasAnalysis = false } = {}) {
+export function toMiniappSummary(row, { versionCount = 1, isLatest = true, hasAnalysis = false, sourceCount = 1 } = {}) {
   if (!row) return null
   return {
     id: row.id,
     appid: row.appid,
     app_name: row.app_name || '',
+    kind: sourceKind(row),
     version: row.version || '',
     root_kind: row.root_kind,
     package_dir: row.package_dir,
@@ -68,30 +69,103 @@ export function toMiniappSummary(row, { versionCount = 1, isLatest = true, hasAn
     version_count: versionCount,
     is_latest: isLatest,
     has_analysis: hasAnalysis,
+    source_count: sourceCount,
   }
 }
 
+/** Classify a source by its package files (`app` | `plugin` | `library` | `unknown`). */
+export function sourceKind(row) {
+  if (!row) return 'unknown'
+  if (String(row.appid || '').toLowerCase() === 'publiclib') return 'library'
+  const names = (Array.isArray(row.files) ? row.files : []).map((file) =>
+    String((file && (file.name || file.path)) || '')
+      .replace(/\\/g, '/')
+      .toLowerCase(),
+  )
+  const baseName = (name) => name.split('/').pop() || ''
+  if (names.some((name) => baseName(name) === '__app__.wxapkg')) return 'app'
+  if (names.some((name) => baseName(name) === '__plugincode__.wxapkg')) return 'plugin'
+  if (names.some((name) => name.includes('publiclib'))) return 'library'
+  return 'unknown'
+}
+
+/** Higher is better when one appid+version exists in several WeChat user caches. */
+function sourceQuality(row) {
+  const statusRank =
+    row.status === 'unpacked' ? 4 : row.status === 'detected' ? 3 : row.status === 'decrypting' ? 2 : 1
+  return [statusRank, Number(row.size_bytes) || 0, Number(row.file_count) || 0, String(row.updated_at || '')]
+}
+
+function betterSource(left, right) {
+  const a = sourceQuality(left)
+  const b = sourceQuality(right)
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] === b[index]) continue
+    if (typeof a[index] === 'string') return a[index] > b[index]
+    return a[index] > b[index]
+  }
+  return false
+}
+
+export function pickBestSource(rows) {
+  let best = null
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!best || betterSource(row, best)) best = row
+  }
+  return best
+}
+
 /**
- * Flat list with per-app version counts + latest flags (the UI groups by appid).
+ * Collapse the same appid+version cached in multiple WeChat user directories.
+ * The representative prefers an already-unpacked source, then the largest
+ * (most complete) cache, then the newest row.
+ */
+export function dedupeSources(rows) {
+  const groups = new Map()
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = `${row.appid}\u0000${String(row.version || '')}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(row)
+  }
+  const result = []
+  for (const group of groups.values()) {
+    const chosen = pickBestSource(group)
+    if (!chosen) continue
+    result.push({ ...chosen, source_count: group.length })
+  }
+  result.sort((left, right) => {
+    const byVersion = compareVersionsDesc(left.version, right.version)
+    if (byVersion !== 0) return byVersion
+    return String(left.appid).localeCompare(String(right.appid))
+  })
+  return result
+}
+
+/**
+ * Flat list with per-app version counts + latest flags, de-duplicated by
+ * appid+version across WeChat user caches.
  * @param {import('./store.js').MiniappStore} store
  * @param {{search?:string, status?:string}} [filters]
  */
 export function listMiniapps(store, filters = {}) {
-  const rows = store.listSources({
+  const rawRows = store.listSources({
     search: filters.search || '',
     status: filters.status || '',
   })
+  const rows = dedupeSources(rawRows)
   const versionsByApp = new Map()
   for (const row of rows) {
     if (!versionsByApp.has(row.appid)) versionsByApp.set(row.appid, new Set())
     versionsByApp.get(row.appid).add(String(row.version || ''))
   }
+  // Filter support is still applied against the deduplicated representative.
+  const visible = filters.status ? rows.filter((row) => row.status === filters.status) : rows
   const latestVersion = new Map()
-  for (const [appid, versions] of versionsByApp) {
-    const newest = sortSourcesNewest(rows.filter((row) => row.appid === appid))[0]
+  for (const appid of new Set(visible.map((row) => row.appid))) {
+    const newest = sortSourcesNewest(visible.filter((row) => row.appid === appid))[0]
     if (newest) latestVersion.set(appid, String(newest.version || ''))
   }
-  const miniapps = rows.map((row) => {
+  const miniapps = visible.map((row) => {
     let hasAnalysis = false
     try {
       hasAnalysis = Boolean(store.getAnalysis(row.id))
@@ -102,9 +176,10 @@ export function listMiniapps(store, filters = {}) {
       versionCount: versionsByApp.get(row.appid)?.size || 1,
       isLatest: latestVersion.get(row.appid) === String(row.version || ''),
       hasAnalysis,
+      sourceCount: row.source_count || 1,
     })
   })
-  const appCount = new Set(rows.map((row) => row.appid)).size
+  const appCount = new Set(miniapps.map((row) => row.appid)).size
   return {
     miniapps,
     total: miniapps.length,
@@ -121,7 +196,10 @@ export function resolveSource(store, appid, version = '') {
   if (targetApp.length === 0) throw badRequest('appid is required', { field: 'appid' })
   const rows = store.findSources({ appid: targetApp, version: String(version || '').trim() })
   if (!rows || rows.length === 0) return null
-  return sortSourcesNewest(rows)[0]
+  if (version) return pickBestSource(rows)
+  const newest = sortSourcesNewest(rows)[0]
+  if (!newest) return null
+  return pickBestSource(rows.filter((row) => String(row.version || '') === String(newest.version || '')))
 }
 
 export function requireSource(store, appid, version = '') {
@@ -377,7 +455,9 @@ export function ensureAnalyzed({ store, source, force = false } = {}) {
 
 /** Detail payload for `GET /miniapps/:id`. */
 export function detailPayload(store, source) {
-  const versions = sortSourcesNewest(store.findSources({ appid: source.appid })).map((row) => ({
+  const allSources = store.findSources({ appid: source.appid })
+  const versionRows = dedupeSources(allSources)
+  const versions = versionRows.map((row) => ({
     id: row.id,
     version: row.version,
     status: row.status,
@@ -386,7 +466,10 @@ export function detailPayload(store, source) {
     file_count: row.file_count,
     updated_at: row.updated_at,
     unpacked_path: row.unpacked_path,
+    source_count: row.source_count || 1,
   }))
+  const sourceCount =
+    allSources.filter((row) => String(row.version || '') === String(source.version || '')).length || 1
   const manifest = source.unpacked_path ? readManifest(source.unpacked_path) : null
   let analysis = null
   try {
@@ -398,7 +481,7 @@ export function detailPayload(store, source) {
   const counts = extractedCounts(analysis)
   return {
     miniapp: {
-      ...toMiniappSummary(source),
+      ...toMiniappSummary(source, { sourceCount }),
       app_name: source.app_name || (analysis && analysis.appName) || '',
       versions,
     },

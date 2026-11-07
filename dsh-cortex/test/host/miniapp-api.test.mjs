@@ -19,6 +19,7 @@ import {
 
 const APPID = 'wxaaabbbcccdddeeff'
 const APPID2 = 'wx1111222233334444'
+const PLUGIN_APPID = 'wx5555666677778888'
 
 const tmp = makeTempDir()
 const fakeRoot = join(tmp, 'xwechat-users')
@@ -53,11 +54,24 @@ before(async () => {
   env = isolateMiniappEnv(tmp, { roots: [fakeRoot] })
   writeFakePackage(fakeRoot, { appid: APPID, version: 1, files: sampleFiles({ marker: 'VERSION-ONE' }) })
   writeFakePackage(fakeRoot, { appid: APPID, version: 2, files: sampleFiles({ marker: 'MINIAPP-UNIQUE-MARKER' }) })
+  // Same appid+version cached under a second WeChat user -> the list must collapse it.
+  writeFakePackage(fakeRoot, {
+    user: 'userhash2',
+    appid: APPID,
+    version: 2,
+    files: sampleFiles({ marker: 'MINIAPP-UNIQUE-MARKER' }),
+  })
   writeFakePackage(fakeRoot, {
     appid: APPID,
     version: 3,
     encrypted: true,
     files: sampleFiles({ marker: 'ENCRYPTED-V3' }),
+  })
+  writeFakePackage(fakeRoot, {
+    appid: PLUGIN_APPID,
+    version: 7,
+    fileName: '__PLUGINCODE__.wxapkg',
+    files: sampleFiles({ marker: 'PLUGIN-CODE' }),
   })
   writeUndecryptablePackage(fakeRoot, { appid: APPID2, version: 9 })
   writeFakePackage(altRoot, { appid: APPID2, version: 5, files: sampleFiles({ marker: 'ALT-ROOT' }) })
@@ -75,11 +89,21 @@ after(async () => {
 it('POST /miniapps/scan detects packages, groups versions and persists roots', async () => {
   const body = expectOk(await call('/miniapps/scan', { method: 'POST', body: { customRoots: [fakeRoot] } }))
   assert.equal(body.ok, true)
-  assert.ok(body.totalSources >= 4, `expected >= 4 sources, got ${body.totalSources}`)
-  assert.ok(body.appCount >= 2, `expected >= 2 apps, got ${body.appCount}`)
-  assert.ok(body.added >= 4, `expected >= 4 added, got ${body.added}`)
+  assert.ok(body.totalSources >= 6, `expected >= 6 sources, got ${body.totalSources}`)
+  assert.ok(body.appCount >= 3, `expected >= 3 apps, got ${body.appCount}`)
+  assert.ok(body.added >= 6, `expected >= 6 added, got ${body.added}`)
   assert.ok(Array.isArray(body.customRoots) && body.customRoots.includes(fakeRoot))
   assert.ok(typeof body.scannedAt === 'string' && body.scannedAt.length > 0)
+  // Same appid+version from two user caches is collapsed into one row.
+  assert.equal(body.miniapps.filter((row) => row.appid === APPID).length, 3)
+  assert.equal(
+    body.miniapps.filter((row) => row.appid === APPID).find((row) => row.version === '2')?.source_count,
+    2,
+  )
+  assert.equal(
+    body.miniapps.find((row) => row.appid === PLUGIN_APPID)?.kind,
+    'plugin',
+  )
   // Name enrichment reads one package per app so the UI can show a Chinese name.
   assert.ok(
     body.miniapps.some((row) => row.appid === APPID && row.app_name === '测试健康商城'),
@@ -98,6 +122,7 @@ it('GET /miniapps lists newest version with counts and formats', async () => {
     assert.equal(row.version_count, 3)
     assert.ok(['plain', 'v1mmwx'].includes(row.format))
     assert.equal(row.status, 'detected')
+    assert.equal(row.kind, 'app')
   }
   const latest = body.miniapps.find((row) => row.is_latest)
   assert.equal(latest.version, '3')

@@ -91,7 +91,15 @@ export function MiniappCard({
       : t('miniapp.card.noVersion')
   const versionCount = item.version_count ?? 1
   const appName = (item.app_name ?? '').trim()
-  const title = appName.length > 0 ? appName : item.appid
+  const kindLabel =
+    item.kind === 'plugin'
+      ? t('miniapp.kind.plugin')
+      : item.kind === 'library'
+        ? t('miniapp.kind.library')
+        : item.kind === 'unknown'
+          ? t('miniapp.kind.unknown')
+          : t('miniapp.unnamed')
+  const title = appName.length > 0 ? appName : kindLabel
 
   const stop = (event: ReactMouseEvent) => event.stopPropagation()
   const run = (event: ReactMouseEvent, handler: (item: MiniappRow) => void) => {
@@ -124,12 +132,15 @@ export function MiniappCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10.5px] text-muted-foreground">
-          {appName.length > 0 && item.appid !== title ? (
-            <span className="truncate">{item.appid}</span>
-          ) : null}
+          {item.appid !== title ? <span className="truncate">{item.appid}</span> : null}
           <span className="tabular-nums">{versionLabel}</span>
           {versionCount > 1 ? (
             <span className="tabular-nums">{t('miniapp.card.versions', { count: versionCount })}</span>
+          ) : null}
+          {(item.source_count ?? 1) > 1 ? (
+            <span className="tabular-nums" title={item.package_dir}>
+              {t('miniapp.card.copies', { count: item.source_count })}
+            </span>
           ) : null}
           <span className="tabular-nums">{formatBytes(item.size_bytes)}</span>
           {item.file_count > 0 ? (
@@ -142,8 +153,17 @@ export function MiniappCard({
         </div>
 
         {failed && error.length > 0 ? (
-          <p role="alert" className="break-all rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[10.5px] leading-relaxed text-red-700">
-            {t('miniapp.card.errorLabel', { error })}
+          <p
+            role="alert"
+            className={
+              item.status === 'unsupported'
+                ? 'break-all rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10.5px] leading-relaxed text-amber-800'
+                : 'break-all rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[10.5px] leading-relaxed text-red-700'
+            }
+          >
+            {t(item.status === 'unsupported' ? 'miniapp.card.unsupportedLabel' : 'miniapp.card.errorLabel', {
+              error
+            })}
           </p>
         ) : null}
 

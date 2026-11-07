@@ -91,8 +91,9 @@ export function createMiniappToolDefinitions({ holder } = {}) {
           lines.push(`scan warnings: ${result.errors.length} skipped path(s) (permission/locked/limit)`)
         }
         for (const item of result.miniapps.slice(0, 40)) {
+          const kind = item.kind === 'plugin' ? '[插件] ' : item.kind === 'library' ? '[公共库] ' : ''
           lines.push(
-            `${item.app_name ? `${item.app_name} · ` : ''}${item.appid}@${item.version || '-'} | ${item.status} | ${item.format} | ${formatBytes(item.size_bytes)} | files=${item.file_count} | versions=${item.version_count} | id=${item.id}`,
+            `${kind}${item.app_name ? `${item.app_name} · ` : ''}${item.appid}@${item.version || '-'} | ${item.status} | ${item.format} | ${formatBytes(item.size_bytes)} | files=${item.file_count} | versions=${item.version_count}${item.source_count > 1 ? ` | copies=${item.source_count}` : ''} | id=${item.id}`,
           )
         }
         if (result.miniapps.length > 40) lines.push(`… ${result.miniapps.length - 40} more; use cortex_list_miniapps`)
@@ -118,8 +119,9 @@ export function createMiniappToolDefinitions({ holder } = {}) {
         const listing = listMiniapps(getStore(), { search: text(args.search).trim() })
         const lines = [`${LOG} ${listing.total} miniapp sources · ${listing.appCount} apps`]
         for (const item of listing.miniapps) {
+          const kind = item.kind === 'plugin' ? '[插件] ' : item.kind === 'library' ? '[公共库] ' : ''
           lines.push(
-            `${item.app_name ? `${item.app_name} · ` : ''}${item.appid}@${item.version || '-'} | ${item.status} | ${item.format} | ${formatBytes(item.size_bytes)} | files=${item.file_count} | versions=${item.version_count} | analysis=${item.has_analysis ? 'yes' : 'no'} | id=${item.id}`,
+            `${kind}${item.app_name ? `${item.app_name} · ` : ''}${item.appid}@${item.version || '-'} | ${item.status} | ${item.format} | ${formatBytes(item.size_bytes)} | files=${item.file_count} | versions=${item.version_count}${item.source_count > 1 ? ` | copies=${item.source_count}` : ''} | analysis=${item.has_analysis ? 'yes' : 'no'} | id=${item.id}`,
           )
         }
         if (listing.total === 0) lines.push('No sources yet — run cortex_scan_miniapps first.')

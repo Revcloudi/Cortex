@@ -32,11 +32,14 @@ export const MINIAPP_STATUSES: readonly MiniappStatus[] = [
 
 export type MiniappFormat = 'plain' | 'v1mmwx' | 'unknown'
 
+export type MiniappKind = 'app' | 'plugin' | 'library' | 'unknown'
+
 /** One detected package group (all packages of one appid+version). */
 export interface MiniappRow {
   id: string
   appid: string
   app_name: string
+  kind?: MiniappKind
   version: string
   root_kind: string
   package_dir: string
@@ -51,6 +54,8 @@ export interface MiniappRow {
   version_count?: number
   is_latest?: boolean
   has_analysis?: boolean
+  /** Number of WeChat user-cache copies collapsed into this row. */
+  source_count?: number
 }
 
 export interface MiniappListResponse {
@@ -101,6 +106,7 @@ export interface MiniappVersion {
   file_count: number
   updated_at: string
   unpacked_path: string
+  source_count?: number
 }
 
 export interface MiniappManifestTotals {

@@ -308,6 +308,15 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
 
   const analysis = detail?.analysis ?? null
   const unpacked = detail?.miniapp.status === 'unpacked'
+  const miniappTitle =
+    (detail?.miniapp.app_name ?? '').trim() ||
+    (detail?.miniapp.kind === 'plugin'
+      ? t('miniapp.kind.plugin')
+      : detail?.miniapp.kind === 'library'
+        ? t('miniapp.kind.library')
+        : detail?.miniapp.kind === 'unknown'
+          ? t('miniapp.kind.unknown')
+          : t('miniapp.unnamed'))
   const overviewText = detail?.overviewText ?? ''
   const versions = detail?.miniapp.versions ?? []
   const versionCount = versions.length > 0 ? versions.length : (detail?.miniapp.version_count ?? 1)
@@ -425,9 +434,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                   ) : (
                     <div className="flex min-w-0 items-center gap-1.5">
                       <SheetTitle className="break-all text-[19px] font-medium tracking-tight text-foreground">
-                        {(detail.miniapp.app_name ?? '').trim().length > 0
-                          ? detail.miniapp.app_name
-                          : detail.miniapp.appid}
+                        {miniappTitle}
                       </SheetTitle>
                       <Button
                         variant="ghost"
@@ -468,6 +475,11 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                     {t('miniapp.card.versions', { count: versionCount })}
                   </span>
                 ) : null}
+                {(detail.miniapp.source_count ?? 1) > 1 ? (
+                  <span className="font-mono text-[11px] tabular-nums text-foreground/70">
+                    {t('miniapp.card.copies', { count: detail.miniapp.source_count })}
+                  </span>
+                ) : null}
                 <span className="font-mono text-[11px] tabular-nums text-foreground/70">
                   {formatBytes(detail.miniapp.size_bytes)}
                 </span>
@@ -479,9 +491,18 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
               {(detail.miniapp.error ?? '').trim().length > 0 ? (
                 <p
                   role="alert"
-                  className="mt-2 break-all rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-red-700"
+                  className={
+                    detail.miniapp.status === 'unsupported'
+                      ? 'mt-2 break-all rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-800'
+                      : 'mt-2 break-all rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-red-700'
+                  }
                 >
-                  {t('miniapp.card.errorLabel', { error: detail.miniapp.error })}
+                  {t(
+                    detail.miniapp.status === 'unsupported'
+                      ? 'miniapp.card.unsupportedLabel'
+                      : 'miniapp.card.errorLabel',
+                    { error: detail.miniapp.error }
+                  )}
                 </p>
               ) : null}
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
+  Boxes,
   FolderPlus,
   Loader2,
   PackageSearch,
@@ -73,6 +74,7 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 180)
   const [status, setStatus] = useState<MiniappStatus | 'all'>('all')
+  const [showExtras, setShowExtras] = useState(false)
   const [retrySeq, setRetrySeq] = useState(0)
   const [refreshSeq, setRefreshSeq] = useState(0)
   const [scanPending, setScanPending] = useState(false)
@@ -286,12 +288,22 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
     setStatus('all')
   }
 
-  const countLabel =
-    data === null
-      ? '—'
-      : t('miniapp.page.count', { count: data.total, apps: data.appCount })
   const workspaceRoot = data?.workspaceRoot ?? ''
   const customRootCount = roots?.customRoots?.length ?? data?.customRoots?.length ?? 0
+  const extraCount =
+    data === null
+      ? 0
+      : data.miniapps.filter((row) => row.kind === 'plugin' || row.kind === 'library').length
+  const visibleMiniapps =
+    data === null
+      ? []
+      : data.miniapps.filter(
+          (row) => showExtras || (row.kind !== 'plugin' && row.kind !== 'library')
+        )
+  const visibleCountLabel = t('miniapp.page.count', {
+    count: visibleMiniapps.length,
+    apps: new Set(visibleMiniapps.map((row) => row.appid)).size
+  })
 
   return (
     <section
@@ -308,7 +320,7 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
               {t('nav.miniapps')}
             </h1>
             <span className="font-mono text-[11px] tabular-nums text-foreground/70">
-              {countLabel}
+              {visibleCountLabel}
             </span>
           </div>
           <p className="mt-1 text-[11.5px] text-muted-foreground">{t('miniapp.page.description')}</p>
@@ -398,6 +410,21 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
               ))}
             </SelectContent>
           </Select>
+
+          <Button
+            variant={showExtras ? 'subtle' : 'outline'}
+            size="sm"
+            data-testid="miniapps-show-extras"
+            aria-pressed={showExtras}
+            onClick={() => setShowExtras((value) => !value)}
+            className="gap-1.5"
+          >
+            <Boxes aria-hidden="true" className="h-3.5 w-3.5" />
+            {t(showExtras ? 'miniapp.filter.hideExtras' : 'miniapp.filter.showExtras')}
+            {extraCount > 0 ? (
+              <span className="font-mono text-[10px] tabular-nums">({extraCount})</span>
+            ) : null}
+          </Button>
 
           <div className="relative w-full max-w-[320px] sm:w-[280px]">
             <Search
@@ -493,8 +520,11 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
             {data === null
               ? t('miniapp.page.loading')
               : filtersActive
-                ? t('miniapp.page.count', { count: data.miniapps.length, apps: data.appCount })
-                : countLabel}
+                ? t('miniapp.page.count', {
+                    count: visibleMiniapps.length,
+                    apps: new Set(visibleMiniapps.map((row) => row.appid)).size
+                  })
+                : visibleCountLabel}
           </span>
         </div>
 
@@ -554,9 +584,29 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
               </Button>
             )}
           </EmptyState>
+        ) : visibleMiniapps.length === 0 && filtersActive ? (
+          <EmptyState
+            icon={Search}
+            title={t('miniapp.emptyFiltered.title')}
+            description={t('miniapp.emptyFiltered.description')}
+          >
+            <Button variant="outline" size="sm" onClick={resetFilters}>
+              {t('miniapp.emptyFiltered.reset')}
+            </Button>
+          </EmptyState>
+        ) : visibleMiniapps.length === 0 ? (
+          <EmptyState
+            icon={Boxes}
+            title={t('miniapp.emptyExtras.title')}
+            description={t('miniapp.emptyExtras.description')}
+          >
+            <Button variant="outline" size="sm" onClick={() => setShowExtras(true)}>
+              {t('miniapp.emptyExtras.cta')}
+            </Button>
+          </EmptyState>
         ) : (
           <ul>
-            {data.miniapps.map((item) => (
+            {visibleMiniapps.map((item) => (
               <MiniappCard
                 key={item.id}
                 item={item}

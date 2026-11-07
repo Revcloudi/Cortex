@@ -129,12 +129,15 @@ export function sampleFiles({ marker = 'MINIAPP-UNIQUE-MARKER' } = {}) {
  * Create `<base>/<user>/applet/packages/<appid>/<version>/*.wxapkg`.
  * @param {string} base directory acting as the fake xwechat `users` root
  */
-export function writeFakePackage(base, { user = 'userhash', appid, version, files, encrypted = false }) {
+export function writeFakePackage(
+  base,
+  { user = 'userhash', appid, version, files, encrypted = false, fileName = '__APP__.wxapkg' },
+) {
   const dir = join(base, user, 'applet', 'packages', appid, String(version))
   mkdirSync(dir, { recursive: true })
   const buffer = encrypted ? buildEncryptedWxapkg(files, appid) : buildPlainWxapkg(files)
-  writeFileSync(join(dir, '__APP__.wxapkg'), buffer)
-  return { dir, file: join(dir, '__APP__.wxapkg') }
+  writeFileSync(join(dir, fileName), buffer)
+  return { dir, file: join(dir, fileName) }
 }
 
 /** Create a real-looking encrypted package that cannot be decrypted. */
