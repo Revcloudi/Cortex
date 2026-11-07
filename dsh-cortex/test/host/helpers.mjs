@@ -22,6 +22,21 @@ export const SCHEMA_PATH = join(REPO_ROOT, 'fixtures', 'schema5.sql')
 delete process.env.CORTEX_DB_PATH
 delete process.env.CORTEX_DB_READONLY
 
+// Repeater history/fuzzer state also lives on disk (CORTEX_REPEATER_DIR).
+// Point it at one temp root per test process and remove it best-effort on
+// exit, so a `node --test` run never writes into the operator's ~/.cortex.
+if (!process.env.CORTEX_REPEATER_DIR) {
+  const repeaterDir = mkdtempSync(join(tmpdir(), 'dsh-cortex-repeater-'))
+  process.env.CORTEX_REPEATER_DIR = repeaterDir
+  process.on('exit', () => {
+    try {
+      rmSync(repeaterDir, { recursive: true, force: true })
+    } catch {
+      /* best-effort cleanup */
+    }
+  })
+}
+
 /** @returns {string} */
 export function makeTempDir() {
   return mkdtempSync(join(tmpdir(), 'dsh-cortex-host-'))

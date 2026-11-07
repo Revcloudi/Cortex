@@ -1,68 +1,74 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CornerDownRight, Loader2, Play } from 'lucide-react'
+import {
+  ArrowRight,
+  Clock,
+  CornerDownRight,
+  FileInput,
+  FileOutput,
+  Loader2,
+  Play,
+  Star
+} from 'lucide-react'
+import { toast } from 'sonner'
 import type { Vulnerability } from '@shared/types'
 import type { RepeaterSendResult } from '@shared/repeater'
 import { Button } from '@renderer/components/ui/button'
 import { Skeleton } from '@renderer/components/ui/skeleton'
+import { useCopy } from '@renderer/hooks/useCopy'
 import { useI18n } from '@renderer/i18n'
 import { getApi } from '@renderer/lib/api'
+import { buildCurlCommand } from '@renderer/lib/curl'
+import { parseRawRequest, stripDerivedHeaders } from '@renderer/lib/repeaterRaw'
 import {
   defaultRequestIndex,
   extractRepeaterRequests,
   resolveRepeaterUrl
 } from '@renderer/lib/retestRequest'
-import { prettyJsonBody } from '@renderer/lib/retestResponse'
+import {
+  buildHtmlPreview,
+  headerValue,
+  isHtmlResponse,
+  isRedirectResponse,
+  prettyJsonBody,
+  statusTone
+} from '@renderer/lib/retestResponse'
+import { CurlImportDialog } from './CurlImportDialog'
+import { FuzzerPanel } from './FuzzerPanel'
+import { RepeaterCollectionsDialog } from './RepeaterCollectionsDialog'
+import { RepeaterHistoryDialog } from './RepeaterHistoryDialog'
 
 interface RepeaterPanelProps {
   vuln: Vulnerability | null
   loading: boolean
 }
 
-interface ParsedRawRequest {
-  method: string
-  url: string
-  headers: Record<string, string>
-  body: string
-}
+type RepeaterMode = 'single' | 'fuzzer'
 
-/**
- * Protocol-level headers copied from a report are re-derived by the outbound
- * request (Host from the URL, length/connection by the HTTP client). Dropping
- * them here keeps raw requests sendable without a validation error.
- */
-const DERIVED_HEADERS = new Set([
-  'host',
-  'content-length',
-  'connection',
-  'transfer-encoding',
-  'upgrade',
-  'keep-alive',
-  'proxy-connection'
-])
+const MODE_STORAGE_KEY = 'cortex.retest.mode'
 
-/** Parse a Burp-like raw request into the typed repeater payload. */
-function parseRawRequest(text: string): ParsedRawRequest {
-  const lines = text.replace(/\r\n/g, '\n').split('\n')
-  const requestLine = (lines.shift() ?? '').trim()
-  const match = /^([A-Za-z]+)\s+(\S+)\s+HTTP\/\d(?:\.\d)?$/.exec(requestLine)
-  if (match === null) throw new Error('请求行必须形如：GET /path HTTP/1.1')
-  const headers: Record<string, string> = {}
-  let index = 0
-  for (; index < lines.length; index += 1) {
-    const line = lines[index]
-    if (line === undefined) break
-    if (line.trim() === '') {
-      index += 1
-      break
-    }
-    const colon = line.indexOf(':')
-    if (colon <= 0) throw new Error(`请求头不合法：${line}`)
-    const name = line.slice(0, colon).trim()
-    const value = line.slice(colon + 1).trim()
-    if (name !== '') headers[name] = value
+/** Static ids (and aliases) keep the smoke test selectors stable. */
+const MODE_OPTIONS = [
+  {
+    value: 'single',
+    testId: 'fuzzer-mode-single',
+    alias: 'repeater-mode-single',
+    labelKey: 'retest.repeater.modeSingle'
+  },
+  {
+    value: 'fuzzer',
+    testId: 'fuzzer-mode-fuzzer',
+    alias: 'repeater-mode-fuzzer',
+    labelKey: 'retest.repeater.modeFuzzer'
   }
-  const body = lines.slice(index).join('\n')
-  return { method: match[1].toUpperCase(), url: match[2], headers, body }
+] as const
+
+/** Remember the last used mode; storage failures must never break the panel. */
+function readStoredMode(): RepeaterMode {
+  try {
+    return window.localStorage.getItem(MODE_STORAGE_KEY) === 'fuzzer' ? 'fuzzer' : 'single'
+  } catch {
+    return 'single'
+  }
 }
 
 function describeSendError(cause: unknown, connectionRefused: string): string {
@@ -75,75 +81,143 @@ function describeSendError(cause: unknown, connectionRefused: string): string {
   return cleaned === '' ? connectionRefused : cleaned
 }
 
-function headerValue(headers: Record<string, string>, name: string): string {
-  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name)
-  return entry?.[1] ?? ''
-}
-
-function isRedirectResponse(result: RepeaterSendResult): boolean {
-  const status = result.response.status
-  return status >= 300 && status < 400 && headerValue(result.response.headers, 'location') !== ''
-}
-
-function isHtmlResponse(result: RepeaterSendResult): boolean {
-  const contentType = headerValue(result.response.headers, 'content-type')
-  if (/text\/html|application\/xhtml\+xml/i.test(contentType)) return true
-  return /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(result.response.body.slice(0, 300))
-}
-
-/** Rendered HTML needs a base URL so relative CSS/images resolve against the target. */
-function buildHtmlPreview(body: string, targetUrl: string): string {
-  let base = ''
-  try {
-    base = `${new URL(targetUrl).origin}/`
-  } catch {
-    base = ''
-  }
-  if (base === '') return body
-  const tag = `<base href="${base.replace(/"/g, '&quot;')}">`
-  if (/<head(?:\s[^>]*)?>/i.test(body)) {
-    return body.replace(/<head(?:\s[^>]*)?>/i, (match) => `${match}${tag}`)
-  }
-  return `${tag}${body}`
-}
-
-function statusTone(status: number): string {
-  if (status >= 500) return 'border-red-300 bg-red-50 text-red-800'
-  if (status >= 400) return 'border-amber-300 bg-amber-50 text-amber-900'
-  if (status >= 300) return 'border-sky-300 bg-sky-50 text-sky-900'
-  return 'border-emerald-300 bg-emerald-50 text-emerald-900'
+/** Saved history/collection rows share the raw + request + response shape. */
+interface SavedRepeaterEntry {
+  raw: string
+  request: RepeaterSendResult['request']
+  response: RepeaterSendResult['response'] | null
 }
 
 /**
  * Manual HTTP repeater. Requests are extracted from the finding's Markdown
  * report (all HTTP request steps are selectable) instead of the old generated-JS
  * pipeline. The user edits the raw request and sends it through the retest proxy.
+ *
+ * This wrapper owns the 单次请求 / Fuzzer mode switch; the single-Repeater body
+ * below is the original panel plus history, favorites and curl tools.
  */
 export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
   const { t } = useI18n()
+  const [mode, setMode] = useState<RepeaterMode>(readStoredMode)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MODE_STORAGE_KEY, mode)
+    } catch {
+      /* localStorage may be unavailable in a hardened WebView */
+    }
+  }, [mode])
+
+  const modeSwitch = (
+    <div
+      data-testid="fuzzer-mode"
+      role="tablist"
+      aria-label={t('retest.repeater.modeAria')}
+      className="inline-flex shrink-0 rounded-md border border-border bg-muted p-0.5"
+    >
+      {MODE_OPTIONS.map((option) => (
+        <span
+          key={option.value}
+          data-testid={option.alias}
+          role="presentation"
+          onClick={() => setMode(option.value)}
+          className="inline-flex"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === option.value}
+            data-testid={option.testId}
+            onClick={() => setMode(option.value)}
+            className={`h-7 rounded px-2.5 text-[11.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              mode === option.value
+                ? 'bg-background font-medium text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {t(option.labelKey)}
+          </button>
+        </span>
+      ))}
+    </div>
+  )
+
+  const header = (
+    <div className="flex shrink-0 flex-wrap items-center gap-2">
+      <span className="text-[12px] font-medium text-foreground">{t('retest.repeater.title')}</span>
+      {vuln !== null ? (
+        <span className="rounded border border-border bg-sidebar px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
+          {vuln.id}
+        </span>
+      ) : null}
+      <div className="ml-auto">{modeSwitch}</div>
+    </div>
+  )
+
+  if (vuln === null) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        {header}
+        {loading ? (
+          <>
+            <Skeleton className="h-[310px] w-full" />
+            <Skeleton className="h-[220px] w-full" />
+          </>
+        ) : (
+          <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-background/60 text-[12px] text-muted-foreground">
+            {t('retest.repeater.empty')}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {header}
+      {mode === 'single' ? (
+        <SingleRepeater vuln={vuln} />
+      ) : (
+        <FuzzerPanel vuln={vuln} loading={loading} />
+      )}
+    </div>
+  )
+}
+
+interface SingleRepeaterProps {
+  vuln: Vulnerability
+}
+
+/**
+ * The original single Repeater. Behavior is intentionally unchanged: same
+ * request extraction/default step, retest-proxy send, redirect follow, raw /
+ * pretty / HTML views and byte counter. The toolbar gained read-only helpers
+ * (history, favorites, curl import/export) that never change how a send works.
+ */
+function SingleRepeater({ vuln }: SingleRepeaterProps) {
+  const { t } = useI18n()
+  const { copy } = useCopy()
   const [raw, setRaw] = useState('')
   const [step, setStep] = useState(0)
   const [sending, setSending] = useState(false)
   const [bodyView, setBodyView] = useState<'raw' | 'pretty' | 'html'>('raw')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<RepeaterSendResult | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [collectionsOpen, setCollectionsOpen] = useState(false)
+  const [curlImportOpen, setCurlImportOpen] = useState(false)
 
-  const requests = useMemo(() => (vuln === null ? [] : extractRepeaterRequests(vuln)), [vuln])
+  const requests = useMemo(() => extractRepeaterRequests(vuln), [vuln])
 
   useEffect(() => {
     setResult(null)
     setError(null)
-    if (vuln === null) {
-      setRaw('')
-      setStep(0)
-      return
-    }
     const nextStep = defaultRequestIndex(vuln, requests)
     setStep(nextStep)
     setRaw(requests[nextStep]?.raw ?? '')
     // Reset only when the selected vulnerability changes; user edits must survive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vuln?.id])
+  }, [vuln.id])
 
   const selectStep = (nextStep: number): void => {
     const next = requests[nextStep]
@@ -155,8 +229,10 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
   }
 
   const rawBytes = useMemo(() => new TextEncoder().encode(raw).byteLength, [raw])
-  const responseIsRedirect = result !== null && isRedirectResponse(result)
-  const responseIsHtml = result !== null && isHtmlResponse(result)
+  const responseIsRedirect =
+    result !== null && isRedirectResponse(result.response.status, result.response.headers)
+  const responseIsHtml =
+    result !== null && isHtmlResponse(result.response.body, result.response.headers)
   const formattedJson = useMemo(
     () =>
       result === null
@@ -165,12 +241,36 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
     [result]
   )
   const htmlPreview = useMemo(
-    () => (result === null || vuln === null ? '' : buildHtmlPreview(result.response.body, vuln.target_url)),
-    [result, vuln]
+    () => (result === null ? '' : buildHtmlPreview(result.response.body, vuln.target_url)),
+    [result, vuln.target_url]
   )
 
+  /** Parsed request used by the favorites dialog (null while the editor is invalid). */
+  const currentRequest = useMemo<RepeaterSendResult['request'] | null>(() => {
+    try {
+      const parsed = parseRawRequest(raw)
+      return {
+        method: parsed.method,
+        url: resolveRepeaterUrl(parsed.url, vuln.target_url),
+        headers: stripDerivedHeaders(parsed.headers),
+        body: parsed.body
+      }
+    } catch {
+      return null
+    }
+  }, [raw, vuln.target_url])
+
+  const restoreSaved = (item: SavedRepeaterEntry): void => {
+    setRaw(item.raw)
+    setError(null)
+    setBodyView('raw')
+    setResult(
+      item.response === null ? null : { request: item.request, response: item.response }
+    )
+  }
+
   const send = async (followRedirects = false): Promise<void> => {
-    if (vuln === null || sending) return
+    if (sending) return
     const api = getApi()
     if (!api) {
       setError(t('common.apiUnavailable'))
@@ -180,14 +280,11 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
     setError(null)
     try {
       const parsed = parseRawRequest(raw)
-      const headers = Object.fromEntries(
-        Object.entries(parsed.headers).filter(([name]) => !DERIVED_HEADERS.has(name.toLowerCase()))
-      )
       const response = await api.sendRepeaterRequest({
         vulnId: vuln.id,
         method: parsed.method,
         url: resolveRepeaterUrl(parsed.url, vuln.target_url),
-        headers,
+        headers: stripDerivedHeaders(parsed.headers),
         ...(parsed.body === '' ? {} : { body: parsed.body }),
         followRedirects
       })
@@ -201,33 +298,44 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
     }
   }
 
-  if (loading && vuln === null) {
-    return (
-      <div className="flex h-full flex-col gap-3">
-        <Skeleton className="h-[310px] w-full" />
-        <Skeleton className="h-[220px] w-full" />
-      </div>
-    )
+  const exportCurl = async (): Promise<void> => {
+    let command: string
+    try {
+      const parsed = parseRawRequest(raw)
+      command = buildCurlCommand({
+        method: parsed.method,
+        url: resolveRepeaterUrl(parsed.url, vuln.target_url),
+        headers: stripDerivedHeaders(parsed.headers),
+        body: parsed.body
+      })
+    } catch {
+      toast.error(t('retest.repeater.curl.parseFailed'))
+      return
+    }
+    // The toast only says "copied"; the command (cookies included) is never shown.
+    await copy(command, t('retest.repeater.curl.exported'))
   }
 
-  if (vuln === null) {
-    return (
-      <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border bg-background/60 text-[12px] text-muted-foreground">
-        {t('retest.repeater.empty')}
-      </div>
-    )
+  const applyCurl = (nextRaw: string): void => {
+    setRaw(nextRaw)
+    setResult(null)
+    setError(null)
+    setBodyView('raw')
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <>
       <section className="rounded-lg border border-border bg-background">
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-          <span className="text-[12px] font-medium text-foreground">{t('retest.repeater.title')}</span>
-          <span className="rounded border border-border bg-sidebar px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
-            {vuln.id}
+          <span className="text-[12px] font-medium text-foreground">
+            {t('retest.repeater.requestSection')}
           </span>
           {requests.length > 0 ? (
-            <div className="ml-auto flex max-w-full items-center gap-1 overflow-x-auto" role="tablist" aria-label={t('retest.repeater.stepsAria')}>
+            <div
+              className="ml-auto flex max-w-full items-center gap-1 overflow-x-auto"
+              role="tablist"
+              aria-label={t('retest.repeater.stepsAria')}
+            >
               {requests.map((request, index) => (
                 <button
                   key={`${index}-${request.label}`}
@@ -274,12 +382,59 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
               {sending ? t('retest.repeater.sending') : t('retest.repeater.send')}
             </Button>
 
+            <div className="flex flex-wrap items-center gap-1">
+              <Button
+                variant="outline"
+                size="xs"
+                data-testid="repeater-history-open"
+                onClick={() => setHistoryOpen(true)}
+                className="gap-1 text-[10.5px]"
+              >
+                <Clock aria-hidden="true" className="h-3 w-3" />
+                {t('retest.repeater.history.open')}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                data-testid="repeater-collections-open"
+                onClick={() => setCollectionsOpen(true)}
+                className="gap-1 text-[10.5px]"
+              >
+                <Star aria-hidden="true" className="h-3 w-3" />
+                {t('retest.repeater.favorites.open')}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                data-testid="repeater-curl-import"
+                onClick={() => setCurlImportOpen(true)}
+                className="gap-1 text-[10.5px]"
+              >
+                <FileInput aria-hidden="true" className="h-3 w-3" />
+                {t('retest.repeater.curl.import')}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                data-testid="repeater-curl-export"
+                disabled={raw.trim() === ''}
+                onClick={() => void exportCurl()}
+                className="gap-1 text-[10.5px]"
+              >
+                <FileOutput aria-hidden="true" className="h-3 w-3" />
+                {t('retest.repeater.curl.export')}
+              </Button>
+            </div>
+
             <span className="ml-auto font-mono text-[9.5px] tabular-nums text-muted-foreground">
               {t('retest.repeater.bytes', { count: rawBytes })}
             </span>
           </div>
           {error !== null ? (
-            <p role="alert" className="mt-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10.5px] leading-relaxed text-red-700">
+            <p
+              role="alert"
+              className="mt-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10.5px] leading-relaxed text-red-700"
+            >
               {error}
             </p>
           ) : null}
@@ -289,17 +444,23 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
       <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-border bg-background">
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
           <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-[12px] font-medium text-foreground">{t('retest.repeater.responseTitle')}</span>
+          <span className="text-[12px] font-medium text-foreground">
+            {t('retest.repeater.responseTitle')}
+          </span>
           {result !== null ? (
             <>
-              <span className={`rounded border px-1.5 py-0.5 font-mono text-[10px] tabular-nums ${statusTone(result.response.status)}`}>
+              <span
+                className={`rounded border px-1.5 py-0.5 font-mono text-[10px] tabular-nums ${statusTone(result.response.status)}`}
+              >
                 {result.response.status}
               </span>
               <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">
                 {result.response.durationMs} ms · {result.response.body.length} B
               </span>
               {result.response.truncated ? (
-                <span className="text-[9.5px] text-amber-700">{t('retest.repeater.truncated')}</span>
+                <span className="text-[9.5px] text-amber-700">
+                  {t('retest.repeater.truncated')}
+                </span>
               ) : null}
               {responseIsRedirect ? (
                 <Button
@@ -395,6 +556,26 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
           </div>
         )}
       </section>
-    </div>
+
+      <RepeaterHistoryDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        onRestore={restoreSaved}
+      />
+      <RepeaterCollectionsDialog
+        open={collectionsOpen}
+        vulnId={vuln.id}
+        raw={raw}
+        request={currentRequest}
+        response={result === null ? null : result.response}
+        onOpenChange={setCollectionsOpen}
+        onLoad={restoreSaved}
+      />
+      <CurlImportDialog
+        open={curlImportOpen}
+        onOpenChange={setCurlImportOpen}
+        onApply={applyCurl}
+      />
+    </>
   )
 }

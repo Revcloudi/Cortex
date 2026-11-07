@@ -455,7 +455,76 @@ export const retestMessages: MessageBundle = {
     'retest.config.meta.activeProvider': '当前提供商：{label}',
     'retest.config.meta.noActiveProvider': '未选择当前提供商',
     'retest.config.meta.providerCount': '{count} 个提供商',
-    'retest.config.noProvidersActiveHint': '配置至少一个模型提供商后，才能生成 PoC。'
+    'retest.config.noProvidersActiveHint': '配置至少一个模型提供商后，才能生成 PoC。',
+
+    // ------------------------------------------------------------------
+    // Repeater mode switch + single-Repeater additions (history / favorites /
+    // curl import+export). Appended block; existing keys above are untouched.
+    // ------------------------------------------------------------------
+    'retest.repeater.modeAria': '重放模式',
+    'retest.repeater.modeSingle': '单次请求',
+    'retest.repeater.modeFuzzer': 'Fuzzer',
+    'retest.repeater.requestSection': '请求',
+
+    // Send history
+    'retest.repeater.history.open': '历史',
+    'retest.repeater.history.title': '发送历史',
+    'retest.repeater.history.description': '最近发送记录；点击一条可同时恢复请求与响应。',
+    'retest.repeater.history.loading': '正在加载发送历史…',
+    'retest.repeater.history.error': '加载发送历史失败：{error}',
+    'retest.repeater.history.empty': '还没有发送记录',
+    'retest.repeater.history.emptyHint': '发送一次请求后，记录会自动保存在本机。',
+    'retest.repeater.history.itemAria': '{method} {url}，状态 {status}，{time}',
+    'retest.repeater.history.noResponse': '无响应',
+    'retest.repeater.history.restore': '点击恢复',
+    'retest.repeater.history.refresh': '刷新发送历史',
+    'retest.repeater.history.footerHint': '仅保存在本机，最多 50 条',
+    'retest.repeater.history.clear': '清空历史',
+    'retest.repeater.history.cleared': '发送历史已清空',
+    'retest.repeater.history.clearFailed': '清空发送历史失败：{error}',
+
+    // Favorites
+    'retest.repeater.favorites.open': '收藏',
+    'retest.repeater.favorites.title': '收藏请求',
+    'retest.repeater.favorites.description': '命名保存当前请求，之后可一键恢复请求与响应。',
+    'retest.repeater.favorites.nameLabel': '名称',
+    'retest.repeater.favorites.namePlaceholder': '例如：登录后查询发票',
+    'retest.repeater.favorites.nameInvalid': '名称需为 1–80 个字符',
+    'retest.repeater.favorites.save': '收藏当前请求',
+    'retest.repeater.favorites.saving': '正在保存…',
+    'retest.repeater.favorites.saveHint': '保存原始请求与最近一次响应，名称最多 80 个字符。',
+    'retest.repeater.favorites.invalidRequest':
+      '当前编辑器内容无法解析，修正请求行或请求头后才能收藏。',
+    'retest.repeater.favorites.saved': '已收藏当前请求',
+    'retest.repeater.favorites.saveFailed': '收藏失败：{error}',
+    'retest.repeater.favorites.loading': '正在加载收藏…',
+    'retest.repeater.favorites.error': '加载收藏失败：{error}',
+    'retest.repeater.favorites.empty': '还没有收藏的请求',
+    'retest.repeater.favorites.emptyHint': '发送前先收藏，之后可以随时恢复。',
+    'retest.repeater.favorites.loadAria': '加载收藏：{name}',
+    'retest.repeater.favorites.deleteAria': '删除收藏：{name}',
+    'retest.repeater.favorites.deleted': '已删除收藏',
+    'retest.repeater.favorites.deleteFailed': '删除收藏失败：{error}',
+    'retest.repeater.favorites.footerHint': '仅保存在本机，最多 50 条',
+
+    // curl import / export
+    'retest.repeater.curl.import': '导入 curl',
+    'retest.repeater.curl.export': '导出 curl',
+    'retest.repeater.curl.exported': '已复制 curl 命令',
+    'retest.repeater.curl.parseFailed': '当前请求无法解析，无法导出 curl',
+    'retest.repeater.curl.importTitle': '导入 curl 命令',
+    'retest.repeater.curl.importDescription':
+      '支持 bash/zsh 与 Windows cmd 风格；解析结果会替换编辑器中的原始请求。',
+    'retest.repeater.curl.inputLabel': 'curl 命令',
+    'retest.repeater.curl.inputPlaceholder':
+      "curl 'https://example.com/api' -H 'Accept: application/json' -d 'a=1'",
+    'retest.repeater.curl.importHint':
+      '只解析 URL、请求方法、请求头与请求体；代理、证书、输出文件等参数会被忽略。',
+    'retest.repeater.curl.parse': '解析并应用',
+    'retest.repeater.curl.empty': '请先粘贴 curl 命令',
+    'retest.repeater.curl.noUrl': '未找到 URL：请提供 URL 或使用 --url',
+    'retest.repeater.curl.unterminatedQuote': '命令中的引号未闭合',
+    'retest.repeater.curl.applied': '已应用 curl 请求'
   },
   en: {
     // Left navigation card
@@ -933,6 +1002,79 @@ export const retestMessages: MessageBundle = {
     'retest.config.meta.noActiveProvider': 'No active provider selected',
     'retest.config.meta.providerCount': '{count} providers',
     'retest.config.noProvidersActiveHint':
-      'Configure at least one model provider before generating a PoC.'
+      'Configure at least one model provider before generating a PoC.',
+
+    // ------------------------------------------------------------------
+    // Repeater mode switch + single-Repeater additions (history / favorites /
+    // curl import+export). Appended block; existing keys above are untouched.
+    // ------------------------------------------------------------------
+    'retest.repeater.modeAria': 'Replay mode',
+    'retest.repeater.modeSingle': 'Single request',
+    'retest.repeater.modeFuzzer': 'Fuzzer',
+    'retest.repeater.requestSection': 'Request',
+
+    // Send history
+    'retest.repeater.history.open': 'History',
+    'retest.repeater.history.title': 'Send history',
+    'retest.repeater.history.description':
+      'Recent sends; click one to restore both the request and the response.',
+    'retest.repeater.history.loading': 'Loading send history…',
+    'retest.repeater.history.error': 'Could not load send history: {error}',
+    'retest.repeater.history.empty': 'No sends recorded yet',
+    'retest.repeater.history.emptyHint':
+      'Every successful send is recorded locally for later replay.',
+    'retest.repeater.history.itemAria': '{method} {url}, status {status}, {time}',
+    'retest.repeater.history.noResponse': 'No response',
+    'retest.repeater.history.restore': 'Click to restore',
+    'retest.repeater.history.refresh': 'Refresh send history',
+    'retest.repeater.history.footerHint': 'Stored locally, up to 50 entries',
+    'retest.repeater.history.clear': 'Clear history',
+    'retest.repeater.history.cleared': 'Send history cleared',
+    'retest.repeater.history.clearFailed': 'Could not clear send history: {error}',
+
+    // Favorites
+    'retest.repeater.favorites.open': 'Favorites',
+    'retest.repeater.favorites.title': 'Saved requests',
+    'retest.repeater.favorites.description':
+      'Save the current request under a name and restore request + response later.',
+    'retest.repeater.favorites.nameLabel': 'Name',
+    'retest.repeater.favorites.namePlaceholder': 'e.g. invoice lookup after login',
+    'retest.repeater.favorites.nameInvalid': 'Name must be 1–80 characters',
+    'retest.repeater.favorites.save': 'Save current request',
+    'retest.repeater.favorites.saving': 'Saving…',
+    'retest.repeater.favorites.saveHint':
+      'Stores the raw request and the latest response; names are capped at 80 characters.',
+    'retest.repeater.favorites.invalidRequest':
+      'The editor content does not parse; fix the request line or headers before saving.',
+    'retest.repeater.favorites.saved': 'Current request saved',
+    'retest.repeater.favorites.saveFailed': 'Could not save request: {error}',
+    'retest.repeater.favorites.loading': 'Loading saved requests…',
+    'retest.repeater.favorites.error': 'Could not load saved requests: {error}',
+    'retest.repeater.favorites.empty': 'No saved requests yet',
+    'retest.repeater.favorites.emptyHint': 'Save a request now to restore it at any time.',
+    'retest.repeater.favorites.loadAria': 'Load saved request: {name}',
+    'retest.repeater.favorites.deleteAria': 'Delete saved request: {name}',
+    'retest.repeater.favorites.deleted': 'Saved request deleted',
+    'retest.repeater.favorites.deleteFailed': 'Could not delete saved request: {error}',
+    'retest.repeater.favorites.footerHint': 'Stored locally, up to 50 entries',
+
+    // curl import / export
+    'retest.repeater.curl.import': 'Import curl',
+    'retest.repeater.curl.export': 'Export curl',
+    'retest.repeater.curl.exported': 'curl command copied',
+    'retest.repeater.curl.parseFailed': 'The current request does not parse; cannot export curl',
+    'retest.repeater.curl.importTitle': 'Import curl command',
+    'retest.repeater.curl.importDescription':
+      'Supports bash/zsh and Windows cmd styles; the parsed request replaces the editor content.',
+    'retest.repeater.curl.inputLabel': 'curl command',
+    'retest.repeater.curl.inputPlaceholder':
+      "curl 'https://example.com/api' -H 'Accept: application/json' -d 'a=1'",
+    'retest.repeater.curl.importHint':
+      'Only URL, method, headers and body are parsed; proxy, certificate and output options are ignored.',
+    'retest.repeater.curl.parse': 'Parse & apply',
+    'retest.repeater.curl.empty': 'Paste a curl command first',
+    'retest.repeater.curl.noUrl': 'No URL found: include a URL or pass --url',
+    'retest.repeater.curl.unterminatedQuote': 'The command contains an unclosed quote',
+    'retest.repeater.curl.applied': 'curl request applied'
   }
 }

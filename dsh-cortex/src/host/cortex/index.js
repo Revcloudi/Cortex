@@ -40,6 +40,8 @@ import * as fs from './fs.js'
 import * as misc from './misc.js'
 import * as settings from './settings.js'
 import * as repeater from './repeater.js'
+import * as repeaterFuzz from './repeater-fuzz.js'
+import * as repeaterStore from './repeater-store.js'
 import * as snapshots from './snapshots.js'
 import * as vulns from './vulns.js'
 
@@ -116,6 +118,55 @@ const ROUTES = [
   { pattern: /^\/poc\/provider-test$/, methods: { POST: misc.unsupportedHandler }, db: false },
 
   { pattern: /^\/repeater\/send$/, methods: { POST: repeater.handleSend } },
+
+  // Repeater Fuzzer + single-send history/collections. All state is local
+  // JSON under CORTEX_REPEATER_DIR / ~/.cortex/repeater, so these routes must
+  // answer even when no compatible database is open (`db: false`); handlers
+  // that need the DB (fuzz create looks up the vuln allowlist) call
+  // `holder.ensure()`/`holder.assertUsable()` themselves.
+  {
+    pattern: /^\/repeater\/fuzz$/,
+    methods: { GET: repeaterFuzz.handleFuzzList, POST: repeaterFuzz.handleFuzzCreate },
+    db: false,
+  },
+  {
+    pattern: /^\/repeater\/fuzz\/([^/]+)\/results\/([^/]+)$/,
+    methods: { GET: repeaterFuzz.handleFuzzResult },
+    db: false,
+  },
+  {
+    pattern: /^\/repeater\/fuzz\/([^/]+)\/cancel$/,
+    methods: { POST: repeaterFuzz.handleFuzzCancel },
+    db: false,
+  },
+  {
+    pattern: /^\/repeater\/fuzz\/([^/]+)\/export$/,
+    methods: { GET: repeaterFuzz.handleFuzzExport },
+    db: false,
+  },
+  {
+    pattern: /^\/repeater\/fuzz\/([^/]+)$/,
+    methods: { GET: repeaterFuzz.handleFuzzGet },
+    db: false,
+  },
+  {
+    pattern: /^\/repeater\/history$/,
+    methods: { GET: repeaterStore.handleHistoryList, DELETE: repeaterStore.handleHistoryClear },
+    db: false,
+  },
+  {
+    pattern: /^\/repeater\/collections$/,
+    methods: {
+      GET: repeaterStore.handleCollectionsList,
+      POST: repeaterStore.handleCollectionsCreate,
+    },
+    db: false,
+  },
+  {
+    pattern: /^\/repeater\/collections\/([^/]+)$/,
+    methods: { DELETE: repeaterStore.handleCollectionsDelete },
+    db: false,
+  },
 
   // Directory browser for the export-path picker (read-only).
   { pattern: /^\/fs\/list$/, methods: { GET: fs.handleList }, db: false },

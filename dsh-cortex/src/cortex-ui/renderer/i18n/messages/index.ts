@@ -2,6 +2,7 @@ import type { MessageBundle } from './types'
 import { assetMessages } from './asset'
 import { commonMessages } from './common'
 import { dashboardMessages } from './dashboard'
+import { fuzzerMessages } from './fuzzer'
 import { internalMessages } from './internal'
 import { mcpMessages } from './mcp'
 import { miniappMessages } from './miniapp'
@@ -24,7 +25,8 @@ const bundles: MessageBundle[] = [
   nebulaMessages,
   mcpMessages,
   retestMessages,
-  miniappMessages
+  miniappMessages,
+  fuzzerMessages
 ]
 
 function mergeBundles(lang: 'zh' | 'en'): Record<string, string> {

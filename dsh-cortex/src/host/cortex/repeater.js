@@ -10,11 +10,14 @@
  * result onto the exact shared `RepeaterSendResult` shape.
  *
  * The renderer's RepeaterSendInput uses camelCase; the shared schema accepts
- * that. Request headers/bodies are never logged.
+ * that. Request headers/bodies are never logged. A successful send also
+ * appends one best-effort entry to the local Repeater history (single-send
+ * convenience; a disk failure never changes the response).
  */
 
 import { ApiError, readJsonBody, sendJson } from '../http.js'
 import { sendRetest, validateSendRequest } from '../retest.js'
+import { recordSendHistory } from './repeater-store.js'
 
 /**
  * @param {{req: import('node:http').IncomingMessage,
@@ -32,7 +35,7 @@ export async function handleSend({ req, res, config, repository }) {
   const context = repository.getRetestContext(request.vulnId)
   const result = await sendRetest({ request, context })
 
-  sendJson(res, 200, {
+  const responsePayload = {
     request: {
       method: request.method,
       url: request.url instanceof URL ? request.url.href : String(request.url),
@@ -46,5 +49,15 @@ export async function handleSend({ req, res, config, repository }) {
       durationMs: result.durationMs,
       truncated: result.bodyTruncated === true,
     },
+  }
+
+  // Best-effort local history (contract): a disk failure must never fail the
+  // send, and the response shape returned to the renderer stays unchanged.
+  // Respond first so the renderer never waits for the history write.
+  sendJson(res, 200, responsePayload)
+  recordSendHistory({
+    vulnId: request.vulnId,
+    request: responsePayload.request,
+    result,
   })
 }
