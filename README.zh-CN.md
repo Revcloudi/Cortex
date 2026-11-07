@@ -29,8 +29,7 @@ Cortex 同时提供原生 **DeepSeek Harness** 插件（位于本仓库 `dsh-cor
 环境要求：DeepSeek Harness **≥ 0.2.2-rc.1**、Node.js **≥ 22.19**（DSH 桌面端已内置）以及 Cortex 数据库
 schema **v5**。
 
-DSH 插件市场（一键）：插件 → 市场，搜索 **`@lievclouds/dsh-cortex`** → 安装（注意：无 scope 的
-`dsh-cortex` 是别人的另一个插件，不要选）；或直接执行：
+DSH 插件市场（一键）：插件 → 市场，搜索 **`@lievclouds/dsh-cortex`** → 安装；或直接执行：
 
 ```text
 dsh plugin --profile desktop add @lievclouds/dsh-cortex   # 从 npm 安装
