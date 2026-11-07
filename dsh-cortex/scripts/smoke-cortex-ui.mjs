@@ -1675,12 +1675,16 @@ export async function runCortexUiSmoke(options = {}) {
       })
       await waitFor(act, () => byTestId('fuzzer-page'), { label: 'fuzzer page', timeoutMs: 10_000 })
       assert.equal(byTestId('nav-fuzzer').getAttribute('aria-current'), 'page', 'Web Fuzzer card must become active')
-      const targetRow = await waitFor(act, () => shadow.querySelector('[data-testid="fuzzer-candidate-row"]'), {
-        label: 'fuzzer target row',
+      const targetSelect = await waitFor(act, () => byTestId('fuzzer-target-select'), {
+        label: 'compact target selector',
         timeoutMs: 10_000
       })
-      assert.ok(byTestId('fuzzer-target-search'), 'missing target finding search')
-      assert.ok(targetRow, 'missing target finding row')
+      assert.ok(targetSelect, 'missing compact target selector')
+      assert.equal(
+        allTestIds('fuzzer-candidate-row').length,
+        0,
+        'the Web Fuzzer page must not port the vulnerability list'
+      )
       const requestPane = await waitFor(act, () => byTestId('fuzzer-request-pane'), {
         label: 'fuzzer request pane',
         timeoutMs: 10_000
@@ -1919,12 +1923,14 @@ export async function runCortexUiSmoke(options = {}) {
       structural.fuzzer = {
         page: true,
         layout: 'request-left/response-right',
+        targetSelector: true,
+        vulnerabilityList: false,
         markers: 2,
         modes: ['sniper', 'battering_ram', 'cluster_bomb'],
         totalCases: 3,
         resultRows: resultRows.length
       }
-      return 'Web Fuzzer card, request/response split, 2 markers, Sniper/Battering Ram/Cluster Bomb totals, confirm, progress, results, detail, history tab, single-mode tools'
+      return 'Web Fuzzer card, request/response split, compact target selector (no ported vulnerability list), 2 markers, Sniper/Battering Ram/Cluster Bomb totals, confirm, progress, results, detail, history tab, single-mode tools'
     })
 
     await check('main view stays isolated inside the shadow root after navigation', () => {
