@@ -2047,6 +2047,9 @@ export async function runCortexUiSmoke(options = {}) {
         timeoutMs: 10_000
       })
       assert.ok((preview.textContent || '').includes('/api/order/list'), 'preview content missing')
+      const lineGutter = preview.querySelector('[data-line="1"]')
+      assert.ok(lineGutter, 'line-number gutter missing')
+      assert.ok((lineGutter.textContent || '').includes('1'), 'line number missing')
 
       // The sheet defaults to Files for an unpacked source; the overview counts
       // are rendered by the first tab (Radix activates on mousedown).

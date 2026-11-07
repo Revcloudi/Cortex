@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, UIEvent as ReactUIEvent } from 'react'
 import {
   Archive,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
   FolderOpen,
@@ -52,6 +54,65 @@ import { cn } from '@renderer/lib/utils'
 
 const PREVIEW_LINES = 2000
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Build one display-only HTML string with a line-number gutter and <mark> hits. */
+function buildPreviewHtml(
+  content: string,
+  offset: number,
+  query: string,
+  regex: boolean,
+  activeLine: number | null
+): string {
+  const lines = content.split('\n')
+  let matcher: RegExp | null = null
+  if (query.length > 0) {
+    try {
+      matcher = new RegExp(regex ? query : escapeRegExp(query), 'gi')
+    } catch {
+      matcher = null
+    }
+  }
+  const markup = lines.map((line, index) => {
+    const lineNo = offset + index + 1
+    let html = ''
+    if (matcher) {
+      let last = 0
+      matcher.lastIndex = 0
+      let match: RegExpExecArray | null
+      while ((match = matcher.exec(line)) !== null) {
+        if (match[0].length === 0) {
+          matcher.lastIndex += 1
+          continue
+        }
+        html += escapeHtml(line.slice(last, match.index))
+        html += `<mark style="background:#fde68a;color:inherit;border-radius:2px;padding:0 1px">${escapeHtml(match[0])}</mark>`
+        last = match.index + match[0].length
+      }
+      html += escapeHtml(line.slice(last))
+    } else {
+      html = escapeHtml(line)
+    }
+    const active = lineNo === activeLine
+    const background = active ? '#fff7cc' : 'transparent'
+    const style = `display:flex;min-height:1.65em;background:${background};`
+    const numberStyle = `position:sticky;left:0;flex:0 0 auto;width:4.6em;padding-right:0.8em;text-align:right;color:#94a3b8;background:${background};user-select:none;`
+    return `<div data-line="${lineNo}" style="${style}"><span style="${numberStyle}">${lineNo}</span><span style="white-space:pre;flex:1 1 auto">${html.length > 0 ? html : ' '}</span></div>`
+  })
+  return markup.join('')
+}
+
 type DetailTab = 'overview' | 'files' | 'search'
 type DetailAction = 'unpack' | 'analyze' | 'import' | 'open'
 
@@ -92,6 +153,12 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
   const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewLoadingMore, setPreviewLoadingMore] = useState(false)
+  const [fileFindInput, setFileFindInput] = useState('')
+  const [fileFind, setFileFind] = useState('')
+  const [fileFindRegex, setFileFindRegex] = useState(false)
+  const [activeLine, setActiveLine] = useState<number | null>(null)
+  const [activeMatchIndex, setActiveMatchIndex] = useState(-1)
+  const previewScrollRef = useRef<HTMLDivElement | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -114,6 +181,11 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
     setPreviewError(null)
     setPreviewLoading(false)
     setPreviewLoadingMore(false)
+    setFileFindInput('')
+    setFileFind('')
+    setFileFindRegex(false)
+    setActiveLine(null)
+    setActiveMatchIndex(-1)
     setSearchQuery('')
     setSearchRegex(false)
     setSearchGlob('')
@@ -153,14 +225,58 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
   }, [miniappId, retrySeq])
 
   const loadFile = useCallback(
-    async (path: string, offset: number, append = false) => {
+    async (
+      path: string,
+      offset: number,
+      append = false,
+      options: { find?: string; findRegex?: boolean; scrollLine?: number | null } = {}
+    ) => {
       if (miniappId === null) return
+      const findQuery = options.find !== undefined ? options.find : fileFind
+      const findRegexValue =
+        options.findRegex !== undefined ? options.findRegex : fileFindRegex
+      const scrollLine = options.scrollLine ?? null
+      if (!append) {
+        setFileFind(findQuery)
+        setFileFindRegex(findRegexValue)
+        setFileFindInput(findQuery)
+        setActiveMatchIndex(-1)
+        if (scrollLine === null) setActiveLine(null)
+      }
       setPreviewPath(path)
       if (append) setPreviewLoadingMore(true)
       else setPreviewLoading(true)
       setPreviewError(null)
       try {
-        const result = await readMiniappFile(miniappId, path, offset, PREVIEW_LINES)
+        let result = await readMiniappFile(
+          miniappId,
+          path,
+          offset,
+          PREVIEW_LINES,
+          1024 * 1024,
+          findQuery,
+          findRegexValue
+        )
+        let targetLine = scrollLine
+        if (targetLine === null && findQuery.length > 0 && (result.matches?.length ?? 0) > 0) {
+          targetLine = result.matches![0].line
+        }
+        const pageStart = result.offset + 1
+        const pageEnd = result.offset + (result.loadedLines ?? result.content.split('\n').length)
+        if (!append && targetLine !== null && (targetLine < pageStart || targetLine > pageEnd)) {
+          const chunkOffset = Math.floor((targetLine - 1) / PREVIEW_LINES) * PREVIEW_LINES
+          if (chunkOffset !== offset) {
+            result = await readMiniappFile(
+              miniappId,
+              path,
+              chunkOffset,
+              PREVIEW_LINES,
+              1024 * 1024,
+              findQuery,
+              findRegexValue
+            )
+          }
+        }
         if (append) {
           setPreview((current) => {
             if (current === null || current.path !== path) return result
@@ -175,6 +291,12 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
           })
         } else {
           setPreview(result)
+          if (targetLine !== null) {
+            const matches = result.matches ?? []
+            const matchIndex = matches.findIndex((match) => match.line === targetLine)
+            setActiveMatchIndex(matchIndex)
+            setActiveLine(targetLine)
+          }
         }
         if (result.binary) setPreviewError(t('miniapp.file.binary'))
       } catch (cause) {
@@ -189,8 +311,65 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
         setPreviewLoadingMore(false)
       }
     },
-    [miniappId, t]
+    [fileFind, fileFindRegex, miniappId, t]
   )
+
+  const jumpToMatch = (delta: number): void => {
+    if (!preview) return
+    const matches = preview.matches ?? []
+    if (matches.length === 0) return
+    let next = activeMatchIndex + delta
+    if (next < 0) next = matches.length - 1
+    if (next >= matches.length) next = 0
+    setActiveMatchIndex(next)
+    const line = matches[next].line
+    const pageStart = (preview.offset ?? 0) + 1
+    const pageEnd = pageStart + (preview.loadedLines ?? 0) - 1
+    if (line < pageStart || line > pageEnd) {
+      void loadFile(
+        preview.path,
+        Math.floor((line - 1) / PREVIEW_LINES) * PREVIEW_LINES,
+        false,
+        { find: fileFind, findRegex: fileFindRegex, scrollLine: line }
+      )
+    } else {
+      setActiveLine(line)
+    }
+  }
+
+  const handleFileFind = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    if (!preview) return
+    const query = fileFindInput.trim()
+    if (query.length === 0) {
+      setFileFind('')
+      setActiveLine(null)
+      setActiveMatchIndex(-1)
+      void loadFile(preview.path, preview.offset ?? 0, false, { find: '', findRegex: false })
+      return
+    }
+    void loadFile(preview.path, 0, false, { find: query, findRegex: fileFindRegex })
+  }
+
+  useEffect(() => {
+    if (activeLine === null) return
+    const container = previewScrollRef.current
+    const target = container?.querySelector(`[data-line="${activeLine}"]`)
+    if (target && typeof (target as HTMLElement).scrollIntoView === 'function') {
+      ;(target as HTMLElement).scrollIntoView({ block: 'center' })
+    }
+  }, [activeLine, preview?.content])
+
+  const previewHtml = useMemo(() => {
+    if (preview === null || preview.binary) return null
+    return buildPreviewHtml(
+      preview.content,
+      preview.offset ?? 0,
+      fileFind,
+      fileFindRegex,
+      activeLine
+    )
+  }, [preview, fileFind, fileFindRegex, activeLine])
 
   const handlePreviewScroll = (event: ReactUIEvent<HTMLDivElement>): void => {
     const element = event.currentTarget
@@ -694,7 +873,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                                   type="button"
                                   onClick={() => {
                                     setTab('files')
-                                    void loadFile(file.path, 0)
+                                    void loadFile(file.path, 0, false, { find: '', findRegex: false })
                                   }}
                                   className="min-w-0 flex-1 truncate text-left font-mono text-foreground hover:text-accent focus-visible:text-accent focus-visible:outline-none"
                                   title={file.path}
@@ -841,7 +1020,9 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                         <FileTree
                           key={detail.miniapp.id}
                           miniappId={detail.miniapp.id}
-                          onOpenFile={(path) => void loadFile(path, 0)}
+                          onOpenFile={(path) =>
+                            void loadFile(path, 0, false, { find: '', findRegex: false })
+                          }
                         />
                       </div>
                     ) : null}
@@ -869,7 +1050,84 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                           </>
                         ) : null}
                       </div>
+                      {preview !== null && !preview.binary ? (
+                        <form
+                          onSubmit={handleFileFind}
+                          className="flex h-8 shrink-0 items-center gap-1.5 border-b border-border px-3"
+                        >
+                          <Search
+                            aria-hidden="true"
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                          />
+                          <Input
+                            data-testid="miniapp-file-find"
+                            aria-label={t('miniapp.file.findPlaceholder')}
+                            value={fileFindInput}
+                            onChange={(event) => setFileFindInput(event.target.value)}
+                            placeholder={t('miniapp.file.findPlaceholder')}
+                            className="h-6 min-w-0 flex-1 border-0 bg-transparent px-0 text-[11px] shadow-none focus-visible:ring-0"
+                          />
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={fileFindRegex}
+                            aria-label={t('miniapp.file.findRegex')}
+                            data-testid="miniapp-file-find-regex"
+                            onClick={() => setFileFindRegex((value) => !value)}
+                            className={cn(
+                              'inline-flex h-6 items-center rounded border px-1.5 font-mono text-[10px] transition-colors',
+                              fileFindRegex
+                                ? 'border-accent bg-accent-soft font-medium text-accent'
+                                : 'border-border bg-background text-muted-foreground hover:bg-muted'
+                            )}
+                          >
+                            .*
+                          </button>
+                          <Button
+                            type="submit"
+                            variant="outline"
+                            size="xs"
+                            data-testid="miniapp-file-find-submit"
+                            disabled={fileFindInput.trim().length === 0}
+                          >
+                            {t('miniapp.file.findSubmit')}
+                          </Button>
+                          {fileFind.length > 0 ? (
+                            (preview.matchCount ?? 0) > 0 ? (
+                              <div className="ml-auto flex shrink-0 items-center gap-1">
+                                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                                  {Math.max(0, activeMatchIndex + 1)} / {preview.matchCount}
+                                  {preview.matchTruncated ? '+' : ''}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label={t('miniapp.file.findPrev')}
+                                  onClick={() => jumpToMatch(-1)}
+                                >
+                                  <ChevronUp aria-hidden="true" className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label={t('miniapp.file.findNext')}
+                                  onClick={() => jumpToMatch(1)}
+                                >
+                                  <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                                {t('miniapp.file.findNone')}
+                              </span>
+                            )
+                          ) : null}
+                        </form>
+                      ) : null}
                       <div
+                        ref={previewScrollRef}
                         className="min-h-0 flex-1 overflow-auto"
                         onScroll={handlePreviewScroll}
                         data-testid="miniapp-file-scroll"
@@ -883,15 +1141,26 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                         ) : previewError !== null ? (
                           <p className="p-3 text-[11.5px] leading-relaxed text-red-700">{previewError}</p>
                         ) : preview !== null ? (
-                          <pre
-                            data-testid="miniapp-file-preview"
-                            className={cn(
-                              'whitespace-pre px-3 py-2 font-mono text-[11px] leading-[1.65] text-foreground',
-                              preview.binary && 'text-muted-foreground'
-                            )}
-                          >
-                            {preview.content}
-                          </pre>
+                          previewHtml !== null ? (
+                            <pre
+                              data-testid="miniapp-file-preview"
+                              className={cn(
+                                'whitespace-pre px-3 py-2 font-mono text-[11px] leading-[1.65] text-foreground',
+                                preview.binary && 'text-muted-foreground'
+                              )}
+                              dangerouslySetInnerHTML={{ __html: previewHtml }}
+                            />
+                          ) : (
+                            <pre
+                              data-testid="miniapp-file-preview"
+                              className={cn(
+                                'whitespace-pre px-3 py-2 font-mono text-[11px] leading-[1.65] text-foreground',
+                                preview.binary && 'text-muted-foreground'
+                              )}
+                            >
+                              {preview.content}
+                            </pre>
+                          )
                         ) : (
                           <p className="p-3 text-[11.5px] text-muted-foreground">
                             {t('miniapp.file.selectPrompt')}
@@ -1041,7 +1310,18 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                                 })}
                                 onClick={() => {
                                   setTab('files')
-                                  void loadFile(match.file, Math.max(0, match.line - 1))
+                                  const query = searchQuery.trim()
+                                  setFileFindInput(query)
+                                  void loadFile(
+                                    match.file,
+                                    Math.floor((match.line - 1) / PREVIEW_LINES) * PREVIEW_LINES,
+                                    false,
+                                    {
+                                      find: query,
+                                      findRegex: searchRegex,
+                                      scrollLine: match.line
+                                    }
+                                  )
                                 }}
                                 className="flex w-full items-baseline gap-3 px-3 py-1.5 text-left transition-colors hover:bg-sidebar focus-visible:bg-accent-soft focus-visible:outline-none"
                               >

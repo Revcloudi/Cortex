@@ -211,6 +211,29 @@ it('GET tree/file/search works inside the workspace and rejects escapes', async 
   assert.equal(rawConfig.formatted, false)
   assert.equal(rawConfig.totalLines, 1)
 
+  // In-file search returns whole-file line matches for highlighting/navigation.
+  const findResult = expectOk(
+    await call(
+      `/miniapps/${target.id}/file?path=app-service.js&limit=20&find=${encodeURIComponent('MINIAPP-UNIQUE-MARKER')}`,
+    ),
+  )
+  assert.ok(findResult.matchCount >= 1)
+  assert.equal(findResult.matches.length, findResult.matchCount)
+  assert.equal(findResult.matchTruncated, false)
+  assert.ok(findResult.matches.every((match) => match.line >= 1 && typeof match.text === 'string'))
+
+  const findRegex = expectOk(
+    await call(
+      `/miniapps/${target.id}/file?path=app-service.js&limit=20&find=${encodeURIComponent('MINIAPP-\\w+')}&findRegex=1`,
+    ),
+  )
+  assert.ok(findRegex.matchCount >= 1)
+
+  const badFind = await call(
+    `/miniapps/${target.id}/file?path=app-service.js&find=${encodeURIComponent('(')}&findRegex=1`,
+  )
+  assert.equal(badFind.status, 400, badFind.text)
+
   const offsetFile = expectOk(await call(`/miniapps/${target.id}/file?path=pages/index/index.js&offset=0&limit=5`))
   assert.ok(offsetFile.content.includes('MINIAPP-UNIQUE-MARKER'))
 

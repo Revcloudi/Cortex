@@ -512,9 +512,23 @@ export function treeForSource(source, relativePath = '') {
   return listTree({ root, path: relativePath })
 }
 
-export function fileForSource(source, relativePath, { offset = 0, limit = 200, format = 'auto', maxBytes } = {}) {
+export function fileForSource(
+  source,
+  relativePath,
+  { offset = 0, limit = 200, format = 'auto', maxBytes, find = '', findRegex = false, findMax } = {},
+) {
   const root = requireUnpacked(source)
-  return readTextFile({ root, path: relativePath, offset, limit, format, ...(maxBytes ? { maxBytes } : {}) })
+  return readTextFile({
+    root,
+    path: relativePath,
+    offset,
+    limit,
+    format,
+    find,
+    findRegex,
+    ...(maxBytes ? { maxBytes } : {}),
+    ...(findMax ? { findMax } : {}),
+  })
 }
 
 export function searchSource(source, options = {}) {

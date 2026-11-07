@@ -168,11 +168,17 @@ export function handleFileRoute(ctx) {
   const limit = queryInt(ctx.searchParams, 'limit', { min: 1, max: 5000 }) ?? 200
   const maxBytes = queryInt(ctx.searchParams, 'maxBytes', { min: 1024, max: 5 * 1024 * 1024 }) ?? 1024 * 1024
   const rawFormat = queryBool01(ctx.searchParams, 'format')
+  const find = queryString(ctx.searchParams, 'find', { max: 400 }) ?? ''
+  const findRegex = queryBool01(ctx.searchParams, 'findRegex') === true
+  const findMax = queryInt(ctx.searchParams, 'findMax', { min: 1, max: 1000 }) ?? 200
   const result = fileForSource(source, path, {
     offset,
     limit,
     format: rawFormat === false ? false : 'auto',
     maxBytes,
+    find,
+    findRegex,
+    findMax,
   })
   if (result.binary) {
     throw badRequest('binary files cannot be previewed as text', {

@@ -228,6 +228,11 @@ export interface MiniappTreeResponse {
   entries: MiniappTreeEntry[]
 }
 
+export interface MiniappFileMatch {
+  line: number
+  text: string
+}
+
 export interface MiniappFileResponse {
   path: string
   content: string
@@ -238,6 +243,9 @@ export interface MiniappFileResponse {
   hasMore?: boolean
   truncated: boolean
   sourceTruncated?: boolean
+  matches?: MiniappFileMatch[]
+  matchCount?: number
+  matchTruncated?: boolean
   size: number
   binary: boolean
   formatted?: boolean
@@ -383,10 +391,19 @@ export function readMiniappFile(
   path: string,
   offset = 0,
   limit = 2000,
-  maxBytes = 1024 * 1024
+  maxBytes = 1024 * 1024,
+  find = '',
+  findRegex = false
 ): Promise<MiniappFileResponse> {
   return request<MiniappFileResponse>(
-    `/miniapps/${encodeId(id)}/file${toQuery({ path, offset, limit, maxBytes })}`
+    `/miniapps/${encodeId(id)}/file${toQuery({
+      path,
+      offset,
+      limit,
+      maxBytes,
+      find,
+      findRegex: findRegex ? 1 : 0
+    })}`
   )
 }
 

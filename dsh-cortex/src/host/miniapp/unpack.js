@@ -718,6 +718,9 @@ export function readTextFile({
   limit = 200,
   maxBytes = 100 * 1024,
   format = 'auto',
+  find = '',
+  findRegex = false,
+  findMax = 200,
 } = {}) {
   const rootPath = requireRoot(root)
   const target = resolveInside(rootPath, relPath, { mustExist: true })
@@ -792,6 +795,41 @@ export function readTextFile({
   const loadedLines = capped.text.length > 0 ? splitLines(capped.text).length : 0
   const sourceTruncated = !formatted && size > MAX_TEXT_READ_BYTES
   const hasMore = start + loadedLines < lines.length
+
+  // In-file search over the whole (formatted) file, independent of the page.
+  const findText = typeof find === 'string' ? find : ''
+  let matches = []
+  let matchCount = 0
+  if (findText.length > 0) {
+    let matcher = null
+    if (findRegex) {
+      try {
+        matcher = new RegExp(findText)
+      } catch (error) {
+        throw new WxapkgError(
+          ERROR_CODES.INVALID_QUERY,
+          `invalid regular expression: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+    const matchCap = Math.max(1, Math.min(Number.isFinite(Number(findMax)) ? Math.trunc(Number(findMax)) : 200, 1000))
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]
+      let hit = false
+      if (matcher) {
+        matcher.lastIndex = 0
+        hit = matcher.test(line)
+      } else {
+        hit = line.includes(findText)
+      }
+      if (!hit) continue
+      matchCount += 1
+      if (matches.length < matchCap) {
+        matches.push({ line: index + 1, text: line.trim().slice(0, 240) })
+      }
+    }
+  }
+
   return {
     path: relativePath,
     content: capped.text,
@@ -802,6 +840,9 @@ export function readTextFile({
     hasMore,
     truncated: hasMore || capped.capped || sourceTruncated,
     sourceTruncated,
+    matches,
+    matchCount,
+    matchTruncated: matchCount > matches.length,
     size,
     binary: false,
     formatted,
