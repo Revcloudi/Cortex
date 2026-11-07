@@ -256,9 +256,21 @@ describe('retest/send: allowlist and URL safety', () => {
     }
   })
 
+  it('ignores the Host header copied from raw requests (URL host wins)', async () => {
+    const res = await send({
+      vulnId: 'VULN-20260201-101',
+      method: 'GET',
+      url: `${upstreamBase}/echo`,
+      headers: { Host: 'evil.example', 'x-custom': 'kept' },
+    })
+    assert.equal(res.status, 200)
+    const echoed = JSON.parse(res.json.body)
+    assert.equal(echoed.headers['x-custom'], 'kept')
+    assert.notEqual(echoed.headers.host, 'evil.example')
+  })
+
   it('rejects forbidden request headers and invalid payload shapes', async () => {
     const cases = [
-      { method: 'GET', url: `${upstreamBase}/ok`, headers: { Host: 'evil.example' } },
       { method: 'GET', url: `${upstreamBase}/ok`, headers: { 'content-length': '1' } },
       { method: 'GET', url: `${upstreamBase}/ok`, headers: { Connection: 'keep-alive' } },
       { method: 'get', url: `${upstreamBase}/ok` },

@@ -29,7 +29,6 @@ export const MAX_HEADER_VALUE = 8000
 
 /** Headers a retest caller may never set (they are protocol-level). */
 const FORBIDDEN_HEADERS = new Set([
-  'host',
   'content-length',
   'connection',
   'transfer-encoding',
@@ -37,6 +36,14 @@ const FORBIDDEN_HEADERS = new Set([
   'keep-alive',
   'proxy-connection',
 ])
+
+/**
+ * Headers that are silently ignored instead of rejected: `Host` is derived
+ * from the already-validated request URL, so a raw request copied from a report
+ * (`Host: target`) must not fail validation. Letting callers override Host
+ * would allow vhost tricks outside the origin allowlist.
+ */
+const IGNORED_HEADERS = new Set(['host'])
 
 const HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
@@ -152,6 +159,7 @@ export function normalizeHeaders(headers) {
     if (FORBIDDEN_HEADERS.has(name.toLowerCase())) {
       throw badRequest(`header ${name} is not allowed`)
     }
+    if (IGNORED_HEADERS.has(name.toLowerCase())) continue
     if (/[\r\n]/.test(value)) throw badRequest(`header ${name} has an invalid value`)
     if (value.length > MAX_HEADER_VALUE) throw badRequest(`header ${name} is too long`)
     out[name] = value

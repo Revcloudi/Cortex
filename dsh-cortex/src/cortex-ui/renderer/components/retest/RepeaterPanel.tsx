@@ -24,6 +24,21 @@ interface ParsedRawRequest {
   body: string
 }
 
+/**
+ * Protocol-level headers copied from a report are re-derived by the outbound
+ * request (Host from the URL, length/connection by the HTTP client). Dropping
+ * them here keeps raw requests sendable without a validation error.
+ */
+const DERIVED_HEADERS = new Set([
+  'host',
+  'content-length',
+  'connection',
+  'transfer-encoding',
+  'upgrade',
+  'keep-alive',
+  'proxy-connection'
+])
+
 /** Parse a Burp-like raw request into the typed repeater payload. */
 function parseRawRequest(text: string): ParsedRawRequest {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
@@ -157,11 +172,14 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
     setError(null)
     try {
       const parsed = parseRawRequest(raw)
+      const headers = Object.fromEntries(
+        Object.entries(parsed.headers).filter(([name]) => !DERIVED_HEADERS.has(name.toLowerCase()))
+      )
       const response = await api.sendRepeaterRequest({
         vulnId: vuln.id,
         method: parsed.method,
         url: resolveRepeaterUrl(parsed.url, vuln.target_url),
-        headers: parsed.headers,
+        headers,
         ...(parsed.body === '' ? {} : { body: parsed.body }),
         followRedirects
       })
