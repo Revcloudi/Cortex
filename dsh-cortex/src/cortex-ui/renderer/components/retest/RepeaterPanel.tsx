@@ -11,6 +11,7 @@ import {
   extractRepeaterRequests,
   resolveRepeaterUrl
 } from '@renderer/lib/retestRequest'
+import { prettyJsonBody } from '@renderer/lib/retestResponse'
 
 interface RepeaterPanelProps {
   vuln: Vulnerability | null
@@ -123,7 +124,7 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
   const [raw, setRaw] = useState('')
   const [step, setStep] = useState(0)
   const [sending, setSending] = useState(false)
-  const [bodyView, setBodyView] = useState<'raw' | 'html'>('raw')
+  const [bodyView, setBodyView] = useState<'raw' | 'pretty' | 'html'>('raw')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<RepeaterSendResult | null>(null)
 
@@ -156,6 +157,13 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
   const rawBytes = useMemo(() => new TextEncoder().encode(raw).byteLength, [raw])
   const responseIsRedirect = result !== null && isRedirectResponse(result)
   const responseIsHtml = result !== null && isHtmlResponse(result)
+  const formattedJson = useMemo(
+    () =>
+      result === null
+        ? null
+        : prettyJsonBody(result.response.body, headerValue(result.response.headers, 'content-type')),
+    [result]
+  )
   const htmlPreview = useMemo(
     () => (result === null || vuln === null ? '' : buildHtmlPreview(result.response.body, vuln.target_url)),
     [result, vuln]
@@ -306,7 +314,7 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
                   {t('retest.repeater.followRedirect')}
                 </Button>
               ) : null}
-              {responseIsHtml ? (
+              {formattedJson !== null || responseIsHtml ? (
                 <div className="ml-auto flex items-center gap-0.5 rounded-md border border-border bg-muted p-0.5">
                   <button
                     type="button"
@@ -320,18 +328,34 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
                   >
                     {t('retest.repeater.viewRaw')}
                   </button>
-                  <button
-                    type="button"
-                    data-testid="retest-repeater-view-html"
-                    onClick={() => setBodyView('html')}
-                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-                      bodyView === 'html'
-                        ? 'bg-background font-medium text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {t('retest.repeater.viewHtml')}
-                  </button>
+                  {formattedJson !== null ? (
+                    <button
+                      type="button"
+                      data-testid="retest-repeater-view-json"
+                      onClick={() => setBodyView('pretty')}
+                      className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+                        bodyView === 'pretty'
+                          ? 'bg-background font-medium text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {t('retest.repeater.formatJson')}
+                    </button>
+                  ) : null}
+                  {responseIsHtml ? (
+                    <button
+                      type="button"
+                      data-testid="retest-repeater-view-html"
+                      onClick={() => setBodyView('html')}
+                      className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+                        bodyView === 'html'
+                          ? 'bg-background font-medium text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {t('retest.repeater.viewHtml')}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </>
@@ -356,6 +380,13 @@ export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
                 srcDoc={htmlPreview}
                 className="h-[min(60vh,520px)] min-h-[320px] w-full rounded-md border border-border bg-white"
               />
+            ) : formattedJson !== null && bodyView === 'pretty' ? (
+              <pre
+                data-testid="retest-repeater-json"
+                className="whitespace-pre-wrap break-words rounded-md border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11px] leading-relaxed text-[hsl(220_14%_92%)]"
+              >
+                {formattedJson}
+              </pre>
             ) : (
               <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-[hsl(var(--code))] px-3 py-2.5 font-mono text-[11px] leading-relaxed text-[hsl(220_14%_92%)]">
                 {result.response.body.slice(0, 200_000)}
