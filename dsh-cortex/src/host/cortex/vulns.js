@@ -21,6 +21,7 @@
  */
 
 import {
+  ApiError,
   MAX_SEARCH_VALUE,
   badRequest,
   notFound,
@@ -34,7 +35,6 @@ import {
 } from '../http.js'
 import * as dto from '../dto.js'
 import { buildVulnReport, reportFilename } from '../reports.js'
-import { renderDocxReport, renderPdfReport } from '../reports-office.js'
 import { rememberExportDir } from './settings.js'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -531,6 +531,20 @@ export async function handleExport({ req, res, holder, bumpRev }) {
     sendJson(res, 200, { cancelled: true, files: [], savedPaths: [] })
     return
   }
+  // pdfkit/docx pull in browser-unfriendly zlib/fflate code. Load them only
+  // when Word/PDF output is requested, so plugin activation and the regular
+  // Markdown export path stay independent of those report renderers.
+  let office = null
+  if (format !== 'md') {
+    try {
+      office = await import('../reports-office.js')
+    } catch (cause) {
+      throw new ApiError(501, 'UNSUPPORTED', 'Word/PDF report rendering is unavailable on this Host', {
+        reason: 'REPORT_RENDERER_UNAVAILABLE',
+        error: cause instanceof Error ? cause.message : String(cause),
+      })
+    }
+  }
   const db = holder.db
   const placeholders = ids.map(() => '?').join(', ')
   const rows = db
@@ -561,8 +575,8 @@ export async function handleExport({ req, res, holder, bumpRev }) {
     }
     const buffer =
       format === 'docx'
-        ? await renderDocxReport(markdown, { title })
-        : await renderPdfReport(markdown, { title })
+        ? await office.renderDocxReport(markdown, { title })
+        : await office.renderPdfReport(markdown, { title })
     files.push({ id, filename: `${baseName}.${format}`, format, buffer })
   }
   // The DSH desktop WebView may block browser downloads, so the Host also
