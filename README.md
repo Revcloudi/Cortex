@@ -19,10 +19,12 @@ Cortex: local-first pentest intelligence hub. Agents (pure stdio MCP server), th
 
 ## DSH plugin (recommended)
 
-Cortex also ships as a native **DeepSeek Harness** plugin (`dsh-cortex/` in this repository): the full Cortex
-workbench — vulnerability board, internal operations, 3D Memory Nebula, asset library, snapshots and the retest
-repeater — as a DSH panel, plus **12 native agent tools** so DSH conversations can read and update the same
-local SQLite database **without any MCP server**.
+Cortex also ships as a native **DeepSeek Harness** plugin (`dsh-cortex/` in this repository):
+
+- the full Cortex workbench — vulnerability board, internal operations, 3D Memory Nebula, assets, snapshots and retest;
+- a Yakit-style **Web Fuzzer** for manual HTTP requests with JSON-formatted request/response views;
+- a **WeChat mini-program** reverse-engineering workbench (wxapkg detect / decrypt / unpack / analyze / import);
+- **22 native agent tools** over the same local SQLite, **without any MCP server**.
 
 Requirements: DeepSeek Harness **≥ 0.2.2-rc.1**, Node.js **≥ 22.19** (bundled with the DSH desktop app) and a
 Cortex database with schema **v5**.

@@ -19,9 +19,12 @@ Cortex 是本地优先的渗透测试情报中枢。Agent（纯 stdio MCP server
 
 ## DSH 插件（推荐）
 
-Cortex 同时提供原生 **DeepSeek Harness** 插件（位于本仓库 `dsh-cortex/`）：把完整 Cortex 工作台——漏洞看板、
-内网作战、3D 记忆星云、资产库、认知快照与漏洞复测——变成 DSH 面板，并注册 **12 个原生 Agent 工具**，
-让 DSH 对话直接读写同一份本地 SQLite，**不需要任何 MCP server**。
+Cortex 同时提供原生 **DeepSeek Harness** 插件（位于本仓库 `dsh-cortex/`）：
+
+- 完整 Cortex 工作台：漏洞看板、内网作战、3D 记忆星云、资产库、认知快照与漏洞复测；
+- Yakit 风格 **Web Fuzzer**：手动发包、请求/响应 JSON 格式化与状态/响应头一体展示；
+- **微信小程序逆向**：wxapkg 检测 / 解密 / 解包 / 分析 / 搜索与资产导入；
+- **22 个原生 Agent 工具**直接读写同一份本地 SQLite，**无需 MCP server**。
 
 环境要求：DeepSeek Harness **≥ 0.2.2-rc.1**、Node.js **≥ 22.19**（DSH 桌面端已内置）以及 Cortex 数据库
 schema **v5**。
