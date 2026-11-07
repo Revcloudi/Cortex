@@ -27,6 +27,7 @@ import { EmptyState } from '@renderer/components/common/EmptyState'
 import { MarkdownText } from '@renderer/components/common/MarkdownText'
 import { VulnSummary } from './VulnSummary'
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog'
+import { ExportReportDialog } from './ExportReportDialog'
 import { apiUnavailableMessage, getApi, toErrorMessage } from '@renderer/lib/api'
 import { getPrefetchedVulnerability } from '@renderer/lib/vulnPreload'
 import { formatDateTime, formatVulnType } from '@renderer/lib/format'
@@ -137,6 +138,7 @@ export function VulnDetail({
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('steps')
 
   const { t, lang, statusLabel } = useI18n()
@@ -252,7 +254,7 @@ export function VulnDetail({
     }
   }
 
-  const handleExport = async () => {
+  const handleExport = async (outputDir?: string) => {
     if (!detail || loading) return
     const api = getApi()
     if (!api) {
@@ -261,7 +263,7 @@ export function VulnDetail({
     }
     setExporting(true)
     try {
-      const result = await api.exportVulnerabilities([detail.id])
+      const result = await api.exportVulnerabilities([detail.id], outputDir)
       if (!result.cancelled) {
         const savedPath = result.savedPaths?.[0]
         toast.success(
@@ -273,6 +275,7 @@ export function VulnDetail({
       toast.error(t('vuln.toast.exportFailed', { error: toErrorMessage(cause, t) }))
     } finally {
       setExporting(false)
+      setExportOpen(false)
     }
   }
 
@@ -295,7 +298,7 @@ export function VulnDetail({
                   variant="ghost"
                   size="sm"
                   data-testid="export-vuln-md"
-                  onClick={() => void handleExport()}
+                  onClick={() => setExportOpen(true)}
                   disabled={loading || exporting}
                   className="h-7 gap-1.5 px-2 text-[11px]"
                 >
@@ -620,6 +623,14 @@ export function VulnDetail({
           onConfirm={() => void handleDelete()}
         />
       ) : null}
+
+      <ExportReportDialog
+        open={exportOpen}
+        count={1}
+        pending={exporting}
+        onOpenChange={setExportOpen}
+        onConfirm={(outputDir) => void handleExport(outputDir)}
+      />
     </>
   )
 }

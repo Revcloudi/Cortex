@@ -36,7 +36,7 @@ import * as dto from '../dto.js'
 import { buildVulnReport, reportFilename } from '../reports.js'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 const STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed']
@@ -499,6 +499,26 @@ export async function handleDeleteMany({ req, res, holder, bumpRev }) {
 export async function handleExport({ req, res, holder, bumpRev }) {
   const body = await readJsonBody(req)
   const ids = requireIdList(body, 'ids', MAX_EXPORT_IDS)
+  /** Optional user-selected output directory (absolute path, `~` allowed). */
+  let requestedDir
+  if (body.outputDir !== undefined) {
+    if (typeof body.outputDir !== 'string') {
+      throw badRequest('outputDir must be a string', { field: 'outputDir' })
+    }
+    const raw = body.outputDir.trim()
+    if (raw.length > 1000) {
+      throw badRequest('outputDir is too long', { field: 'outputDir', max: 1000 })
+    }
+    if (raw.length > 0) {
+      const expanded = raw.startsWith('~')
+        ? join(homedir(), raw.replace(/^~[/\\]?/, ''))
+        : raw
+      if (!isAbsolute(expanded)) {
+        throw badRequest('outputDir must be an absolute path', { field: 'outputDir' })
+      }
+      requestedDir = resolve(expanded)
+    }
+  }
   if (ids.length === 0) {
     sendJson(res, 200, { cancelled: true, files: [], savedPaths: [] })
     return
@@ -541,18 +561,25 @@ export async function handleExport({ req, res, holder, bumpRev }) {
         .replace(/[-:]/g, '')
         .replace(/\..+$/, '')
         .replace('T', '-')
-      const exportDir = join(exportRoot, stamp)
+      const exportDir = requestedDir ?? join(exportRoot, stamp)
       mkdirSync(exportDir, { recursive: true })
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index]
         const safeName = String(file.filename).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 120) || file.id
-        const target = join(exportDir, `${String(index + 1).padStart(2, '0')}-${safeName.endsWith('.md') ? safeName : `${safeName}.md`}`)
+        const baseName = safeName.endsWith('.md') ? safeName : `${safeName}.md`
+        const target = join(exportDir, files.length > 1 ? `${String(index + 1).padStart(2, '0')}-${baseName}` : baseName)
         writeFileSync(target, file.content, 'utf8')
         savedPaths.push(target)
       }
-    } catch {
+    } catch (error) {
       // Filesystem failure must not break the export response; the inline
-      // files still let the browser download attempt proceed.
+      // files still let the browser download attempt proceed. A selected
+      // directory failure is reported so the user can correct the path.
+      if (requestedDir !== undefined) {
+        throw badRequest(`cannot write to outputDir: ${error instanceof Error ? error.message : String(error)}`, {
+          field: 'outputDir',
+        })
+      }
     }
   }
   // Export is a read-only projection: no revision bump.

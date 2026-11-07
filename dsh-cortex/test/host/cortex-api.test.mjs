@@ -927,6 +927,24 @@ describe('cortex: vulnerability writes', () => {
       const retestFile = body.files.find((file) => file.id === FIXTURE.vulnWithRetest)
       assert.ok(retestFile.content.includes('## 复测记录'))
 
+      const customDir = join(fixture.dir, 'custom-reports')
+      const custom = expectOk(
+        await server.request('/cortex-api/cortex/vulns/export', {
+          method: 'POST',
+          body: { ids: [FIXTURE.vulnMultiHttp], outputDir: customDir },
+        }),
+      )
+      assert.equal(custom.savedPaths.length, 1)
+      assert.equal(custom.savedPaths[0].startsWith(customDir), true)
+      assert.equal(existsSync(custom.savedPaths[0]), true)
+
+      const relative = await server.request('/cortex-api/cortex/vulns/export', {
+        method: 'POST',
+        body: { ids: [FIXTURE.vulnMultiHttp], outputDir: 'relative/path' },
+      })
+      assert.equal(relative.status, 400)
+      assert.match(String(relative.json?.error || ''), /absolute path/)
+
       const empty = expectOk(
         await server.request('/cortex-api/cortex/vulns/export', {
           method: 'POST',

@@ -15,6 +15,7 @@ import { PaginationBar } from '@renderer/components/vuln/PaginationBar'
 import { VulnTable } from '@renderer/components/vuln/VulnTable'
 import { VulnDetail } from '@renderer/components/vuln/VulnDetail'
 import { BulkDeleteDialog } from '@renderer/components/vuln/BulkDeleteDialog'
+import { ExportReportDialog } from '@renderer/components/vuln/ExportReportDialog'
 import { InternalPage } from '@renderer/pages/InternalPage'
 import { Button } from '@renderer/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
@@ -62,6 +63,7 @@ export function DashboardPage({
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
 
   const hasLoadedList = useRef(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
@@ -302,17 +304,18 @@ export function DashboardPage({
     [items]
   )
 
-  const handleExportSelected = async () => {
+  const handleExportSelected = async (outputDir?: string) => {
     const ids = [...selectedIds]
     if (ids.length === 0) return
     const api = getApi()
     if (!api) {
       toast.error(apiUnavailableMessage(t))
+      setExportOpen(false)
       return
     }
     setExporting(true)
     try {
-      const result = await api.exportVulnerabilities(ids)
+      const result = await api.exportVulnerabilities(ids, outputDir)
       const savedPath = result.savedPaths?.[0]
       if (!result.cancelled) {
         const message =
@@ -328,6 +331,7 @@ export function DashboardPage({
       toast.error(t('vuln.toast.exportFailed', { error: toErrorMessage(cause, t) }))
     } finally {
       setExporting(false)
+      setExportOpen(false)
     }
   }
 
@@ -443,7 +447,7 @@ export function DashboardPage({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => void handleExportSelected()}
+                  onClick={() => setExportOpen(true)}
                   disabled={exporting}
                   className="gap-1.5"
                 >
@@ -525,6 +529,14 @@ export function DashboardPage({
         pending={bulkDeleting}
         onOpenChange={setBulkConfirmOpen}
         onConfirm={() => void handleBulkDelete()}
+      />
+
+      <ExportReportDialog
+        open={exportOpen}
+        count={selectedCount}
+        pending={exporting}
+        onOpenChange={setExportOpen}
+        onConfirm={(outputDir) => void handleExportSelected(outputDir)}
       />
     </>
   )

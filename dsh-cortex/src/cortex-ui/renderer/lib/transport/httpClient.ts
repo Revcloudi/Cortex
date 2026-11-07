@@ -261,7 +261,10 @@ export function createHttpApi(): CortexApi {
      * saves them. Resolves the downloaded file names, or `cancelled` when there
      * was nothing to export (`files: []`).
      */
-    exportVulnerabilities: async (ids: string[]): Promise<ExportReportsResult> => {
+    exportVulnerabilities: async (
+      ids: string[],
+      _outputDir?: string
+    ): Promise<ExportReportsResult> => {
       const response = await request<WebExportResponse>(WEB_API_PATHS.vulnerabilitiesExport, {
         method: 'POST',
         body: ids

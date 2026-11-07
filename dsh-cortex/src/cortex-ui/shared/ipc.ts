@@ -158,8 +158,12 @@ export interface CortexApi extends PocApi {
   updateVulnerabilityStatus(input: UpdateVulnStatusRequest): Promise<Vulnerability>
   deleteVulnerability(id: string): Promise<DeleteVulnResult>
   deleteVulnerabilities(ids: string[]): Promise<DeleteVulnsResult>
-  /** Export one or more vulnerability reports as Markdown (save file / pick directory). */
-  exportVulnerabilities(ids: string[]): Promise<ExportReportsResult>
+  /**
+   * Export one or more vulnerability reports as Markdown. `outputDir` is an
+   * absolute directory chosen by the user; omitted/empty means the Host default
+   * (`~/.cortex/exports/<timestamp>/`).
+   */
+  exportVulnerabilities(ids: string[], outputDir?: string): Promise<ExportReportsResult>
   listAssets(filters?: AssetFilters): Promise<AssetListItem[]>
   getAssetDetail(hostPort: string): Promise<AssetContext | null>
   getAssetRelatedVulnerabilities(hostPort: string): Promise<VulnerabilityListItem[]>
