@@ -26,8 +26,6 @@ Cortex 同时提供原生 **DeepSeek Harness** 插件（位于本仓库 `dsh-cor
 - **微信小程序逆向**：wxapkg 检测 / 解密 / 解包 / 分析 / 搜索与资产导入；
 - **22 个原生 Agent 工具**直接读写同一份本地 SQLite，**无需 MCP server**。
 
-Web 端 DSH 提示：Host 必须能读取运行 DSH 的机器上的 Cortex schema **v5** SQLite 文件（Windows 为 `%USERPROFILE%\.cortex\data.db`，macOS/Linux 为 `~/.cortex/data.db`）。若 DSH 在另一台机器或受限 home 中运行，请先把数据库复制过去，再使用插件内的数据库设置页（自动检测候选路径、自定义路径、`~` 展开），或设置 `CORTEX_DB_PATH`。Linux Host 不能直接打开 Windows 盘符路径。
-
 环境要求：DeepSeek Harness **≥ 0.2.2-rc.1**、Node.js **≥ 22.19**（DSH 桌面端已内置）以及 Cortex 数据库
 schema **v5**。
 
