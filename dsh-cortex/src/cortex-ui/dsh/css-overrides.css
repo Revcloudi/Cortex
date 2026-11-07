@@ -138,3 +138,11 @@
  */
 
 
+
+/* Mini-program search / file-path fields keep a static look while focused:
+ * no outline, ring, shadow or border-colour change. */
+.dshc-cortex-root .dshc-flat-input:focus,
+.dshc-cortex-root .dshc-flat-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}

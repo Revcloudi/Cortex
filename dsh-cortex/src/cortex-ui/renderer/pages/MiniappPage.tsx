@@ -465,7 +465,7 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={t('miniapp.search.placeholder')}
-              className="pl-9 pr-9"
+              className="dshc-flat-input pl-9 pr-9"
             />
             {search.length > 0 ? (
               <button
@@ -494,7 +494,7 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
               value={addRootValue}
               onChange={(event) => setAddRootValue(event.target.value)}
               placeholder={t('miniapp.addRoot.placeholder')}
-              className="h-8 font-mono text-[11.5px]"
+              className="dshc-flat-input h-8 font-mono text-[11.5px]"
             />
             <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">
               {t('miniapp.addRoot.hint')}
@@ -661,3 +661,4 @@ export function MiniappPage({ dataVersion }: MiniappPageProps) {
     </section>
   )
 }
+

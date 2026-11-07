@@ -606,7 +606,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                         onChange={(event) => setNameDraft(event.target.value)}
                         placeholder={t('miniapp.detail.renamePlaceholder')}
                         aria-label={t('miniapp.detail.rename')}
-                        className="h-8 w-[260px] max-w-full text-[13px]"
+                        className="dshc-flat-input h-8 w-[260px] max-w-full text-[13px]"
                       />
                       <Button
                         type="submit"
@@ -1065,7 +1065,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                             value={fileFindInput}
                             onChange={(event) => setFileFindInput(event.target.value)}
                             placeholder={t('miniapp.file.findPlaceholder')}
-                            className="h-6 min-w-0 flex-1 border-0 bg-transparent px-0 text-[11px] shadow-none focus-visible:ring-0"
+                            className="dshc-flat-input h-6 min-w-0 flex-1 border-0 bg-transparent px-0 text-[11px] shadow-none focus-visible:ring-0"
                           />
                           <button
                             type="button"
@@ -1220,7 +1220,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                         value={searchQuery}
                         onChange={(event) => setSearchQuery(event.target.value)}
                         placeholder={t('miniapp.search.queryPlaceholder')}
-                        className="h-8 pl-8 text-[11.5px]"
+                        className="dshc-flat-input h-8 pl-8 text-[11.5px]"
                       />
                     </div>
                     <button
@@ -1244,7 +1244,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                       value={searchGlob}
                       onChange={(event) => setSearchGlob(event.target.value)}
                       placeholder={t('miniapp.search.globPlaceholder')}
-                      className="h-8 w-[160px] font-mono text-[11px]"
+                      className="dshc-flat-input h-8 w-[160px] font-mono text-[11px]"
                     />
                     <label className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
                       {t('miniapp.search.maxResults')}
@@ -1255,7 +1255,7 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
                         max={200}
                         value={searchMax}
                         onChange={(event) => setSearchMax(event.target.value)}
-                        className="h-8 w-[68px] text-[11px]"
+                        className="dshc-flat-input h-8 w-[68px] text-[11px]"
                       />
                     </label>
                     <Button
@@ -1348,3 +1348,4 @@ export function MiniappDetail({ miniappId, onClose, onChanged }: MiniappDetailPr
     </Sheet>
   )
 }
+
