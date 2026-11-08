@@ -1,22 +1,25 @@
 /**
- * Import extracted mini-program intelligence into the existing Cortex asset
- * library (schema v5).
+ * Import extracted mini-program intelligence into the Cortex asset library.
  *
- * The analyzer produces domains/endpoints/secrets/parameters from the unpacked
- * workspace; this module maps them onto the canonical asset shape and merges
- * them with the same semantics as `cortex_sync_asset_info`:
- *
- *   - `host_port` derived from the most-used business domain (https preferred),
- *   - `interfaces[]` from endpoint candidates (path/method/params),
- *   - `leaked_infos[]` from masked-verified hard-coded secrets (full value is
- *     persisted locally, never logged),
- *   - `test_parameters[]` from non-secret id/tenant/order candidates.
+ * A mini-program is its own asset: identity is the appid (or package hash when
+ * no appid exists), never the host of one of its API domains. Domains,
+ * package/version evidence and the app metadata live in the additive
+ * `asset_*` identity tables (v5-compatible), or, when the tables are absent,
+ * the import creates them. Domain reuse never merges two mini-programs.
  *
  * Nothing here uploads package content or calls the network.
  */
 
+import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
-import { withBusyRetry } from '../db.js'
+import {
+  ensureAssetIdentityTables,
+  findMiniappMetaByExternalId,
+  listAssetDomains,
+  listMiniappVersions,
+  upsertMiniappIdentity,
+  withAssetWrite,
+} from '../cortex/asset-identity.js'
 import {
   normalizeInterfaces,
   normalizeLeaks,
@@ -167,116 +170,172 @@ export async function importMiniappAssets(input) {
 
   const appid = String(source.appid || '').trim()
   const version = String(source.version || '').trim()
-  const explicitHostPort =
-    input.hostPort !== undefined && input.hostPort !== null ? String(input.hostPort).trim() : ''
-  const hostPort = explicitHostPort || chooseAssetHostPort(overview.domains)
-  const project = normalizeProjectName(
-    input.projectName !== undefined && input.projectName !== null && String(input.projectName).trim().length > 0
-      ? String(input.projectName)
-      : `小程序 ${appid}`,
-  )
-
-  const interfaces = buildInterfaces(overview.endpoints)
-  const leaks = buildLeaks(overview.secrets, appid)
-  const parameters = buildTestParameters(overview.parameters, appid)
-
-  const warnings = []
-  if (!hostPort) {
-    warnings.push('no business domain was extracted; provide host_port explicitly to create an asset')
-    return {
-      ok: false,
-      project,
-      assets: [],
-      totals: { assets: 0, interfaces: interfaces.length, leaks: leaks.length, parameters: parameters.length },
-      warnings,
-    }
-  }
-  if (interfaces.length === 0) warnings.push('no endpoint candidates were extracted')
-  if (leaks.length === 0) warnings.push('no hard-coded secret was extracted')
-  if (parameters.length === 0) warnings.push('no test-parameter candidate was extracted')
+  const platform = String(source.platform || 'wechat').trim().toLowerCase() || 'wechat'
+  const packageHash =
+    String(source.package_hash || '').trim() ||
+    createHash('sha256')
+      .update(`${appid}|${version}|${String(source.package_dir || '')}`)
+      .digest('hex')
+  const externalId = appid || packageHash
+  const displayName = String(source.app_name || '').trim() || appid || `miniapp ${externalId.slice(0, 12)}`
 
   const db = holder.db
   if (!db) throw new Error('Cortex database is unavailable')
-  const existing = db.prepare('SELECT * FROM assets WHERE host_port = ?').get(hostPort)
-  const now = new Date().toISOString()
-  const techStack = existing && existing.tech_stack ? String(existing.tech_stack) : ''
-  const marker = `wechat-miniapp ${appid}${version ? `@${version}` : ''}`
-  const nextTechStack =
-    techStack.length === 0
-      ? marker
-      : techStack.toLowerCase().includes(marker.toLowerCase())
-        ? techStack
-        : `${techStack}, ${marker}`
-  const projectName =
-    !existing || !String(existing.project_name || '').trim() ? project : normalizeProjectName(existing.project_name)
-  const mergedInterfaces = uniqueMerge(existing && existing.interfaces, interfaces)
-  const mergedLeaks = uniqueMerge(existing && existing.leaked_infos, leaks)
-  const mergedParameters = uniqueMerge(existing && existing.test_parameters, parameters)
+  ensureAssetIdentityTables(db)
 
-  await withBusyRetry(() => {
-    db.exec('BEGIN IMMEDIATE')
-    try {
-      if (existing) {
-        db.prepare(
-          `UPDATE assets SET host = ?, project_name = ?, tech_stack = ?, status = 'Alive',
-             interfaces = ?, leaked_infos = ?, test_parameters = ?, last_seen = ?
-           WHERE host_port = ?`,
-        ).run(
-          existing.host || hostPort.replace(/^https?:\/\//, ''),
-          projectName,
-          nextTechStack,
-          JSON.stringify(mergedInterfaces),
-          JSON.stringify(mergedLeaks),
-          JSON.stringify(mergedParameters),
-          now,
-          hostPort,
-        )
-      } else {
-        db.prepare(
-          `INSERT INTO assets
-             (host_port, host, project_name, tech_stack, auth_required, status,
-              interfaces, leaked_infos, test_parameters, related_vuln_ids, last_seen)
-           VALUES (?, ?, ?, ?, 0, 'Alive', ?, ?, ?, '[]', ?)`,
-        ).run(
-          hostPort,
-          hostPort.replace(/^https?:\/\//, ''),
-          projectName,
-          nextTechStack,
-          JSON.stringify(mergedInterfaces),
-          JSON.stringify(mergedLeaks),
-          JSON.stringify(mergedParameters),
-          now,
-        )
-      }
-      db.exec('COMMIT')
-    } catch (error) {
-      try {
-        db.exec('ROLLBACK')
-      } catch {
-        /* ignore */
-      }
-      throw error
+  const existingIdentity = findMiniappMetaByExternalId(db, { platform, externalId })
+  const explicitProject =
+    input.projectName !== undefined && input.projectName !== null && String(input.projectName).trim().length > 0
+      ? String(input.projectName)
+      : ''
+  const project = normalizeProjectName(
+    explicitProject || String(existingIdentity?.project_name || '') || `小程序 ${externalId.slice(0, 12)}`,
+  )
+
+  const interfaces = buildInterfaces(overview.endpoints)
+  const leaks = buildLeaks(overview.secrets, appid || externalId)
+  const parameters = buildTestParameters(overview.parameters, appid || externalId)
+  const domains = []
+  for (const entry of Array.isArray(overview.domains) ? overview.domains : []) {
+    const host = String((entry && entry.host) || '').trim().toLowerCase()
+    if (host.length === 0 || isNoiseDomain(host)) continue
+    if (domains.some((candidate) => candidate.host === host)) continue
+    domains.push({ host, count: Number(entry.count || 0), examples: Array.isArray(entry.examples) ? entry.examples : [] })
+  }
+  domains.sort((left, right) => {
+    const leftHttps = left.examples.some((value) => String(value).startsWith('https://'))
+    const rightHttps = right.examples.some((value) => String(value).startsWith('https://'))
+    if (leftHttps !== rightHttps) return leftHttps ? -1 : 1
+    return right.count - left.count
+  })
+
+  const warnings = []
+  if (!appid) warnings.push('appid was not detected; using the package hash as the asset identity (low confidence)')
+  if (domains.length === 0) warnings.push('no business domain was extracted; the mini-program asset is still created')
+  if (interfaces.length === 0) warnings.push('no endpoint candidates were extracted')
+  if (leaks.length === 0) warnings.push('no hard-coded secret was extracted')
+  if (parameters.length === 0) warnings.push('no test-parameter candidate was extracted')
+  if (input.hostPort !== undefined && input.hostPort !== null && String(input.hostPort).trim().length > 0) {
+    warnings.push('host_port is deprecated for mini-programs; domains are stored on the mini-program asset')
+  }
+  const legacy = db
+    .prepare(
+      `SELECT host_port FROM assets
+        WHERE host_port NOT LIKE 'miniapp:%' AND tech_stack LIKE ?
+        ORDER BY last_seen DESC LIMIT 1`,
+    )
+    .get(`%wechat-miniapp ${externalId}%`)
+  if (legacy) {
+    warnings.push(
+      `legacy host asset ${legacy.host_port} was left unchanged; the mini-program asset is separate`,
+    )
+  }
+
+  const write = await withAssetWrite(db, () => {
+    const identity = upsertMiniappIdentity(db, {
+      projectName: project,
+      appid,
+      appName: displayName,
+      platform,
+      version,
+      packageHash,
+      packageDir: String(source.package_dir || ''),
+      domains,
+      metadata: {
+        source: 'miniapp',
+        package_hash: packageHash,
+        root_kind: String(source.root_kind || ''),
+      },
+    })
+    const assetKey = identity.assetKey
+    const existing = db.prepare('SELECT * FROM assets WHERE host_port = ?').get(assetKey)
+    const primaryHost = domains[0]?.host || ''
+    const marker = `wechat-miniapp ${externalId}${version ? `@${version}` : ''}`
+    const techStack = existing && existing.tech_stack ? String(existing.tech_stack) : ''
+    const nextTechStack =
+      techStack.length === 0
+        ? marker
+        : techStack.toLowerCase().includes(marker.toLowerCase())
+          ? techStack
+          : `${techStack}, ${marker}`
+    const mergedInterfaces = uniqueMerge(existing && existing.interfaces, interfaces)
+    const mergedLeaks = uniqueMerge(existing && existing.leaked_infos, leaks)
+    const mergedParameters = uniqueMerge(existing && existing.test_parameters, parameters)
+    const now = new Date().toISOString()
+
+    if (existing) {
+      db.prepare(
+        `UPDATE assets SET host = ?, project_name = ?, tech_stack = ?, status = 'Alive',
+           interfaces = ?, leaked_infos = ?, test_parameters = ?, last_seen = ?
+         WHERE host_port = ?`,
+      ).run(
+        existing.host || primaryHost || externalId,
+        project,
+        nextTechStack,
+        JSON.stringify(mergedInterfaces),
+        JSON.stringify(mergedLeaks),
+        JSON.stringify(mergedParameters),
+        now,
+        assetKey,
+      )
+    } else {
+      db.prepare(
+        `INSERT INTO assets
+           (host_port, host, project_name, tech_stack, auth_required, status,
+            interfaces, leaked_infos, test_parameters, related_vuln_ids, last_seen)
+         VALUES (?, ?, ?, ?, 0, 'Alive', ?, ?, ?, '[]', ?)`,
+      ).run(
+        assetKey,
+        primaryHost || externalId,
+        project,
+        nextTechStack,
+        JSON.stringify(mergedInterfaces),
+        JSON.stringify(mergedLeaks),
+        JSON.stringify(mergedParameters),
+        now,
+      )
+    }
+    return {
+      identity,
+      assetKey,
+      existing,
+      created: !existing,
+      mergedInterfaces,
+      mergedLeaks,
+      mergedParameters,
+      primaryHost,
+      displayName,
     }
   })
   if (typeof holder.refreshFileStamp === 'function') holder.refreshFileStamp()
 
   return {
     ok: true,
-    project: projectName,
+    project,
     assets: [
       {
-        host_port: hostPort,
-        created: !existing,
-        interfaces: mergedInterfaces.length,
-        leaks: mergedLeaks.length,
-        parameters: mergedParameters.length,
+        asset_id: write.assetKey,
+        host_port: write.assetKey,
+        kind: 'miniapp',
+        external_id: externalId,
+        appid,
+        platform,
+        display_name: write.displayName,
+        project_name: project,
+        primary_domain: write.primaryHost,
+        domains: listAssetDomains(db, write.assetKey),
+        versions: listMiniappVersions(db, write.assetKey),
+        created: write.created,
+        interfaces: write.mergedInterfaces.length,
+        leaks: write.mergedLeaks.length,
+        parameters: write.mergedParameters.length,
       },
     ],
     totals: {
       assets: 1,
-      interfaces: mergedInterfaces.length,
-      leaks: mergedLeaks.length,
-      parameters: mergedParameters.length,
+      interfaces: write.mergedInterfaces.length,
+      leaks: write.mergedLeaks.length,
+      parameters: write.mergedParameters.length,
       added_interfaces: interfaces.length,
       added_leaks: leaks.length,
       added_parameters: parameters.length,
@@ -284,7 +343,6 @@ export async function importMiniappAssets(input) {
     warnings,
   }
 }
-
 /** Short label for the source package (no absolute path). */
 export function miniappLabel(source) {
   const appid = String((source && source.appid) || 'unknown')
@@ -292,3 +350,4 @@ export function miniappLabel(source) {
   const name = String((source && source.app_name) || '') || basename(String((source && source.package_dir) || ''))
   return `${appid}${version ? `@${version}` : ''}${name ? ` (${name})` : ''}`
 }
+

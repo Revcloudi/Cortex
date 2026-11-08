@@ -23,7 +23,7 @@ Cortex also ships as a native **DeepSeek Harness** plugin (`dsh-cortex/` in this
 
 - the full Cortex workbench — vulnerability board, internal operations, 3D Memory Nebula, assets, snapshots and retest;
 - a Yakit-style **Web Fuzzer** for manual HTTP requests with JSON-formatted request/response views;
-- a **WeChat mini-program** reverse-engineering workbench (wxapkg detect / decrypt / unpack / analyze / import);
+- a **WeChat mini-program** reverse-engineering workbench (wxapkg detect / decrypt / unpack / analyze / import); each mini-program is its own appid-keyed asset (package-hash fallback), with domains stored as relations;
 - **22 native agent tools** over the same local SQLite, **without any MCP server**.
 
 Requirements: DeepSeek Harness **≥ 0.2.2-rc.1**, Node.js **≥ 22.19** (bundled with the DSH desktop app) and a

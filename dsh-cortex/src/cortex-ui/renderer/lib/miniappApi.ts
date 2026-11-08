@@ -266,7 +266,16 @@ export interface MiniappSearchResponse {
 }
 
 export interface MiniappImportAsset {
+  asset_id?: string
   host_port: string
+  kind?: 'miniapp'
+  external_id?: string
+  appid?: string
+  platform?: string
+  display_name?: string
+  primary_domain?: string
+  domains?: Array<{ host: string; role: string; source?: string; confidence?: string }>
+  versions?: Array<{ version: string; package_sha256: string; scanned_at: string }>
   created: boolean
   interfaces: number
   leaks: number
@@ -430,7 +439,7 @@ export function searchMiniappFiles(
 
 export function importMiniappAssets(
   id: string,
-  input: { project_name?: string; host_port?: string } = {}
+  input: { project_name?: string } = {}
 ): Promise<MiniappImportResponse> {
   return request<MiniappImportResponse>(`/miniapps/${encodeId(id)}/import-assets`, {
     method: 'POST',

@@ -112,7 +112,10 @@ test('cortex_append_retest appends without touching original evidence', async ()
 test('asset, snapshot, internal and graph tools return data', async () => {
   const assets = await call('cortex_list_assets', {})
   assert.match(assets.text, /assets/)
-  const firstHostPort = assets.text.split('\n')[1].split(' | ')[0]
+  const firstHostPort = assets.text
+    .split('\n')[1]
+    .replace(/^\[web\] /, '')
+    .split(' | ')[0]
   const asset = await call('cortex_get_asset', { hostPort: firstHostPort })
   assert.match(asset.text, /## interfaces/)
   const snapshots = await call('cortex_list_snapshots', { includeArchived: true })

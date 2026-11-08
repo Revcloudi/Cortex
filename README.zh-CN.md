@@ -23,7 +23,7 @@ Cortex 同时提供原生 **DeepSeek Harness** 插件（位于本仓库 `dsh-cor
 
 - 完整 Cortex 工作台：漏洞看板、内网作战、3D 记忆星云、资产库、认知快照与漏洞复测；
 - Yakit 风格 **Web Fuzzer**：手动发包、请求/响应 JSON 格式化与状态/响应头一体展示；
-- **微信小程序逆向**：wxapkg 检测 / 解密 / 解包 / 分析 / 搜索与资产导入；
+- **微信小程序逆向**：wxapkg 检测 / 解密 / 解包 / 分析 / 搜索与资产导入；每个小程序按 appid（无 appid 时按包哈希）独立成资产，域名作为关联关系；
 - **22 个原生 Agent 工具**直接读写同一份本地 SQLite，**无需 MCP server**。
 
 环境要求：DeepSeek Harness **≥ 0.2.2-rc.1**、Node.js **≥ 22.19**（DSH 桌面端已内置）以及 Cortex 数据库

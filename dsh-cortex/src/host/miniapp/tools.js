@@ -289,11 +289,10 @@ export function createMiniappToolDefinitions({ holder } = {}) {
 
   const importTool = defineTool(
     'cortex_import_miniapp_assets',
-    'Import the domains, endpoint candidates, hard-coded secrets and candidate test parameters extracted from an unpacked mini-program into the existing Cortex asset library (canonical interfaces/leaked_infos/test_parameters, merge semantics). Secrets are stored locally but never printed. Returns real write counts; requires the Cortex data.db (schema v5).',
+    'Import the domains, endpoint candidates, hard-coded secrets and candidate test parameters extracted from an unpacked mini-program. Each mini-program is its own asset (appid, or package hash when appid is absent); domains are stored as asset relations, never as the asset identity. Secrets are stored locally but never printed. Returns asset_id and real write counts.',
     {
       appid: { type: 'string', minLength: 1, maxLength: 64 },
       version: { type: 'string', maxLength: 64 },
-      host_port: { type: 'string', maxLength: 4000, description: 'Optional explicit asset host_port; default is the most-used business domain (https preferred)' },
     },
     ['appid'],
     async (args) => {
@@ -307,12 +306,11 @@ export function createMiniappToolDefinitions({ holder } = {}) {
           holder,
           store: getStore(),
           source,
-          hostPort: text(args.host_port).trim() || undefined,
         })
         if (!result.ok) {
           return {
             text: [
-              `${LOG} import failed: no usable business domain extracted from ${source.appid}`,
+              `${LOG} import failed: mini-program asset could not be created`,
               ...result.warnings.map((warning) => `warning: ${warning}`),
             ].join('\n'),
           }
@@ -320,7 +318,8 @@ export function createMiniappToolDefinitions({ holder } = {}) {
         const asset = result.assets[0] || {}
         return {
           text: [
-            `${LOG} imported ${source.appid}@${source.version || '-'} -> asset ${asset.host_port} (${asset.created ? 'created' : 'merged'}) project=${result.project}`,
+            `${LOG} imported ${source.appid}@${source.version || '-'} -> asset ${asset.asset_id || asset.host_port} (${asset.created ? 'created' : 'merged'}) project=${result.project}`,
+            `kind=${asset.kind || 'miniapp'} appid=${asset.appid || '-'} domains=${asset.domains?.length || 0} versions=${asset.versions?.length || 0}`,
             `stored: interfaces=${result.totals.interfaces} leaked_infos=${result.totals.leaks} test_parameters=${result.totals.parameters}`,
             ...result.warnings.map((warning) => `warning: ${warning}`),
           ].join('\n'),

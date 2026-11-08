@@ -448,17 +448,24 @@ export function AssetDetail({
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <SheetTitle className="break-all font-mono text-[21px] font-medium tracking-tight">
-                    {asset.host_port}
+                    {asset.kind === 'miniapp'
+                      ? asset.display_name || asset.appid || asset.host_port
+                      : asset.host_port}
                   </SheetTitle>
                   <SheetDescription className="mt-1.5 break-all text-[12.5px] text-foreground/70">
-                    {t('asset.detail.projectHost', {
-                      project: asset.project_name,
-                      host: asset.host
-                    })}
+                    {asset.kind === 'miniapp'
+                      ? t('asset.detail.miniappLine', {
+                          appid: asset.appid || '—',
+                          domains: asset.domains?.length ?? 0
+                        })
+                      : t('asset.detail.projectHost', {
+                          project: asset.project_name,
+                          host: asset.host
+                        })}
                   </SheetDescription>
                 </div>
                 <CopyButton
-                  value={asset.host_port}
+                  value={asset.kind === 'miniapp' ? asset.asset_id || asset.host_port : asset.host_port}
                   label={t('asset.detail.copyUrl')}
                   toastMessage={t('asset.detail.copyUrlToast')}
                   className="mt-0.5"
@@ -543,14 +550,61 @@ export function AssetDetail({
                 <TabsContent value="overview" className="pt-5">
                   <dl className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2">
                     <MetaItem label={t('asset.field.project')}>{asset.project_name}</MetaItem>
-                    <MetaItem label={t('common.host')}>
-                      <span className="font-mono text-[12.5px]">{asset.host}</span>
+                    <MetaItem label={t('asset.field.kind')}>
+                      {asset.kind === 'miniapp' ? t('asset.kind.miniapp') : t('asset.kind.web')}
                     </MetaItem>
-                    <MetaItem label={t('asset.field.url')}>
-                      <code className="break-all font-mono text-[12.5px] text-foreground">
-                        {asset.host_port}
-                      </code>
-                    </MetaItem>
+                    {asset.kind === 'miniapp' ? (
+                      <>
+                        <MetaItem label={t('asset.field.appid')}>
+                          <span className="font-mono text-[12.5px]" data-testid="asset-miniapp-appid">
+                            {asset.appid || '—'}
+                          </span>
+                        </MetaItem>
+                        <MetaItem label={t('asset.field.platform')}>
+                          <span className="font-mono text-[12.5px]">{asset.platform || '—'}</span>
+                        </MetaItem>
+                        <MetaItem label={t('asset.field.domains')}>
+                          <span className="flex flex-wrap gap-1" data-testid="asset-miniapp-domains">
+                            {(asset.domains ?? []).length === 0 ? (
+                              <span className="text-muted-foreground">{t('asset.detail.noDomains')}</span>
+                            ) : (
+                              (asset.domains ?? []).map((domain) => (
+                                <span
+                                  key={`${domain.host}-${domain.role}`}
+                                  className="inline-block rounded border border-border bg-sidebar px-1.5 py-0.5 font-mono text-[11px] leading-relaxed text-foreground/80"
+                                >
+                                  {domain.host}
+                                </span>
+                              ))
+                            )}
+                          </span>
+                        </MetaItem>
+                        <MetaItem label={t('asset.field.versions')}>
+                          <span className="flex flex-col gap-0.5 font-mono text-[11px] text-foreground/80">
+                            {(asset.versions ?? []).length === 0 ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              (asset.versions ?? []).slice(0, 5).map((version) => (
+                                <span key={`${version.package_sha256}-${version.version}`}>
+                                  {version.version || '—'} · {version.package_sha256.slice(0, 12)}
+                                </span>
+                              ))
+                            )}
+                          </span>
+                        </MetaItem>
+                      </>
+                    ) : (
+                      <>
+                        <MetaItem label={t('common.host')}>
+                          <span className="font-mono text-[12.5px]">{asset.host}</span>
+                        </MetaItem>
+                        <MetaItem label={t('asset.field.url')}>
+                          <code className="break-all font-mono text-[12.5px] text-foreground">
+                            {asset.host_port}
+                          </code>
+                        </MetaItem>
+                      </>
+                    )}
                     <MetaItem label={t('asset.field.status')}>
                       <AssetStatusBadge status={asset.status} />
                     </MetaItem>

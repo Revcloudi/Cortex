@@ -563,9 +563,43 @@ export const AssetContextPayloadSchema = z
 export type AssetContextPayload = z.infer<typeof AssetContextPayloadSchema>
 
 /** Full asset record returned by the database / UI, with derived host + last_seen. */
+export const AssetDomainSchema = z
+  .object({
+    host: z.string(),
+    role: z.string().default('api'),
+    source: z.string().default(''),
+    confidence: z.string().default('medium'),
+    first_seen: z.string().default(''),
+    last_seen: z.string().default('')
+  })
+  .passthrough()
+
+export const MiniappVersionSchema = z
+  .object({
+    version: z.string().default(''),
+    package_sha256: z.string().default(''),
+    package_dir: z.string().default(''),
+    scanned_at: z.string().default(''),
+    tool_version: z.string().default(''),
+    metadata_json: z.string().default('{}')
+  })
+  .passthrough()
+
 export const AssetContextSchema = AssetContextPayloadSchema.extend({
   host: assetHostSchema,
-  last_seen: z.string().trim().min(1).max(64)
+  last_seen: z.string().trim().min(1).max(64),
+  /** Identity layer: web assets use host_port; mini-programs use appid/hash. */
+  asset_id: z.string().default(''),
+  kind: z.enum(['web', 'miniapp']).default('web'),
+  external_id: z.string().default(''),
+  display_name: z.string().default(''),
+  appid: z.string().default(''),
+  platform: z.string().default(''),
+  identity_confidence: z.enum(['low', 'medium', 'high']).default('high'),
+  primary_domain: z.string().default(''),
+  domains: z.array(AssetDomainSchema).default([]),
+  versions: z.array(MiniappVersionSchema).default([]),
+  linked_vuln_ids: z.array(z.string()).default([])
 }).strict()
 
 export type AssetContext = z.infer<typeof AssetContextSchema>
@@ -581,6 +615,15 @@ export type SyncAssetInfoInput = z.infer<typeof SyncAssetInfoInputSchema>
 
 /** Compact asset row used by the asset library table. */
 export interface AssetListItem {
+  /** Stable asset identity: web origin or mini-program appid/hash key. */
+  asset_id?: string
+  kind?: 'web' | 'miniapp'
+  external_id?: string
+  display_name?: string
+  appid?: string
+  platform?: string
+  primary_domain?: string
+  domain_count?: number
   /** Full URL (preferred) or host:port identifier. */
   host_port: string
   /** Pure host derived from host_port. */

@@ -117,12 +117,20 @@ const VULN_KEYS = [
 ].sort()
 
 const ASSET_ITEM_KEYS = [
+  'appid',
+  'asset_id',
   'auth_required',
+  'display_name',
+  'domain_count',
+  'external_id',
   'host',
   'host_port',
   'interface_count',
+  'kind',
   'last_seen',
   'leak_count',
+  'platform',
+  'primary_domain',
   'project_name',
   'related_vuln_count',
   'status',

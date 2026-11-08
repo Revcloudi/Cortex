@@ -188,15 +188,17 @@ it('cortex_import_miniapp_assets persists canonical asset data and reports real 
   const text = await run('cortex_import_miniapp_assets', {
     appid: APPID,
     version: '2',
-    host_port: 'https://mini.example-target.test/',
   })
   assert.match(text, /imported/)
+  assert.match(text, /kind=miniapp/)
   assert.match(text, /interfaces=\d+/)
   assert.match(text, /leaked_infos=\d+/)
   assert.match(text, /test_parameters=\d+/)
   assert.doesNotMatch(text, /sk-abcdefghijklmnopqrstuvwxyz/)
 
-  const row = holder.db.prepare('SELECT * FROM assets WHERE host_port = ?').get('https://mini.example-target.test/')
+  const row = holder.db
+    .prepare("SELECT * FROM assets WHERE host_port LIKE 'miniapp:%' ORDER BY last_seen DESC LIMIT 1")
+    .get()
   assert.ok(row, 'asset row exists')
   assert.match(row.project_name, /小程序/)
   const interfaces = JSON.parse(row.interfaces)

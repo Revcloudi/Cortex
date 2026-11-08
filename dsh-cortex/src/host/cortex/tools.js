@@ -15,6 +15,14 @@ import {
 } from './normalize-asset.js'
 import { auditCompleteness, syncInternalScope } from './data-tools.js'
 import { createMiniappToolDefinitions } from '../miniapp/tools.js'
+import {
+  getAssetMeta,
+  linkVulnerability,
+  listAssetDomains,
+  listAssetMeta,
+  listLinkedVulnIds,
+  listMiniappVersions,
+} from './asset-identity.js'
 
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 const STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed']
@@ -324,6 +332,10 @@ export function createCortexToolDefinitions({ holder, config }) {
     {
       id: { type: 'string', description: 'Existing id to update; omit for a new record' },
       host: { type: 'string', description: 'Entry asset host, e.g. 127.0.0.1:8080 or https://example.com' },
+      asset_id: {
+        type: 'string',
+        description: 'Optional owning asset id, e.g. the asset_id returned by cortex_import_miniapp_assets',
+      },
       vuln_name: { type: 'string' },
       vuln_type: { type: 'string', description: 'e.g. SQL Injection / IDOR (default Unclassified)' },
       severity: { type: 'string', enum: SEVERITIES },
@@ -355,6 +367,10 @@ export function createCortexToolDefinitions({ holder, config }) {
       const existingId = text(args.id).trim()
       const existing = existingId ? db.prepare('SELECT id FROM vulnerabilities WHERE id = ?').get(existingId) : null
       if (existingId && !existing) throw new Error(`id ${existingId} does not exist; omit id to create a new record`)
+      const assetId = text(args.asset_id).trim()
+      if (assetId && !db.prepare('SELECT host_port FROM assets WHERE host_port = ?').get(assetId)) {
+        throw new Error(`asset_id ${assetId} does not exist`)
+      }
       const id = existingId || nextVulnId(db)
       const now = new Date().toISOString()
       const fields = {
@@ -395,8 +411,9 @@ export function createCortexToolDefinitions({ holder, config }) {
           )
         }
       })
+      if (assetId) linkVulnerability(db, assetId, id)
       holder.refreshFileStamp()
-      return { text: `${LOG} ${existing ? 'updated' : 'saved'} ${id} | ${fields.severity} | ${fields.host} | ${fields.vuln_name}` }
+      return { text: `${LOG} ${existing ? 'updated' : 'saved'} ${id} | ${fields.severity} | ${fields.host} | ${fields.vuln_name}${assetId ? ` | asset=${assetId}` : ''}` }
     },
   )
 
@@ -660,7 +677,7 @@ export function createCortexToolDefinitions({ holder, config }) {
 
   const listAssets = defineTool(
     'cortex_list_assets',
-    'List local Cortex assets (host_port, project, tech stack, interface/leak/test-parameter counts). Optional search/status/project filters.',
+    'List local Cortex assets. Each mini-program is one asset (kind=miniapp, appid/hash identity); domains are relations, not separate assets. Optional search/status/project filters.',
     {
       search: { type: 'string' },
       status: { type: 'string', enum: ['Alive', 'Dead', 'WAF_Blocked', 'all'] },
@@ -671,11 +688,6 @@ export function createCortexToolDefinitions({ holder, config }) {
       const db = ensureDb(holder)
       const where = []
       const params = []
-      const search = text(args.search).trim()
-      if (search) {
-        where.push('(host_port LIKE ? OR host LIKE ? OR project_name LIKE ? OR tech_stack LIKE ?)')
-        for (let index = 0; index < 4; index += 1) params.push(`%${search.replace(/[%_]/g, '')}%`)
-      }
       if (args.status && args.status !== 'all') {
         where.push('status = ?')
         params.push(args.status)
@@ -689,31 +701,66 @@ export function createCortexToolDefinitions({ holder, config }) {
       const rows = db
         .prepare(`SELECT host_port, host, project_name, tech_stack, status, auth_required, interfaces, leaked_infos, test_parameters, related_vuln_ids, last_seen FROM assets${whereSql} ORDER BY last_seen DESC LIMIT 500`)
         .all(...params)
-      const lines = rows.map(
-        (row) =>
-          `${row.host_port} | ${row.status} | ${normalizeProjectName(row.project_name)} | ifaces=${jsonArray(row.interfaces).length} leaks=${jsonArray(row.leaked_infos).length} params=${jsonArray(row.test_parameters).length} vulns=${jsonArray(row.related_vuln_ids).length} | ${row.tech_stack}`,
-      )
-      return { text: [`${LOG} ${rows.length} assets`, ...lines].join('\n') }
+      const metaByKey = listAssetMeta(db)
+      const search = text(args.search).trim().toLowerCase()
+      const filtered =
+        search.length === 0
+          ? rows
+          : rows.filter((row) => {
+              const meta = metaByKey.get(String(row.host_port)) ?? null
+              return [
+                row.host_port,
+                row.host,
+                row.project_name,
+                row.tech_stack,
+                meta?.display_name,
+                meta?.appid,
+                meta?.platform,
+                meta?.primary_domain,
+              ]
+                .filter(Boolean)
+                .join('\n')
+                .toLowerCase()
+                .includes(search)
+            })
+      const lines = filtered.map((row) => {
+        const meta = metaByKey.get(String(row.host_port)) ?? null
+        const kind = meta?.kind || 'web'
+        const label =
+          kind === 'miniapp'
+            ? `[miniapp] ${meta?.display_name || meta?.appid || row.host_port} (appid=${meta?.appid || '-'})`
+            : `[web] ${row.host_port}`
+        return `${label} | ${row.status} | ${normalizeProjectName(row.project_name)} | ifaces=${jsonArray(row.interfaces).length} leaks=${jsonArray(row.leaked_infos).length} params=${jsonArray(row.test_parameters).length} vulns=${jsonArray(row.related_vuln_ids).length} | ${row.tech_stack}`
+      })
+      return { text: [`${LOG} ${filtered.length} assets`, ...lines].join('\n') }
     },
   )
 
   const getAsset = defineTool(
     'cortex_get_asset',
-    'Read one Cortex asset by host_port (URL-encoded not required): project, tech stack, structured interfaces with raw requests, leaked info, test parameters and related vulnerability ids.',
+    'Read one Cortex asset by asset_id or web host_port (URL-encoded not required): identity/kind/appid, domains, versions, tech stack, structured interfaces with raw requests, leaked info, test parameters and related vulnerability ids.',
     { hostPort: { type: 'string', minLength: 1, maxLength: 4000 } },
     ['hostPort'],
     async (args) => {
       const db = ensureDb(holder)
-      const row = db.prepare('SELECT * FROM assets WHERE host_port = ?').get(text(args.hostPort).trim())
+      const key = text(args.hostPort).trim()
+      const row = db.prepare('SELECT * FROM assets WHERE host_port = ?').get(key)
       if (!row) return { text: `${LOG} asset not found: ${args.hostPort}` }
+      const meta = getAssetMeta(db, key)
+      const domains = listAssetDomains(db, key)
+      const versions = listMiniappVersions(db, key)
       const interfaces = normalizeInterfaces(row.interfaces, row.interface_dir)
       const leaks = normalizeLeaks(row.leaked_infos)
       const testParameters = normalizeTestParameters(row.test_parameters)
       const relatedIds = jsonArray(row.related_vuln_ids).filter((entry) => typeof entry === 'string')
+      for (const id of listLinkedVulnIds(db, key)) if (!relatedIds.includes(id)) relatedIds.push(id)
       const parts = [
-        `# ${row.host_port}`,
-        `host: ${row.host} · project: ${normalizeProjectName(row.project_name)}`,
-        `status: ${row.status} · auth_required: ${row.auth_required ? 'true' : 'false'} · last_seen: ${row.last_seen}`,
+        `# ${meta?.display_name || row.host_port}`,
+        `asset_id: ${meta?.asset_key || row.host_port} · kind: ${meta?.kind || 'web'} · appid: ${meta?.appid || '-'}`,
+        meta?.kind === 'miniapp'
+          ? `domain relations: ${domains.map((domain) => domain.host).join(', ') || '-'} · versions: ${versions.length}`
+          : `host: ${row.host}`,
+        `project: ${normalizeProjectName(row.project_name)} · status: ${row.status} · auth_required: ${row.auth_required ? 'true' : 'false'} · last_seen: ${row.last_seen}`,
         `tech_stack: ${row.tech_stack}`,
         '',
         `## interfaces (${interfaces.length})`,

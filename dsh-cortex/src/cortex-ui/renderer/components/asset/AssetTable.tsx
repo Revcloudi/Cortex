@@ -63,7 +63,7 @@ function TableSkeleton() {
         <table className="w-full table-fixed">
           <thead>
             <tr>
-              <th className={cn(thBase, 'w-[240px]')}>{t('asset.table.url')}</th>
+              <th className={cn(thBase, 'w-[240px]')}>{t('asset.table.asset')}</th>
               <th className={cn(thBase, 'w-[160px]')}>{t('asset.table.project')}</th>
               <th className={thBase}>{t('asset.table.techStack')}</th>
               <th className={cn(thBase, 'w-[104px] text-center')}>{t('common.status')}</th>
@@ -197,7 +197,7 @@ export function AssetTable({
           <thead className="sticky top-0 z-10">
             <tr>
               <th scope="col" className={cn(thBase, 'w-[240px] pl-3')}>
-                {t('asset.table.url')}
+                {t('asset.table.asset')}
               </th>
               <th scope="col" className={cn(thBase, 'w-[160px]')}>
                 {t('asset.table.project')}
@@ -228,24 +228,49 @@ export function AssetTable({
           <tbody>
             {rows.map((item, index) => {
               const last = index === rows.length - 1
+              const assetId = item.asset_id || item.host_port
+              const isMiniapp = item.kind === 'miniapp'
               return (
                 <tr
-                  key={item.host_port}
+                  key={assetId}
                   data-testid="asset-row"
-                  data-host-port={item.host_port}
+                  data-host-port={assetId}
+                  data-kind={item.kind || 'web'}
                   tabIndex={0}
-                  aria-label={t('asset.table.openRow', { host: item.host_port })}
-                  onClick={() => onOpen(item.host_port)}
-                  onKeyDown={(event) => handleRowKeyDown(event, item.host_port)}
+                  aria-label={t('asset.table.openRow', {
+                    host: isMiniapp ? item.display_name || item.appid || assetId : item.host_port
+                  })}
+                  onClick={() => onOpen(assetId)}
+                  onKeyDown={(event) => handleRowKeyDown(event, assetId)}
                   className="group cursor-pointer transition-colors duration-150 hover:bg-sidebar focus-visible:bg-accent-soft focus-visible:outline-none"
                 >
                   <td className={cellClass(last, 'pl-3')}>
-                    <span
-                      className="block truncate font-mono text-[12.5px] font-medium text-foreground"
-                      title={item.host_port}
-                    >
-                      {item.host_port}
-                    </span>
+                    {isMiniapp ? (
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="shrink-0 rounded border border-border bg-sidebar px-1 py-px text-[9px] font-medium text-foreground/70">
+                            {t('asset.kind.miniapp')}
+                          </span>
+                          <span
+                            className="block truncate text-[12.5px] font-medium text-foreground"
+                            title={item.display_name || item.appid || assetId}
+                          >
+                            {item.display_name || item.appid || assetId}
+                          </span>
+                        </span>
+                        <span className="truncate font-mono text-[10px] text-muted-foreground">
+                          {item.appid || assetId}
+                          {item.domain_count ? ` · ${item.domain_count} domains` : ''}
+                        </span>
+                      </span>
+                    ) : (
+                      <span
+                        className="block truncate font-mono text-[12.5px] font-medium text-foreground"
+                        title={item.host_port}
+                      >
+                        {item.host_port}
+                      </span>
+                    )}
                   </td>
                   <td className={cellClass(last)}>
                     <span

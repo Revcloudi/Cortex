@@ -287,10 +287,18 @@ it('POST /import-assets writes canonical interfaces/leaks/params into the asset 
   assert.ok(body.totals.leaks >= 1)
   assert.ok(body.totals.parameters >= 1)
   const asset = body.assets[0]
-  assert.match(asset.host_port, /^https?:\/\/api\.demo-target\.test/)
+  assert.equal(asset.kind, 'miniapp')
+  assert.match(asset.asset_id, /^miniapp:/)
+  assert.match(asset.host_port, /^miniapp:/)
+  assert.equal(asset.appid, APPID)
   assert.equal(asset.created, true)
+  assert.ok(asset.domains.length >= 1)
 
   const detail = expectOk(await call(`/assets/${encodeURIComponent(asset.host_port)}`))
+  assert.equal(detail.asset_id, asset.asset_id)
+  assert.equal(detail.kind, 'miniapp')
+  assert.equal(detail.appid, APPID)
+  assert.ok(detail.domains.length >= 1)
   assert.equal(detail.project_name, '小程序测试项目')
   assert.ok(detail.interfaces.length >= 1)
   assert.ok(detail.leaked_infos.length >= 1)
@@ -298,6 +306,21 @@ it('POST /import-assets writes canonical interfaces/leaks/params into the asset 
   assert.ok(detail.interfaces.every((entry) => typeof entry.path === 'string' && entry.path.startsWith('/')))
   assert.ok(detail.leaked_infos.every((entry) => typeof entry.value === 'string' && entry.value.length > 0))
   assert.ok(detail.leaked_infos.some((entry) => /^sk-/.test(entry.value)))
+
+  // A newer package version updates the same app asset instead of creating a
+  // second host-derived asset.
+  const next = listing.miniapps.find((row) => String(row.version) === '3')
+  const nextBody = expectOk(
+    await call(`/miniapps/${next.id}/import-assets`, {
+      method: 'POST',
+      body: { project_name: '小程序测试项目' },
+    }),
+  )
+  assert.equal(nextBody.ok, true)
+  assert.equal(nextBody.assets[0].asset_id, asset.asset_id)
+  assert.equal(nextBody.assets[0].created, false)
+  assert.ok(nextBody.assets[0].versions.some((version) => version.version === '2'))
+  assert.ok(nextBody.assets[0].versions.some((version) => version.version === '3'))
 })
 
 it('GET/POST /miniapps/roots persists custom roots and the next scan finds them', async () => {

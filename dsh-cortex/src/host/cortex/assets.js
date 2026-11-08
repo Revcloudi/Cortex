@@ -20,7 +20,17 @@ import {
   safeDecode,
   sendJson,
 } from '../http.js'
-import { jsonArray, likePattern, text, vulnListItem } from './vulns.js'
+import { jsonArray, text, vulnListItem } from './vulns.js'
+import {
+  deleteAssetIdentity,
+  getAssetMeta,
+  isMiniappAssetKey,
+  listAssetDomainCounts,
+  listAssetDomains,
+  listAssetMeta,
+  listLinkedVulnIds,
+  listMiniappVersions,
+} from './asset-identity.js'
 import {
   normalizeInterfaces,
   normalizeLeaks,
@@ -104,11 +114,22 @@ function stringArray(raw) {
 /**
  * AssetListItem row for the asset table.
  * @param {Record<string, any>} row
+ * @param {Record<string, any>|null} [meta]
+ * @param {number} [domainCount]
  */
-function assetListItem(row) {
+function assetListItem(row, meta = null, domainCount = 0) {
   const source = row || {}
+  const hostPort = text(source.host_port)
   return {
-    host_port: text(source.host_port),
+    asset_id: meta ? text(meta.asset_key) : hostPort,
+    kind: meta ? text(meta.kind) || 'web' : isMiniappAssetKey(hostPort) ? 'miniapp' : 'web',
+    external_id: meta ? text(meta.external_id) : hostPort,
+    display_name: meta ? text(meta.display_name) : '',
+    appid: meta ? text(meta.appid) : '',
+    platform: meta ? text(meta.platform) : '',
+    primary_domain: meta ? text(meta.primary_domain) : '',
+    domain_count: domainCount,
+    host_port: hostPort,
     host: text(source.host),
     project_name: normalizeProjectName(text(source.project_name)),
     tech_stack: text(source.tech_stack),
@@ -124,11 +145,29 @@ function assetListItem(row) {
 /**
  * Full AssetContext row for the asset drawer.
  * @param {Record<string, any>} row
+ * @param {Record<string, any>|null} [meta]
+ * @param {Record<string, any>[]} [domains]
+ * @param {Record<string, any>[]} [versions]
+ * @param {string[]} [linkedVulnIds]
  */
-function assetContext(row) {
+function assetContext(row, meta = null, domains = [], versions = [], linkedVulnIds = []) {
   const source = row || {}
+  const hostPort = text(source.host_port)
+  const related = stringArray(source.related_vuln_ids)
+  for (const id of linkedVulnIds) if (!related.includes(id)) related.push(id)
   return {
-    host_port: text(source.host_port),
+    asset_id: meta ? text(meta.asset_key) : hostPort,
+    kind: meta ? text(meta.kind) || 'web' : isMiniappAssetKey(hostPort) ? 'miniapp' : 'web',
+    external_id: meta ? text(meta.external_id) : hostPort,
+    display_name: meta ? text(meta.display_name) : '',
+    appid: meta ? text(meta.appid) : '',
+    platform: meta ? text(meta.platform) : '',
+    identity_confidence: meta ? text(meta.identity_confidence) || 'high' : 'high',
+    primary_domain: meta ? text(meta.primary_domain) : '',
+    domains,
+    versions,
+    linked_vuln_ids: linkedVulnIds,
+    host_port: hostPort,
     host: text(source.host),
     project_name: normalizeProjectName(text(source.project_name)),
     tech_stack: text(source.tech_stack),
@@ -138,7 +177,7 @@ function assetContext(row) {
     interface_dir: stringArray(source.interface_dir),
     leaked_infos: leakedInfoList(source.leaked_infos),
     test_parameters: testParameterList(source.test_parameters),
-    related_vuln_ids: stringArray(source.related_vuln_ids),
+    related_vuln_ids: related,
     last_seen: text(source.last_seen),
   }
 }
@@ -224,25 +263,67 @@ export function handleList({ res, searchParams, holder }) {
     where.push('project_name = ?')
     params.push(project)
   }
-  if (search.length > 0) {
-    const pattern = likePattern(search)
-    where.push(
-      "(host_port LIKE ? ESCAPE '\\' OR host LIKE ? ESCAPE '\\' OR project_name LIKE ? ESCAPE '\\' OR tech_stack LIKE ? ESCAPE '\\')",
-    )
-    for (let i = 0; i < 4; i += 1) params.push(pattern)
-  }
   const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''
   const rows = holder.db
     .prepare(`SELECT * FROM assets${whereSql} ${order} LIMIT ?`)
     .all(...params, MAX_LIST_ROWS)
-  sendJson(res, 200, rows.map(assetListItem))
+  const metaByKey = listAssetMeta(holder.db)
+  const domainCounts = listAssetDomainCounts(holder.db)
+  const needle = search.trim().toLowerCase()
+  const filtered =
+    needle.length === 0
+      ? rows
+      : rows.filter((row) => {
+          const meta = metaByKey.get(String(row.host_port)) ?? null
+          const haystack = [
+            row.host_port,
+            row.host,
+            row.project_name,
+            row.tech_stack,
+            meta?.display_name,
+            meta?.appid,
+            meta?.platform,
+            meta?.external_id,
+            meta?.primary_domain,
+          ]
+            .filter(Boolean)
+            .join('\n')
+            .toLowerCase()
+          return haystack.includes(needle)
+        })
+  sendJson(
+    res,
+    200,
+    filtered.map((row) =>
+      assetListItem(
+        row,
+        metaByKey.get(String(row.host_port)) ?? null,
+        domainCounts.get(String(row.host_port)) ?? 0,
+      ),
+    ),
+  )
 }
 
 /** GET /assets/:hostPort -> AssetContext | null */
 export function handleDetail({ res, params, holder }) {
   const hostPort = hostPortParam(params[0])
   const row = holder.db.prepare('SELECT * FROM assets WHERE host_port = ?').get(hostPort)
-  sendJson(res, 200, row ? assetContext(row) : null)
+  if (!row) {
+    sendJson(res, 200, null)
+    return
+  }
+  const meta = getAssetMeta(holder.db, hostPort)
+  sendJson(
+    res,
+    200,
+    assetContext(
+      row,
+      meta,
+      listAssetDomains(holder.db, hostPort),
+      listMiniappVersions(holder.db, hostPort),
+      listLinkedVulnIds(holder.db, hostPort),
+    ),
+  )
 }
 
 /** GET /assets/:hostPort/related-vulns -> VulnerabilityListItem[] */
@@ -253,15 +334,20 @@ export function handleRelatedVulns({ res, params, holder }) {
     sendJson(res, 200, [])
     return
   }
-  sendJson(res, 200, relatedByIds(holder.db, row.related_vuln_ids))
+  const ids = stringArray(row.related_vuln_ids)
+  for (const id of listLinkedVulnIds(holder.db, hostPort)) {
+    if (!ids.includes(id)) ids.push(id)
+  }
+  sendJson(res, 200, relatedByIds(holder.db, ids))
 }
 
 /** DELETE /assets/:hostPort -> DeleteAssetResult */
 export async function handleDelete({ res, params, holder, bumpRev }) {
   const hostPort = hostPortParam(params[0])
-  const changes = await holder.withWriteTransaction((db) =>
-    Number(db.prepare('DELETE FROM assets WHERE host_port = ?').run(hostPort).changes) || 0,
-  )
+  const changes = await holder.withWriteTransaction((db) => {
+    deleteAssetIdentity(db, hostPort)
+    return Number(db.prepare('DELETE FROM assets WHERE host_port = ?').run(hostPort).changes) || 0
+  })
   bumpRev()
   sendJson(res, 200, { deleted: changes > 0 })
 }
