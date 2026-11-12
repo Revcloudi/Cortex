@@ -24,6 +24,7 @@ export const dashboardMessages: MessageBundle = {
     'dashboard.bulk.selected': '已选 {count} 条',
     'dashboard.bulk.exporting': '正在导出…',
     'dashboard.bulk.export': '导出 MD',
+    'dashboard.bulk.exportTestData': '导出测试数据',
     'dashboard.bulk.deleteSelected': '删除选中',
     'dashboard.bulk.cancelSelection': '取消选择'
   },
@@ -51,6 +52,7 @@ export const dashboardMessages: MessageBundle = {
     'dashboard.bulk.selected': '{count} selected',
     'dashboard.bulk.exporting': 'Exporting…',
     'dashboard.bulk.export': 'Export MD',
+    'dashboard.bulk.exportTestData': 'Export test data',
     'dashboard.bulk.deleteSelected': 'Delete selected',
     'dashboard.bulk.cancelSelection': 'Clear selection'
   }

@@ -1,39 +1,40 @@
 /**
- * Host handler for the retest repeater used by the ported Cortex UI.
+ * Host handler for the standalone Web Fuzzer used by the ported Cortex UI.
  *
- *   POST /repeater/send { RepeaterSendInput } -> RepeaterSendResult
+ *   POST /cortex-api/cortex/repeater/send { method, url, headers?, body?,
+ *                                           followRedirects?, vulnId? }
+ *        -> RepeaterSendResult
  *
- * The outbound request is executed by `src/host/retest.js` (origin allowlist
- * derived from the vulnerability + its assets, no redirects unless asked,
- * <= 5 hops, 15 s per hop, 2 MiB capped body, protocol headers forbidden).
- * This module only validates the shared input type and maps the internal
- * result onto the exact shared `RepeaterSendResult` shape.
+ * This is the independent fuzzer path: it never requires a vulnerability row
+ * and `vulnId` is optional history metadata only. The outbound request is
+ * executed by `src/host/fuzzer.js` with its own public-target SSRF policy
+ * (http(s) only, no loopback/private/link-local/metadata targets, DNS answers
+ * revalidated, redirects revalidated per hop, 2 MiB capped body, protocol
+ * headers forbidden). It does NOT use the vulnerability-origin allowlist of
+ * `src/host/retest.js`.
  *
- * The renderer's RepeaterSendInput uses camelCase; the shared schema accepts
- * that. Request headers/bodies are never logged. A successful send also
- * appends one best-effort entry to the local Repeater history (single-send
- * convenience; a disk failure never changes the response).
+ * The renderer's request uses camelCase; request headers/bodies are never
+ * logged. A successful send also appends one best-effort entry to the local
+ * Repeater history (a disk failure never changes the response; a missing
+ * `vulnId` is stored as `''`).
  */
 
 import { ApiError, readJsonBody, sendJson } from '../http.js'
-import { sendRetest, validateSendRequest } from '../retest.js'
+import { sendFuzzerRequest, validateFuzzerRequest } from '../fuzzer.js'
 import { recordSendHistory } from './repeater-store.js'
 
 /**
  * @param {{req: import('node:http').IncomingMessage,
  *          res: import('node:http').ServerResponse,
- *          config: {allowNetwork?: boolean},
- *          repository: import('../repository.js').Repository}} ctx
+ *          config: {allowNetwork?: boolean}}} ctx
  */
-export async function handleSend({ req, res, config, repository }) {
+export async function handleSend({ req, res, config }) {
   if (config && config.allowNetwork === false) {
     throw new ApiError(403, 'FORBIDDEN', 'outbound network is disabled')
   }
   const body = await readJsonBody(req)
-  const request = validateSendRequest(body)
-  // Reuses the tested SSRF-safe path: allowlist + redirect policy + limits.
-  const context = repository.getRetestContext(request.vulnId)
-  const result = await sendRetest({ request, context })
+  const request = validateFuzzerRequest(body)
+  const result = await sendFuzzerRequest({ request })
 
   const responsePayload = {
     request: {
@@ -56,6 +57,7 @@ export async function handleSend({ req, res, config, repository }) {
   // Respond first so the renderer never waits for the history write.
   sendJson(res, 200, responsePayload)
   recordSendHistory({
+    // `vulnId` may be absent; the store persists `''` in that case.
     vulnId: request.vulnId,
     request: responsePayload.request,
     result,

@@ -16,6 +16,7 @@ import { VulnTable } from '@renderer/components/vuln/VulnTable'
 import { VulnDetail } from '@renderer/components/vuln/VulnDetail'
 import { BulkDeleteDialog } from '@renderer/components/vuln/BulkDeleteDialog'
 import { ExportReportDialog } from '@renderer/components/vuln/ExportReportDialog'
+import { AssetExportDialog } from '@renderer/components/asset/AssetExportDialog'
 import { InternalPage } from '@renderer/pages/InternalPage'
 import { Button } from '@renderer/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
@@ -64,6 +65,7 @@ export function DashboardPage({
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [testDataExportOpen, setTestDataExportOpen] = useState(false)
 
   const hasLoadedList = useRef(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
@@ -455,6 +457,16 @@ export function DashboardPage({
                   {exporting ? t('dashboard.bulk.exporting') : t('dashboard.bulk.export')}
                 </Button>
                 <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="vuln-export-test-data"
+                  onClick={() => setTestDataExportOpen(true)}
+                  className="gap-1.5"
+                >
+                  <Download aria-hidden="true" className="h-3.5 w-3.5" />
+                  {t('dashboard.bulk.exportTestData')}
+                </Button>
+                <Button
                   variant="destructive"
                   size="sm"
                   onClick={() => setBulkConfirmOpen(true)}
@@ -537,6 +549,24 @@ export function DashboardPage({
         pending={exporting}
         onOpenChange={setExportOpen}
         onConfirm={(outputDir, format) => void handleExportSelected(outputDir, format)}
+      />
+
+      <AssetExportDialog
+        open={testDataExportOpen}
+        mode="vulns"
+        projects={[]}
+        initialProject=""
+        selectedAssetIds={[]}
+        vulnIds={[...selectedIds]}
+        onOpenChange={setTestDataExportOpen}
+        onExported={(result) => {
+          const count = result.savedPaths.length
+          toast.success(
+            count === 0
+              ? t('asset.export.successNoPath', { count })
+              : t('asset.export.success', { count, path: result.savedPaths[0] })
+          )
+        }}
       />
     </>
   )

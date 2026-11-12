@@ -338,6 +338,9 @@ function fullVulnerability(id) {
 /* -------------------------------------------------------------------------- */
 function createMockFetch() {
   const requests = []
+  /** Parsed bodies of the project export / bulk-delete calls for assertions. */
+  const exportRequests = []
+  const bulkDeleteRequests = []
   /** Mini-program host state: a scan adds MINIAPP_EXTRA once. */
   let miniappRows = MINIAPP_ROWS.map((row) => ({ ...row }))
   let miniappScanCount = 0
@@ -657,6 +660,52 @@ function createMockFetch() {
     if (method === 'GET' && route === '/poc/config') return respond({ providers: [], models: [], agent: null })
     if (method === 'POST' && route === '/graph') return respond({ nodes: [], links: [], meta: {} })
 
+    /* --------------------- project export / bulk delete ------------------ */
+    if (method === 'GET' && route === '/export/settings') return respond({ outputDir: '' })
+    if (method === 'POST' && (route === '/export/project' || route === '/export/assets')) {
+      let body = {}
+      try {
+        body = JSON.parse(String((init && init.body) || '{}'))
+      } catch {
+        body = {}
+      }
+      exportRequests.push(body)
+      const format = typeof body.format === 'string' ? body.format : 'json'
+      const selected = Array.isArray(body.asset_ids) ? body.asset_ids.length : 0
+      const filename =
+        format === 'csv'
+          ? 'assets.csv'
+          : format === 'defectdojo'
+            ? 'defectdojo-findings.json'
+            : 'cortex-export-demo.json'
+      return respond({
+        ok: true,
+        format,
+        files: [{ name: filename, format, bytes: 128 }],
+        savedPaths: [`C:\\demo-exports\\${filename}`],
+        counts: {
+          assets: selected || 1,
+          vulnerabilities: 1,
+          evidence: body.include_evidence === true ? 1 : 0,
+          relationships: 2,
+          missing_assets: 0
+        },
+        warnings: body.include_secrets === true ? ['include_secrets=true: demo only'] : [],
+        directory: 'C:\\demo-exports'
+      })
+    }
+    if (method === 'POST' && route === '/assets/bulk-delete') {
+      let body = {}
+      try {
+        body = JSON.parse(String((init && init.body) || '{}'))
+      } catch {
+        body = {}
+      }
+      bulkDeleteRequests.push(body)
+      const ids = Array.isArray(body.asset_ids) ? body.asset_ids : []
+      return respond({ deleted: ids.length, missing: [] })
+    }
+
     /* ---------------------------- single send --------------------------- */
     if (method === 'POST' && route === '/repeater/send') {
       let body = {}
@@ -666,14 +715,66 @@ function createMockFetch() {
         body = {}
       }
       const requestUrl = typeof body.url === 'string' ? body.url : 'http://127.0.0.1:8080/'
-      const responseBody = JSON.stringify({ ok: true, path: new URL(requestUrl).pathname })
+      const pathname = (() => {
+        try {
+          return new URL(requestUrl).pathname
+        } catch {
+          return '/'
+        }
+      })()
+      const requestEcho = {
+        method: typeof body.method === 'string' ? body.method : 'GET',
+        url: requestUrl,
+        headers: body.headers && typeof body.headers === 'object' ? body.headers : {},
+        body: typeof body.body === 'string' ? body.body : ''
+      }
+      if (pathname === '/html') {
+        // XSS payloads for the render-view checks: the sandboxed iframe must not
+        // execute scripts or event handlers.
+        return respond({
+          request: requestEcho,
+          response: {
+            status: 200,
+            headers: { 'content-type': 'text/html; charset=utf-8', 'x-smoke': 'html' },
+            body:
+              '<!doctype html><html><head><title>demo</title></head><body>' +
+              '<h1>Rendered demo</h1>' +
+              '<script>window.parent.__cortexXss = true</script>' +
+              '<img src="x" onerror="window.parent.__cortexXss = true">' +
+              '<a href="javascript:window.parent.__cortexXss = true">bad link</a>' +
+              '<p>safe body text</p></body></html>',
+            durationMs: 7,
+            truncated: false
+          }
+        })
+      }
+      if (pathname === '/binary') {
+        return respond({
+          request: requestEcho,
+          response: {
+            status: 200,
+            headers: { 'content-type': 'application/octet-stream', 'x-smoke': 'binary' },
+            body: 'BIN\u0000\u0001\u0002DATA',
+            durationMs: 3,
+            truncated: false
+          }
+        })
+      }
+      if (pathname === '/text') {
+        return respond({
+          request: requestEcho,
+          response: {
+            status: 200,
+            headers: { 'content-type': 'text/plain; charset=utf-8', 'x-smoke': 'text' },
+            body: 'plain response body',
+            durationMs: 4,
+            truncated: false
+          }
+        })
+      }
+      const responseBody = JSON.stringify({ ok: true, path: pathname })
       return respond({
-        request: {
-          method: typeof body.method === 'string' ? body.method : 'GET',
-          url: requestUrl,
-          headers: body.headers && typeof body.headers === 'object' ? body.headers : {},
-          body: typeof body.body === 'string' ? body.body : ''
-        },
+        request: requestEcho,
         response: {
           status: 200,
           headers: { 'content-type': 'application/json; charset=utf-8', 'x-smoke': 'send' },
@@ -708,7 +809,7 @@ function createMockFetch() {
     return notFound(route)
   }
 
-  return { fetch: mockFetch, requests }
+  return { fetch: mockFetch, requests, exportRequests, bulkDeleteRequests }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1270,6 +1371,74 @@ export async function runCortexUiSmoke(options = {}) {
       return `${mock.requests.length} requests, all via /cortex-api/cortex`
     })
 
+    await check('vulnerability bulk bar exports selected findings as test data', async () => {
+      const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
+      const windowBefore = windowErrors.length
+      await act(async () => {
+        byTestId('vuln-multiselect').click()
+      })
+      const firstSelect = await waitFor(act, () => shadow.querySelector('[data-testid="vuln-select"]'), {
+        label: 'vulnerability row checkbox',
+        timeoutMs: 5_000
+      })
+      await act(async () => {
+        firstSelect.click()
+      })
+      await waitFor(act, () => byTestId('vuln-bulk-bar'), {
+        label: 'vulnerability bulk bar',
+        timeoutMs: 5_000
+      })
+      const exportTestData = byTestId('vuln-export-test-data')
+      assert.ok(exportTestData, 'missing selected-findings export button')
+      await act(async () => {
+        exportTestData.click()
+      })
+      const dialog = await waitFor(act, () => byTestId('asset-export-dialog'), {
+        label: 'selected findings export dialog',
+        timeoutMs: 5_000
+      })
+      assert.equal(
+        byTestId('asset-export-scope-vulns').getAttribute('aria-checked'),
+        'true',
+        'the dashboard export must default to the selected-findings scope'
+      )
+      assert.equal(
+        byTestId('asset-export-format-defectdojo').disabled,
+        true,
+        'DefectDojo remains project-only for selected findings'
+      )
+      await act(async () => {
+        byTestId('asset-export-confirm').click()
+      })
+      await waitFor(act, () => (byTestId('asset-export-dialog') ? null : true), {
+        label: 'selected-findings export dialog closes',
+        timeoutMs: 8_000
+      })
+      const sent = mock.exportRequests.at(-1)
+      assert.ok(sent, 'no selected-findings export request was sent')
+      assert.equal(Array.isArray(sent.vuln_ids), true)
+      assert.equal(sent.vuln_ids.length, 1)
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(sent, 'asset_ids'),
+        false,
+        'selected-findings export must not send asset_ids'
+      )
+      await act(async () => {
+        byTestId('vuln-multiselect').click()
+      })
+      await waitFor(act, () => (byTestId('vuln-bulk-bar') ? null : true), {
+        label: 'vulnerability bulk bar clears',
+        timeoutMs: 5_000
+      })
+      assert.equal(consoleErrors.filter(isFatalConsoleMessage).length, fatalBefore, 'React error in selected-findings export')
+      assert.equal(
+        windowErrors.length,
+        windowBefore,
+        `page error in selected-findings export: ${windowErrors.slice(windowBefore).join(' | ')}`
+      )
+      return 'selected findings exported through the shared test-data dialog'
+    })
+
     await check('language toggle switches locale (zh → en → zh)', async () => {
       const languageToggle = byTestId('lang-toggle')
       const navAssets = byTestId('nav-assets')
@@ -1391,6 +1560,156 @@ export async function runCortexUiSmoke(options = {}) {
         })
       }
       return 'aliased interfaces/leaks/test parameters normalized and rendered'
+    })
+
+    await check('asset library: multi-select, batch bar, export and delete dialogs', async () => {
+      const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
+      const windowBefore = windowErrors.length
+      const selectAll = byTestId('asset-select-all')
+      assert.ok(selectAll, 'missing select-all checkbox in the asset table header')
+      assert.equal(allTestIds('asset-select').length, 1, 'every asset row needs a selection checkbox')
+      const row = shadow.querySelector('[data-testid="asset-row"]')
+      assert.ok(row, 'asset row missing before selection')
+      const rowCheckbox = row.querySelector('[data-testid="asset-select"]')
+      assert.ok(rowCheckbox, 'asset row checkbox missing')
+      await act(async () => {
+        rowCheckbox.click()
+      })
+      const batchBar = await waitFor(act, () => byTestId('asset-batch-bar'), {
+        label: 'asset batch action bar',
+        timeoutMs: 5_000
+      })
+      assert.ok((byTestId('asset-selected-count').textContent || '').includes('1'), 'selected count not shown')
+      assert.ok(byTestId('asset-batch-export'), 'missing batch export button')
+      assert.ok(byTestId('asset-batch-delete'), 'missing batch delete button')
+      assert.equal(row.getAttribute('data-selected'), 'true', 'selected row must be marked')
+
+      // Batch export: selected scope is preselected and DefectDojo is project-only.
+      await act(async () => {
+        byTestId('asset-batch-export').click()
+      })
+      const exportDialog = await waitFor(act, () => byTestId('asset-export-dialog'), {
+        label: 'asset export dialog',
+        timeoutMs: 5_000
+      })
+      assert.equal(
+        byTestId('asset-export-scope-selected').getAttribute('aria-checked'),
+        'true',
+        'batch export must default to the selected-assets scope'
+      )
+      assert.equal(
+        byTestId('asset-export-format-defectdojo').disabled,
+        true,
+        'DefectDojo is project-level only'
+      )
+      const secretsToggle = byTestId('asset-export-secrets')
+      assert.ok(
+        secretsToggle,
+        `secrets checkbox missing; export ids=${Array.from(
+          exportDialog.querySelectorAll('[data-testid]')
+        )
+          .map((element) => element.getAttribute('data-testid'))
+          .join(',')}`
+      )
+      assert.equal(secretsToggle.checked, false, 'secrets must be off (redacted) by default')
+      assert.ok(byTestId('asset-export-evidence'), 'missing evidence option')
+      assert.ok(byTestId('asset-export-output-dir'), 'missing output directory field')
+      const confirmExport = byTestId('asset-export-confirm')
+      assert.ok(confirmExport, 'missing export confirm button')
+      await act(async () => {
+        confirmExport.click()
+      })
+      await waitFor(act, () => (byTestId('asset-export-dialog') ? null : true), {
+        label: 'asset export dialog closes after submit',
+        timeoutMs: 8_000
+      })
+      const selectedExport = mock.exportRequests.at(-1)
+      assert.ok(selectedExport, 'no export request was sent')
+      assert.equal(selectedExport.format, 'json')
+      assert.deepEqual(selectedExport.asset_ids, [ASSET_HOST_PORT])
+      assert.equal(selectedExport.include_secrets, false)
+      assert.equal(selectedExport.include_evidence, false)
+
+      // Project-level export: whole-project scope + DefectDojo format.
+      await act(async () => {
+        byTestId('asset-export-open').click()
+      })
+      await waitFor(act, () => byTestId('asset-export-dialog'), {
+        label: 'project export dialog',
+        timeoutMs: 5_000
+      })
+      assert.equal(
+        byTestId('asset-export-scope-project').getAttribute('aria-checked'),
+        'true',
+        'page-level export must default to the whole project'
+      )
+      await act(async () => {
+        byTestId('asset-export-format-defectdojo').click()
+      })
+      await act(async () => {
+        byTestId('asset-export-confirm').click()
+      })
+      await waitFor(act, () => (byTestId('asset-export-dialog') ? null : true), {
+        label: 'project export dialog closes after submit',
+        timeoutMs: 8_000
+      })
+      const projectExport = mock.exportRequests.at(-1)
+      assert.ok(projectExport, 'no project export request was sent')
+      assert.equal(projectExport.format, 'defectdojo')
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(projectExport, 'asset_ids'),
+        false,
+        'project export must not send a selected-asset scope'
+      )
+
+      // The delete confirmation must state the vulnerability-safety guarantee and
+      // must not call the bulk endpoint until the user confirms.
+      const requestsBeforeDelete = mock.bulkDeleteRequests.length
+      await act(async () => {
+        byTestId('asset-batch-delete').click()
+      })
+      const deleteDialog = await waitFor(act, () => byTestId('asset-bulk-delete-dialog'), {
+        label: 'asset bulk delete dialog',
+        timeoutMs: 5_000
+      })
+      const deleteText = deleteDialog.textContent || ''
+      assert.ok(deleteText.includes('只删除资产'), 'delete dialog must explain assets only')
+      assert.ok(deleteText.includes('不删除漏洞记录'), 'delete dialog must protect vulnerability records')
+      const cancelDelete = Array.from(deleteDialog.querySelectorAll('button')).find((button) =>
+        /取消|Cancel/.test(button.textContent || '')
+      )
+      assert.ok(cancelDelete, 'bulk delete dialog has no cancel button')
+      await act(async () => {
+        cancelDelete.click()
+      })
+      assert.equal(
+        mock.bulkDeleteRequests.length,
+        requestsBeforeDelete,
+        'cancelling must not call /assets/bulk-delete'
+      )
+
+      // Clear selection so later checks can open a row by clicking it.
+      await act(async () => {
+        byTestId('asset-selection-clear').click()
+      })
+      await waitFor(act, () => (byTestId('asset-batch-bar') ? null : true), {
+        label: 'asset batch bar clears',
+        timeoutMs: 5_000
+      })
+      assert.equal(consoleErrors.filter(isFatalConsoleMessage).length, fatalBefore, 'React error in asset multi-select')
+      assert.equal(
+        windowErrors.length,
+        windowBefore,
+        `page error in asset multi-select: ${windowErrors.slice(windowBefore).join(' | ')}`
+      )
+      structural.assetSelection = {
+        checkbox: true,
+        batchBar: true,
+        exportScope: 'selected',
+        projectExport: 'defectdojo',
+        vulnSafety: true
+      }
+      return 'checkbox column, batch bar, selected export/project DefectDojo export, safe delete confirmation'
     })
 
     await check('delete confirmation dialog is portaled inside the shadow root', async () => {
@@ -1548,9 +1867,10 @@ export async function runCortexUiSmoke(options = {}) {
       return `mounted: ${mounted.join(', ')}`
     })
 
-    await check('web fuzzer page: Yakit send layout, target selector and mocked send', async () => {
+    await check('web fuzzer page: standalone Yakit send, raw/JSON/render, safe HTML', async () => {
       const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
       const windowBefore = windowErrors.length
+      const requestsBeforeFuzzer = mock.requests.length
       const navFuzzer = byTestId('nav-fuzzer')
       assert.ok(navFuzzer, 'missing Web Fuzzer nav card')
       await act(async () => {
@@ -1558,15 +1878,15 @@ export async function runCortexUiSmoke(options = {}) {
       })
       await waitFor(act, () => byTestId('fuzzer-page'), { label: 'fuzzer page', timeoutMs: 10_000 })
       assert.equal(byTestId('nav-fuzzer').getAttribute('aria-current'), 'page', 'Web Fuzzer card must become active')
-      const targetSelect = await waitFor(act, () => byTestId('fuzzer-target-select'), {
-        label: 'compact target selector',
-        timeoutMs: 10_000
-      })
-      assert.ok(targetSelect, 'missing compact target selector')
+      // No vulnerability dependency at all: no target selector, no vuln list,
+      // and navigating to the page must not load findings.
+      assert.equal(byTestId('fuzzer-target-select'), null, 'vulnerability target selector must be removed')
+      assert.equal(allTestIds('fuzzer-candidate-row').length, 0, 'the Web Fuzzer page must not port the vulnerability list')
+      const fuzzerRequests = mock.requests.slice(requestsBeforeFuzzer)
       assert.equal(
-        allTestIds('fuzzer-candidate-row').length,
-        0,
-        'the Web Fuzzer page must not port the vulnerability list'
+        fuzzerRequests.some((request) => request.path === `${API_BASE}/vulns`),
+        false,
+        'the standalone Fuzzer page must not load vulnerabilities'
       )
 
       const requestPane = await waitFor(act, () => byTestId('fuzzer-request-pane'), {
@@ -1596,19 +1916,18 @@ export async function runCortexUiSmoke(options = {}) {
         label: 'fuzzer request editor',
         timeoutMs: 10_000
       })
-      // The report request is JSON; its body must be pretty-printed by default.
-      await waitFor(
-        act,
-        () =>
-          requestEditor.value.includes('"a": 1') && requestEditor.value.includes('"c": 2')
-            ? true
-            : null,
-        { label: 'default formatted request body', timeoutMs: 5_000 }
-      )
+      // Standalone mode starts with an empty editor and a disabled send button;
+      // the target is supplied only by the raw request now.
+      assert.equal(requestEditor.value, '', 'standalone fuzzer must start with an empty editor')
+      assert.equal(sendButton.disabled, true, 'send must be disabled for an empty request')
       const raw =
-        'POST /api/items HTTP/1.1\nHost: 127.0.0.1:8080\nContent-Type: application/json\n\n{"a":1,"b":{"c":2}}\n'
+        'POST https://example.com/api/items HTTP/1.1\nHost: example.com\nContent-Type: application/json\n\n{"a":1,"b":{"c":2}}\n'
       await act(async () => {
         setControlValue(window, requestEditor, raw)
+      })
+      await waitFor(act, () => (sendButton.disabled === false ? true : null), {
+        label: 'send enabled after a parseable request',
+        timeoutMs: 5_000
       })
       const formatButton = byTestId('fuzzer-format-request')
       assert.ok(formatButton, 'missing request-body format button')
@@ -1623,7 +1942,7 @@ export async function runCortexUiSmoke(options = {}) {
             : null,
         { label: 'formatted request body after button click', timeoutMs: 5_000 }
       )
-      assert.match(requestEditor.value, /^POST \/api\/items HTTP\/1\.1/)
+      assert.match(requestEditor.value, /^POST https:\/\/example\.com\/api\/items HTTP\/1\.1/)
       assert.ok(
         requestEditor.value.includes('Content-Type: application/json'),
         'request formatting must keep the headers'
@@ -1698,6 +2017,134 @@ export async function runCortexUiSmoke(options = {}) {
         'page heading missing'
       )
 
+      // The send payload must not carry a vulnerability id any more.
+      const sendCalls = mock.requests.filter(
+        (request) => request.method === 'POST' && request.path === `${API_BASE}/repeater/send`
+      )
+      assert.ok(sendCalls.length >= 1, 'no POST /repeater/send reached the mock API')
+      const sentBody = JSON.parse(sendCalls.at(-1).body || '{}')
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(sentBody, 'vulnId'),
+        false,
+        'the standalone fuzzer request must not include vulnId'
+      )
+      assert.equal(sentBody.url, 'https://example.com/api/items')
+
+      // 渲染 tab on a JSON response: status line + headers stay, text is safe.
+      await act(async () => {
+        byTestId('fuzzer-view-render').click()
+      })
+      const renderHead = await waitFor(act, () => byTestId('fuzzer-response-render-head'), {
+        label: 'render view response head',
+        timeoutMs: 5_000
+      })
+      assert.ok((renderHead.textContent || '').includes('HTTP/1.1 200'), 'render view lost the status line')
+      assert.ok(
+        (renderHead.textContent || '').includes('content-type: application/json'),
+        'render view lost the response headers'
+      )
+      const renderText = await waitFor(act, () => byTestId('fuzzer-response-text'), {
+        label: 'non-HTML render text',
+        timeoutMs: 5_000
+      })
+      assert.match(
+        renderText.textContent || '',
+        /"ok":\s*true/,
+        'render view must show the JSON text safely'
+      )
+
+      // HTML render: sandbox + CSP, scripts/event handlers/javascript: removed,
+      // status line and headers preserved.
+      await act(async () => {
+        setControlValue(
+          window,
+          requestEditor,
+          'GET https://example.com/html HTTP/1.1\nHost: example.com\n\n'
+        )
+      })
+      await act(async () => {
+        sendButton.click()
+      })
+      await waitFor(
+        act,
+        () => {
+          const raw = byTestId('fuzzer-response-body')
+          return raw && (raw.textContent || '').includes('x-smoke: html') ? true : null
+        },
+        { label: 'HTML response body/headers', timeoutMs: 10_000 }
+      )
+      await act(async () => {
+        byTestId('fuzzer-view-render').click()
+      })
+      const renderFrame = await waitFor(
+        act,
+        () => {
+          const container = byTestId('fuzzer-response-render')
+          const iframe = container ? container.querySelector('iframe') : null
+          const srcDoc = iframe ? iframe.getAttribute('srcdoc') || '' : ''
+          return iframe && srcDoc.includes('Content-Security-Policy') ? { iframe, srcDoc } : null
+        },
+        { label: 'sandboxed HTML render iframe', timeoutMs: 8_000 }
+      )
+      assert.equal(renderFrame.iframe.getAttribute('sandbox'), '', 'HTML iframe must use sandbox=""')
+      assert.equal(
+        renderFrame.iframe.getAttribute('referrerpolicy'),
+        'no-referrer',
+        'HTML iframe must not send a referrer'
+      )
+      assert.match(
+        renderFrame.srcDoc,
+        /default-src 'none'[\s\S]*img-src data:[\s\S]*style-src 'unsafe-inline'/,
+        'render iframe must inject a restrictive CSP'
+      )
+      assert.doesNotMatch(renderFrame.srcDoc, /<script\b/i, '<script> must be removed from srcDoc')
+      assert.doesNotMatch(renderFrame.srcDoc, /\son[a-z]+\s*=/i, 'event handler attributes must be removed')
+      assert.doesNotMatch(renderFrame.srcDoc, /javascript:/i, 'javascript: URLs must be neutralized')
+      assert.match(renderFrame.srcDoc, /safe body text/, 'safe HTML content must stay renderable')
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(window, '__cortexXss'),
+        false,
+        'render XSS payload must not execute'
+      )
+      const htmlHead = byTestId('fuzzer-response-render-head')
+      assert.ok((htmlHead.textContent || '').includes('HTTP/1.1 200'), 'HTML render lost the status line')
+      assert.ok(
+        (htmlHead.textContent || '').includes('x-smoke: html'),
+        'HTML render lost the response headers'
+      )
+
+      // Binary payload: explicit non-renderable notice, not mojibake.
+      await act(async () => {
+        setControlValue(
+          window,
+          requestEditor,
+          'GET https://example.com/binary HTTP/1.1\nHost: example.com\n\n'
+        )
+      })
+      await act(async () => {
+        sendButton.click()
+      })
+      await waitFor(
+        act,
+        () => {
+          const raw = byTestId('fuzzer-response-body')
+          return raw && (raw.textContent || '').includes('x-smoke: binary') ? true : null
+        },
+        { label: 'binary response body/headers', timeoutMs: 10_000 }
+      )
+      await act(async () => {
+        byTestId('fuzzer-view-render').click()
+      })
+      const binaryNotice = await waitFor(act, () => byTestId('fuzzer-response-binary'), {
+        label: 'binary render notice',
+        timeoutMs: 5_000
+      })
+      assert.ok((binaryNotice.textContent || '').length > 0, 'binary render notice must explain the payload')
+      assert.ok(
+        (byTestId('fuzzer-response-render-head').textContent || '').includes('application/octet-stream'),
+        'binary render view must keep the headers'
+      )
+
       // Back to the single-request Repeater card: history/favorites/curl stay.
       await act(async () => {
         byTestId('nav-retest').click()
@@ -1743,12 +2190,15 @@ export async function runCortexUiSmoke(options = {}) {
         layout: 'request-left/response-right',
         fullHeight: true,
         sendButton: 'top-left',
-        targetSelector: true,
+        targetSelector: false,
         vulnerabilityList: false,
-        fuzzing: false,
+        vulnIdInPayload: false,
+        views: ['raw', 'json', 'render'],
+        sandboxedHtml: true,
+        binaryNotice: true,
         mockStatus: 200
       }
-      return 'Web Fuzzer card, full-height request/response split, send button top-left, compact target selector (no vulnerability list), single send + JSON view, single-mode tools'
+      return 'standalone Web Fuzzer (no vuln selector/vulnId), request editor only, raw/JSON/render response with sandboxed CSP HTML + binary notice, single-mode tools'
     })
 
     await check('main view stays isolated inside the shadow root after navigation', () => {

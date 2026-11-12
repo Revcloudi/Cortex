@@ -1,10 +1,20 @@
 import { z } from 'zod'
 
-/** Raw HTTP request sent from the retest repeater (main-process proxy applies). */
+/**
+ * Raw HTTP request sent from the retest repeater or the standalone Web Fuzzer
+ * (main-process proxy applies).
+ */
 export interface RepeaterSendInput {
-  vulnId: string
+  /**
+   * Optional finding id. It is metadata for history/collections only and never
+   * selects the target policy; the standalone Web Fuzzer omits it entirely.
+   */
+  vulnId?: string
   method: string
-  /** Relative path/query or absolute URL; must stay on the vulnerability target origin. */
+  /**
+   * Relative path/query or absolute URL. The repeater resolves it against the
+   * finding target; the standalone Web Fuzzer requires an absolute http(s) URL.
+   */
   url: string
   headers: Record<string, string>
   body?: string
@@ -31,7 +41,7 @@ const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
 export const RepeaterSendInputSchema = z
   .object({
-    vulnId: z.string().trim().min(1).max(200),
+    vulnId: z.string().trim().min(1).max(200).optional(),
     method: z.enum(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']),
     url: z.string().trim().min(1).max(8_000),
     headers: z

@@ -17,6 +17,7 @@ import {
   badRequest,
   queryEnum,
   queryString,
+  readJsonBody,
   safeDecode,
   sendJson,
 } from '../http.js'
@@ -150,7 +151,7 @@ function assetListItem(row, meta = null, domainCount = 0) {
  * @param {Record<string, any>[]} [versions]
  * @param {string[]} [linkedVulnIds]
  */
-function assetContext(row, meta = null, domains = [], versions = [], linkedVulnIds = []) {
+export function assetContext(row, meta = null, domains = [], versions = [], linkedVulnIds = []) {
   const source = row || {}
   const hostPort = text(source.host_port)
   const related = stringArray(source.related_vuln_ids)
@@ -352,4 +353,75 @@ export async function handleDelete({ res, params, holder, bumpRev }) {
   sendJson(res, 200, { deleted: changes > 0 })
 }
 
-export { ASSET_STATUSES }
+const MAX_BULK_DELETE_IDS = 500
+
+/**
+ * Validate the bulk-delete id list without accepting arbitrary payloads.
+ * The renderer sends `asset_ids`; `ids` is accepted as a compatibility alias.
+ * @param {Record<string, unknown>} body
+ * @returns {string[]}
+ */
+function bulkDeleteIds(body) {
+  const value = body.asset_ids === undefined ? body.ids : body.asset_ids
+  if (!Array.isArray(value)) {
+    throw badRequest('asset_ids must be an array', { field: 'asset_ids' })
+  }
+  if (value.length > MAX_BULK_DELETE_IDS) {
+    throw badRequest('asset_ids has too many entries', {
+      field: 'asset_ids',
+      max: MAX_BULK_DELETE_IDS,
+    })
+  }
+  const ids = []
+  for (const item of value) {
+    if (typeof item !== 'string') {
+      throw badRequest('asset_ids entries must be strings', { field: 'asset_ids' })
+    }
+    const id = item.trim()
+    if (id.length === 0 || id.length > MAX_HOST_PORT) {
+      throw badRequest(`asset_ids entries must be 1-${MAX_HOST_PORT} characters`, {
+        field: 'asset_ids',
+        max: MAX_HOST_PORT,
+      })
+    }
+    if (!ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+/**
+ * POST /assets/bulk-delete -> { deleted, missing }
+ *
+ * Deletes only the selected asset rows and their additive identity sidecars
+ * (`asset_meta`, `asset_domains`, `miniapp_versions`, `asset_vuln_links`) in
+ * one transaction. Vulnerability records are never touched. Unknown ids are
+ * reported as `missing` instead of failing the whole batch (idempotent).
+ */
+export async function handleBulkDelete({ req, res, holder, bumpRev }) {
+  const body = await readJsonBody(req)
+  const ids = bulkDeleteIds(body)
+  if (ids.length === 0) {
+    sendJson(res, 200, { deleted: 0, missing: [] })
+    return
+  }
+
+  const removed = await holder.withWriteTransaction((db) => {
+    const deletedIds = new Set()
+    for (const id of ids) {
+      const meta = getAssetMeta(db, id)
+      const row = db.prepare('SELECT host_port FROM assets WHERE host_port = ?').get(id)
+      if (!row && !meta) continue
+      deleteAssetIdentity(db, id)
+      const changes = Number(db.prepare('DELETE FROM assets WHERE host_port = ?').run(id).changes) || 0
+      if (changes > 0 || meta) deletedIds.add(id)
+    }
+    return deletedIds
+  })
+  bumpRev()
+  sendJson(res, 200, {
+    deleted: removed.size,
+    missing: ids.filter((id) => !removed.has(id)),
+  })
+}
+
+export { ASSET_STATUSES, MAX_BULK_DELETE_IDS }

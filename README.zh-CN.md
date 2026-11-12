@@ -21,8 +21,10 @@ Cortex 是本地优先的渗透测试情报中枢。Agent（纯 stdio MCP server
 
 Cortex 同时提供原生 **DeepSeek Harness** 插件（位于本仓库 `dsh-cortex/`）：
 
-- 完整 Cortex 工作台：漏洞看板、内网作战、3D 记忆星云、资产库、认知快照与漏洞复测；
-- Yakit 风格 **Web Fuzzer**：手动发包、请求/响应 JSON 格式化与状态/响应头一体展示；
+- 完整 Cortex 工作台：漏洞看板、内网作战、3D 记忆星云、资产库、认知快照、漏洞复测与小程序逆向；
+- **项目 / 选中资产导出**：版本化 JSON（`cortex.export/v1`）、CSV 与 DefectDojo Generic Findings，默认脱敏，可选证据文件；
+- **资产库多选导出/删除**：删除只清理资产与 sidecar，绝不动漏洞记录；
+- 独立 Yakit 风格 **Web Fuzzer**：手动发包，原始 / JSON / 沙箱渲染三种响应视图，独立 SSRF 安全目标校验；
 - **微信小程序逆向**：wxapkg 检测 / 解密 / 解包 / 分析 / 搜索与资产导入；每个小程序按 appid（无 appid 时按包哈希）独立成资产，域名作为关联关系；
 - **22 个原生 Agent 工具**直接读写同一份本地 SQLite，**无需 MCP server**。
 

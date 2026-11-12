@@ -1211,75 +1211,60 @@ describe('cortex: snapshot writes', () => {
 /* /repeater/send                                                            */
 /* ------------------------------------------------------------------------- */
 
-describe('cortex: POST /repeater/send', () => {
-  /** @type {import('node:http').Server} */
-  let target
-  /** @type {number} */
-  let targetPort
-  let targetOrigin
+describe('cortex: POST /repeater/send (standalone fuzzer)', () => {
+  const PUBLIC_BASE = 'http://93.184.216.34'
   let fixture
   let server
-  let targetRequestCount = 0
+  let originalFetch
+  /** @type {{url:string, init:any}[]} */
+  let fetchCalls = []
 
   before(async () => {
-    target = http.createServer((req, res) => {
-      targetRequestCount += 1
-      const chunks = []
-      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
-      req.on('end', () => {
-        if (req.url === '/redirect') {
-          res.writeHead(302, { Location: '/hello' })
-          res.end()
-          return
-        }
-        if (req.url === '/big') {
-          res.writeHead(200, { 'Content-Type': 'text/plain' })
-          res.end('x'.repeat(2 * 1024 * 1024 + 64 * 1024))
-          return
-        }
-        if (req.url === '/echo') {
-          res.writeHead(200, { 'Content-Type': 'text/plain' })
-          res.end(`${req.method}|${Buffer.concat(chunks).toString('utf8')}`)
-          return
-        }
-        res.writeHead(200, { 'Content-Type': 'text/plain', 'X-Target': 'local' })
-        res.end('hello world')
+    originalFetch = globalThis.fetch
+    globalThis.fetch = async (url, init = {}) => {
+      fetchCalls.push({ url: String(url), init })
+      const pathname = new URL(String(url)).pathname
+      if (pathname === '/redirect') {
+        return new Response('', { status: 302, headers: { location: '/hello' } })
+      }
+      if (pathname === '/redirect-private') {
+        return new Response('', { status: 302, headers: { location: 'http://127.0.0.1:9/private' } })
+      }
+      if (pathname === '/big') {
+        return new Response('x'.repeat(2 * 1024 * 1024 + 64 * 1024), {
+          status: 200,
+          headers: { 'content-type': 'text/plain' },
+        })
+      }
+      if (pathname === '/echo') {
+        return new Response(`${init.method}|${typeof init.body === 'string' ? init.body : ''}`, {
+          status: 200,
+          headers: { 'content-type': 'text/plain' },
+        })
+      }
+      return new Response('hello world', {
+        status: 200,
+        headers: { 'content-type': 'text/plain', 'x-target': 'public' },
       })
-    })
-    await new Promise((resolve) => target.listen(0, '127.0.0.1', resolve))
-    targetPort = target.address().port
-    targetOrigin = `http://127.0.0.1:${targetPort}`
-
+    }
     fixture = createFixture()
-    prepareDb(fixture.dbPath, (db) => {
-      insertVuln(db, {
-        id: 'VULN-REPEATER-001',
-        host: `127.0.0.1:${targetPort}`,
-        entry_point: '/',
-        vuln_name: '本地回环 Repeater 目标',
-        vuln_type: 'Test',
-        severity: 'Info',
-        target_url: `${targetOrigin}/hello`,
-        created_at: '2026-01-01T00:00:00.000Z',
-      })
-    })
     server = await startTestHost({ dbPath: fixture.dbPath })
   })
 
   after(async () => {
+    globalThis.fetch = originalFetch
     await server.close()
-    await new Promise((resolve) => target.close(resolve))
     cleanupDir(fixture.dir)
   })
 
-  it('executes the allowlisted request and maps the exact RepeaterSendResult shape', async () => {
+  it('executes a public request without vulnId and maps the exact RepeaterSendResult shape', async () => {
+    fetchCalls = []
     const result = expectOk(
       await server.request('/cortex-api/cortex/repeater/send', {
         method: 'POST',
         body: {
-          vulnId: 'VULN-REPEATER-001',
           method: 'GET',
-          url: `${targetOrigin}/hello`,
+          url: `${PUBLIC_BASE}/hello`,
           headers: { 'X-Test': '1' },
           followRedirects: false,
         },
@@ -1295,7 +1280,7 @@ describe('cortex: POST /repeater/send', () => {
       'truncated',
     ])
     assert.equal(result.request.method, 'GET')
-    assert.equal(result.request.url, `${targetOrigin}/hello`)
+    assert.equal(result.request.url, `${PUBLIC_BASE}/hello`)
     assert.equal(result.request.headers['X-Test'], '1')
     assert.equal(result.request.body, '')
     assert.equal(result.response.status, 200)
@@ -1303,17 +1288,32 @@ describe('cortex: POST /repeater/send', () => {
     assert.equal(result.response.truncated, false)
     assert.equal(typeof result.response.durationMs, 'number')
     assert.ok(result.response.headers['content-type'].includes('text/plain'))
-    assert.equal(result.response.headers['x-target'], 'local')
+    assert.equal(result.response.headers['x-target'], 'public')
+    assert.equal(fetchCalls.length, 1)
   })
 
-  it('honors followRedirects=true and follows the redirect within the allowlist', async () => {
+  it('treats an unknown vulnId as history metadata, not a DB lookup', async () => {
     const result = expectOk(
       await server.request('/cortex-api/cortex/repeater/send', {
         method: 'POST',
         body: {
-          vulnId: 'VULN-REPEATER-001',
+          vulnId: 'VULN-MISSING',
           method: 'GET',
-          url: `${targetOrigin}/redirect`,
+          url: `${PUBLIC_BASE}/hello`,
+          followRedirects: false,
+        },
+      }),
+    )
+    assert.equal(result.response.status, 200)
+  })
+
+  it('honors followRedirects=true and follows a public redirect', async () => {
+    const result = expectOk(
+      await server.request('/cortex-api/cortex/repeater/send', {
+        method: 'POST',
+        body: {
+          method: 'GET',
+          url: `${PUBLIC_BASE}/redirect`,
           followRedirects: true,
         },
       }),
@@ -1322,14 +1322,13 @@ describe('cortex: POST /repeater/send', () => {
     assert.equal(result.response.body, 'hello world')
   })
 
-  it('does not follow redirects by default', async () => {
+  it('does not follow redirects unless asked', async () => {
     const result = expectOk(
       await server.request('/cortex-api/cortex/repeater/send', {
         method: 'POST',
         body: {
-          vulnId: 'VULN-REPEATER-001',
           method: 'GET',
-          url: `${targetOrigin}/redirect`,
+          url: `${PUBLIC_BASE}/redirect`,
           followRedirects: false,
         },
       }),
@@ -1342,9 +1341,8 @@ describe('cortex: POST /repeater/send', () => {
       await server.request('/cortex-api/cortex/repeater/send', {
         method: 'POST',
         body: {
-          vulnId: 'VULN-REPEATER-001',
           method: 'POST',
-          url: `${targetOrigin}/echo`,
+          url: `${PUBLIC_BASE}/echo`,
           headers: { 'Content-Type': 'text/plain' },
           body: 'ping-body',
           followRedirects: false,
@@ -1359,9 +1357,8 @@ describe('cortex: POST /repeater/send', () => {
       await server.request('/cortex-api/cortex/repeater/send', {
         method: 'POST',
         body: {
-          vulnId: 'VULN-REPEATER-001',
           method: 'GET',
-          url: `${targetOrigin}/big`,
+          url: `${PUBLIC_BASE}/big`,
           followRedirects: false,
         },
       }),
@@ -1370,45 +1367,65 @@ describe('cortex: POST /repeater/send', () => {
     assert.equal(result.response.body.length, 2 * 1024 * 1024)
   })
 
-  it('rejects origins outside the vulnerability allowlist', async () => {
+  it('rejects loopback/private/link-local/metadata targets with 403 before fetching', async () => {
+    const cases = [
+      { url: 'http://127.0.0.1/', reason: 'loopback' },
+      { url: 'http://10.0.0.5/', reason: 'private' },
+      { url: 'http://192.168.1.1/', reason: 'private' },
+      { url: 'http://169.254.169.254/latest/meta-data/', reason: 'metadata' },
+      { url: 'http://[::1]/', reason: 'loopback' },
+      { url: 'http://metadata.google.internal/', reason: 'metadata' },
+      { url: 'http://user:pass@93.184.216.34/', reason: 'userinfo' },
+      { url: 'ftp://93.184.216.34/', reason: 'protocol' },
+    ]
+    for (const item of cases) {
+      fetchCalls = []
+      const body = expectCode(
+        await server.request('/cortex-api/cortex/repeater/send', {
+          method: 'POST',
+          body: { method: 'GET', url: item.url, followRedirects: false },
+        }),
+        403,
+        'TARGET_NOT_ALLOWED',
+      )
+      assert.equal(body.details && body.details.reason, item.reason, item.url)
+      assert.equal(fetchCalls.length, 0, `blocked target must not be fetched: ${item.url}`)
+    }
+  })
+
+  it('revalidates redirect hops and rejects a redirect to loopback', async () => {
     const body = expectCode(
       await server.request('/cortex-api/cortex/repeater/send', {
         method: 'POST',
         body: {
-          vulnId: 'VULN-REPEATER-001',
           method: 'GET',
-          url: 'https://evil.example.test/',
-          followRedirects: false,
+          url: `${PUBLIC_BASE}/redirect-private`,
+          followRedirects: true,
         },
       }),
       403,
-      'ORIGIN_NOT_ALLOWED',
+      'TARGET_NOT_ALLOWED',
     )
-    assert.ok(Array.isArray(body.details && body.details.allowed))
+    assert.equal(body.details && body.details.reason, 'loopback')
   })
 
-  it('rejects an unknown vulnId and invalid methods', async () => {
+  it('rejects invalid methods and relative URLs', async () => {
     expectCode(
       await server.request('/cortex-api/cortex/repeater/send', {
         method: 'POST',
-        body: {
-          vulnId: 'VULN-MISSING',
-          method: 'GET',
-          url: `${targetOrigin}/hello`,
-        },
-      }),
-      404,
-      'NOT_FOUND',
-    )
-    expectCode(
-      await server.request('/cortex-api/cortex/repeater/send', {
-        method: 'POST',
-        body: { vulnId: 'VULN-REPEATER-001', method: 'TRACE', url: `${targetOrigin}/hello` },
+        body: { method: 'TRACE', url: `${PUBLIC_BASE}/hello` },
       }),
       400,
       'BAD_REQUEST',
     )
-    assert.ok(targetRequestCount >= 1)
+    expectCode(
+      await server.request('/cortex-api/cortex/repeater/send', {
+        method: 'POST',
+        body: { method: 'GET', url: '/relative', followRedirects: false },
+      }),
+      400,
+      'BAD_REQUEST',
+    )
   })
 })
 

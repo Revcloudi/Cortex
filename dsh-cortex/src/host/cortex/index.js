@@ -36,6 +36,7 @@ import {
   sendJson,
 } from '../http.js'
 import * as assets from './assets.js'
+import * as exportRoutes from './export.js'
 import * as fs from './fs.js'
 import * as misc from './misc.js'
 import * as settings from './settings.js'
@@ -83,6 +84,9 @@ const ROUTES = [
   { pattern: /^\/stats$/, methods: { GET: vulns.handleStats } },
 
   { pattern: /^\/assets$/, methods: { GET: assets.handleList } },
+  // Must be matched before the generic `/assets/:hostPort` route. The handler
+  // removes only asset rows + identity sidecars; vulnerabilities stay intact.
+  { pattern: /^\/assets\/bulk-delete$/, methods: { POST: assets.handleBulkDelete } },
   { pattern: /^\/assets\/(.+)\/related-vulns$/, methods: { GET: assets.handleRelatedVulns } },
   { pattern: /^\/assets\/(.+)$/, methods: { GET: assets.handleDetail, DELETE: assets.handleDelete } },
 
@@ -146,6 +150,9 @@ const ROUTES = [
   { pattern: /^\/fs\/list$/, methods: { GET: fs.handleList }, db: false },
   // Remembered export defaults for the export dialog (plugin-local settings).
   { pattern: /^\/export\/settings$/, methods: { GET: settings.handleGetExportSettings }, db: false },
+  // Project / selected-asset export to JSON, CSV or DefectDojo Generic Findings.
+  { pattern: /^\/export\/project$/, methods: { POST: exportRoutes.handleProjectExport } },
+  { pattern: /^\/export\/assets$/, methods: { POST: exportRoutes.handleAssetsExport } },
 ]
 
 /* ------------------------------------------------------------------------- */

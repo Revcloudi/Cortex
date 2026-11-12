@@ -7,7 +7,6 @@
  */
 
 import assert from 'node:assert/strict'
-import http from 'node:http'
 import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,30 +22,12 @@ const TEMP_ROOT = mkdtempSync(join(tmpdir(), 'dsh-cortex-repeater-'))
 const REPEATER_ROOT = join(TEMP_ROOT, 'repeater')
 process.env.CORTEX_REPEATER_DIR = REPEATER_ROOT
 
-/* ------------------------------------------------------------------------- */
-/* Throwaway upstream                                                        */
-/* ------------------------------------------------------------------------- */
-
-const upstream = http.createServer((req, res) => {
-  const parsed = new URL(req.url || '/', 'http://127.0.0.1')
-  if (parsed.pathname === '/echo') {
-    const x = parsed.searchParams.get('x') ?? ''
-    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
-    res.end(`hit:${x}:`)
-    return
-  }
-  if (parsed.pathname === '/big') {
-    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
-    res.end('z'.repeat(300 * 1024))
-    return
-  }
-  res.writeHead(404, { 'content-type': 'text/plain' })
-  res.end('not found')
-})
-await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve))
-const upstreamAddress = upstream.address()
-const upstreamPort = typeof upstreamAddress === 'object' && upstreamAddress ? upstreamAddress.port : 0
-const upstreamBase = `http://127.0.0.1:${upstreamPort}`
+/**
+ * The standalone fuzzer only allows public targets, so the route-level history
+ * check drives a mocked `fetch` with a public IP literal instead of a loopback
+ * upstream. The store tests below remain transport-independent.
+ */
+const PUBLIC_BASE = 'http://93.184.216.34'
 
 const VULN_ID = 'VULN-REPEATER-STORE-001'
 
@@ -56,12 +37,12 @@ const fixture = createTestDb()
   try {
     insertVuln(db, {
       id: VULN_ID,
-      host: `127.0.0.1:${upstreamPort}`,
+      host: '93.184.216.34',
       entry_point: '/echo',
-      vuln_name: 'Local repeater store target',
+      vuln_name: 'Repeater store target',
       vuln_type: 'Test',
       severity: 'Low',
-      target_url: `${upstreamBase}/echo`,
+      target_url: `${PUBLIC_BASE}/echo`,
       created_at: '2026-02-01T00:00:00.000Z',
     })
   } finally {
@@ -73,7 +54,6 @@ const server = await startTestHost({ dbPath: fixture.dbPath })
 
 after(async () => {
   await server.close()
-  await new Promise((resolve) => upstream.close(resolve))
   cleanupDir(fixture.dir)
   cleanupDir(TEMP_ROOT)
 })
@@ -91,64 +71,95 @@ function expectError(res, status, code) {
 
 describe('repeater: single-send history', () => {
   it('auto-records a history entry after a successful send', async () => {
-    const send = await server.request('/cortex-api/cortex/repeater/send', {
-      method: 'POST',
-      body: {
-        vulnId: VULN_ID,
-        method: 'GET',
-        url: `${upstreamBase}/echo?x=hist`,
-        headers: { 'X-Hist': '1' },
-        followRedirects: false,
-      },
-    })
-    const sent = expectOk(send)
-    assert.deepEqual(Object.keys(sent).sort(), ['request', 'response'])
-    assert.equal(sent.response.status, 200)
-    assert.equal(sent.response.body, 'hit:hist:')
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (url) => {
+      const parsed = new URL(String(url))
+      if (parsed.pathname === '/echo') {
+        return new Response(`hit:${parsed.searchParams.get('x') ?? ''}:`, {
+          status: 200,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        })
+      }
+      if (parsed.pathname === '/big') {
+        return new Response('z'.repeat(300 * 1024), {
+          status: 200,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    }
+    try {
+      const send = await server.request('/cortex-api/cortex/repeater/send', {
+        method: 'POST',
+        body: {
+          vulnId: VULN_ID,
+          method: 'GET',
+          url: `${PUBLIC_BASE}/echo?x=hist`,
+          headers: { 'X-Hist': '1' },
+          followRedirects: false,
+        },
+      })
+      const sent = expectOk(send)
+      assert.deepEqual(Object.keys(sent).sort(), ['request', 'response'])
+      assert.equal(sent.response.status, 200)
+      assert.equal(sent.response.body, 'hit:hist:')
 
-    const history = expectOk(await server.request('/cortex-api/cortex/repeater/history?limit=20'))
-    assert.ok(Array.isArray(history.items))
-    const entry = history.items.find((item) => item.request.url === `${upstreamBase}/echo?x=hist`)
-    assert.ok(entry, 'history should contain the successful send')
-    assert.deepEqual(Object.keys(entry).sort(), [
-      'createdAt',
-      'id',
-      'raw',
-      'request',
-      'response',
-      'vulnId',
-    ])
-    assert.equal(entry.vulnId, VULN_ID)
-    assert.equal(entry.request.method, 'GET')
-    assert.equal(entry.request.headers['X-Hist'], '1')
-    assert.match(entry.raw, /^GET \/echo\?x=hist HTTP\/1\.1\r\n/)
-    assert.equal(entry.response.status, 200)
-    assert.equal(entry.response.body, 'hit:hist:')
-    assert.equal(entry.response.truncated, false)
-    assert.equal(typeof entry.createdAt, 'string')
+      const history = expectOk(await server.request('/cortex-api/cortex/repeater/history?limit=20'))
+      assert.ok(Array.isArray(history.items))
+      const entry = history.items.find(
+        (item) => item.request.url === `${PUBLIC_BASE}/echo?x=hist`,
+      )
+      assert.ok(entry, 'history should contain the successful send')
+      assert.deepEqual(Object.keys(entry).sort(), [
+        'createdAt',
+        'id',
+        'raw',
+        'request',
+        'response',
+        'vulnId',
+      ])
+      assert.equal(entry.vulnId, VULN_ID)
+      assert.equal(entry.request.method, 'GET')
+      assert.equal(entry.request.headers['X-Hist'], '1')
+      assert.match(entry.raw, /^GET \/echo\?x=hist HTTP\/1\.1\r\n/)
+      assert.equal(entry.response.status, 200)
+      assert.equal(entry.response.body, 'hit:hist:')
+      assert.equal(entry.response.truncated, false)
+      assert.equal(typeof entry.createdAt, 'string')
 
-    // Response bodies are stored capped at 256 KiB with the truncated flag.
-    const bigSend = await server.request('/cortex-api/cortex/repeater/send', {
-      method: 'POST',
-      body: {
-        vulnId: VULN_ID,
-        method: 'GET',
-        url: `${upstreamBase}/big`,
-        headers: {},
-        followRedirects: false,
-      },
-    })
-    expectOk(bigSend)
-    const afterBig = expectOk(await server.request('/cortex-api/cortex/repeater/history?limit=20'))
-    const bigEntry = afterBig.items.find((item) => item.request.url === `${upstreamBase}/big`)
-    assert.ok(bigEntry)
-    assert.equal(Buffer.byteLength(bigEntry.response.body, 'utf8'), 256 * 1024)
-    assert.equal(bigEntry.response.truncated, true)
-    // Newest first.
-    assert.equal(afterBig.items[0].id, bigEntry.id)
+      // Response bodies are stored capped at 256 KiB with the truncated flag.
+      const bigSend = await server.request('/cortex-api/cortex/repeater/send', {
+        method: 'POST',
+        body: {
+          vulnId: VULN_ID,
+          method: 'GET',
+          url: `${PUBLIC_BASE}/big`,
+          headers: {},
+          followRedirects: false,
+        },
+      })
+      expectOk(bigSend)
+      const afterBig = expectOk(await server.request('/cortex-api/cortex/repeater/history?limit=20'))
+      const bigEntry = afterBig.items.find((item) => item.request.url === `${PUBLIC_BASE}/big`)
+      assert.ok(bigEntry)
+      assert.equal(Buffer.byteLength(bigEntry.response.body, 'utf8'), 256 * 1024)
+      assert.equal(bigEntry.response.truncated, true)
+      // Newest first.
+      assert.equal(afterBig.items[0].id, bigEntry.id)
 
-    expectError(await server.request('/cortex-api/cortex/repeater/history?limit=0'), 400, 'BAD_REQUEST')
-    expectError(await server.request('/cortex-api/cortex/repeater/history?limit=51'), 400, 'BAD_REQUEST')
+      expectError(
+        await server.request('/cortex-api/cortex/repeater/history?limit=0'),
+        400,
+        'BAD_REQUEST',
+      )
+      expectError(
+        await server.request('/cortex-api/cortex/repeater/history?limit=51'),
+        400,
+        'BAD_REQUEST',
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it('clears history via DELETE', async () => {
@@ -203,7 +214,7 @@ describe('repeater: collections', () => {
           raw: `GET /echo?x=hist HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n`,
           request: {
             method: 'GET',
-            url: `${upstreamBase}/echo?x=hist`,
+            url: `${PUBLIC_BASE}/echo?x=hist`,
             headers: {},
             body: '',
           },
@@ -220,7 +231,7 @@ describe('repeater: collections', () => {
     const item = created.item
     assert.equal(item.name, 'saved request')
     assert.equal(item.vulnId, VULN_ID)
-    assert.equal(item.request.url, `${upstreamBase}/echo?x=hist`)
+    assert.equal(item.request.url, `${PUBLIC_BASE}/echo?x=hist`)
     assert.equal(Buffer.byteLength(item.response.body, 'utf8'), 256 * 1024)
     assert.equal(item.response.truncated, true)
     assert.equal(typeof item.id, 'string')
@@ -270,7 +281,7 @@ describe('repeater: collections', () => {
         method: 'POST',
         body: {
           name,
-          request: { method: 'GET', url: `${upstreamBase}/echo`, headers: {}, body: '' },
+          request: { method: 'GET', url: `${PUBLIC_BASE}/echo`, headers: {}, body: '' },
         },
       })
     for (let index = 0; index < 50; index += 1) {

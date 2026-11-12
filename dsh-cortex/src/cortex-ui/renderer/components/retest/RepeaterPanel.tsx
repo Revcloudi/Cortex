@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowRight,
   Braces,
   Clock,
-  CornerDownRight,
   FileInput,
   FileOutput,
   Loader2,
@@ -29,15 +27,8 @@ import {
   extractRepeaterRequests,
   resolveRepeaterUrl
 } from '@renderer/lib/retestRequest'
-import {
-  buildHtmlPreview,
-  headerValue,
-  isHtmlResponse,
-  isRedirectResponse,
-  prettyJsonBody,
-  statusTone
-} from '@renderer/lib/retestResponse'
 import { CurlImportDialog } from './CurlImportDialog'
+import { ResponseView } from './ResponseView'
 import { RepeaterCollectionsDialog } from './RepeaterCollectionsDialog'
 import { RepeaterHistoryDialog } from './RepeaterHistoryDialog'
 
@@ -66,11 +57,12 @@ interface SavedRepeaterEntry {
 /**
  * Manual HTTP repeater. Requests are extracted from the finding's Markdown
  * report (all HTTP request steps are selectable) instead of the old generated-JS
- * pipeline. The user edits the raw request and sends it through the retest proxy.
+ * pipeline. The user edits the raw request and sends it through the retest proxy
+ * with the finding vulnId (history/favorites are finding-scoped here).
  *
- * The Yakit-style manual sender lives on its own Web Fuzzer page; this panel
+ * The Yakit-style standalone sender lives on its own Web Fuzzer page; this panel
  * stays the per-finding single-request repeater (plus history, favorites and
- * curl tools).
+ * curl tools) and shares the raw/JSON/render response viewer with it.
  */
 export function RepeaterPanel({ vuln, loading }: RepeaterPanelProps) {
   const { t } = useI18n()
@@ -118,9 +110,10 @@ interface SingleRepeaterProps {
 
 /**
  * The original single Repeater. Behavior is intentionally unchanged: same
- * request extraction/default step, retest-proxy send, redirect follow, raw /
- * pretty / HTML views and byte counter. The toolbar gained read-only helpers
- * (history, favorites, curl import/export) that never change how a send works.
+ * request extraction/default step, retest-proxy send with the finding vulnId,
+ * redirect follow, shared raw/JSON/render views and byte counter. The toolbar
+ * keeps read-only helpers (history, favorites, curl import/export) that never
+ * change how a send works.
  */
 function SingleRepeater({ vuln }: SingleRepeaterProps) {
   const { t } = useI18n()
@@ -128,7 +121,6 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
   const [raw, setRaw] = useState('')
   const [step, setStep] = useState(0)
   const [sending, setSending] = useState(false)
-  const [bodyView, setBodyView] = useState<'raw' | 'pretty' | 'html'>('raw')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<RepeaterSendResult | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -169,40 +161,6 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
   }
 
   const rawBytes = useMemo(() => new TextEncoder().encode(raw).byteLength, [raw])
-  const responseIsRedirect =
-    result !== null && isRedirectResponse(result.response.status, result.response.headers)
-  const responseIsHtml =
-    result !== null && isHtmlResponse(result.response.body, result.response.headers)
-  const formattedJson = useMemo(
-    () =>
-      result === null
-        ? null
-        : prettyJsonBody(result.response.body, headerValue(result.response.headers, 'content-type')),
-    [result]
-  )
-  const htmlPreview = useMemo(
-    () => (result === null ? '' : buildHtmlPreview(result.response.body, vuln.target_url)),
-    [result, vuln.target_url]
-  )
-  /** Status line + response headers, shared by the raw and formatted views. */
-  const responseHead = useMemo(() => {
-    if (result === null) return ''
-    const lines = [`HTTP/1.1 ${result.response.status}`]
-    for (const [name, value] of Object.entries(result.response.headers)) {
-      lines.push(`${name}: ${value}`)
-    }
-    return lines.join('\n')
-  }, [result])
-  /** Raw response as one block: status + headers + blank line + body. */
-  const rawResponse = useMemo(
-    () => (result === null ? '' : `${responseHead}\n\n${result.response.body}`),
-    [result, responseHead]
-  )
-  /** JSON view keeps the status/header block and only formats the body. */
-  const jsonResponse = useMemo(
-    () => (formattedJson === null ? '' : `${responseHead}\n\n${formattedJson}`),
-    [formattedJson, responseHead]
-  )
 
   /** Parsed request used by the favorites dialog (null while the editor is invalid). */
   const currentRequest = useMemo<RepeaterSendResult['request'] | null>(() => {
@@ -222,7 +180,6 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
   const restoreSaved = (item: SavedRepeaterEntry): void => {
     setRaw(item.raw)
     setError(null)
-    setBodyView('raw')
     setResult(
       item.response === null ? null : { request: item.request, response: item.response }
     )
@@ -248,12 +205,6 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
         followRedirects
       })
       setResult(response)
-      // Formatted JSON is the default response view; raw stays one click away.
-      setBodyView(
-        prettyJsonBody(response.response.body, headerValue(response.response.headers, 'content-type')) !== null
-          ? 'pretty'
-          : 'raw'
-      )
     } catch (cause) {
       setError(describeSendError(cause, t('retest.repeater.connectionFailed')))
       setResult(null)
@@ -284,7 +235,6 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
     setRaw(nextRaw)
     setResult(null)
     setError(null)
-    setBodyView('raw')
   }
 
   return (
@@ -416,119 +366,16 @@ function SingleRepeater({ vuln }: SingleRepeaterProps) {
         </div>
       </section>
 
-      <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-border bg-background">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-          <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-[12px] font-medium text-foreground">
-            {t('retest.repeater.responseTitle')}
-          </span>
-          {result !== null ? (
-            <>
-              <span
-                className={`rounded border px-1.5 py-0.5 font-mono text-[10px] tabular-nums ${statusTone(result.response.status)}`}
-              >
-                {result.response.status}
-              </span>
-              <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">
-                {result.response.durationMs} ms · {result.response.body.length} B
-              </span>
-              {result.response.truncated ? (
-                <span className="text-[9.5px] text-amber-700">
-                  {t('retest.repeater.truncated')}
-                </span>
-              ) : null}
-              {responseIsRedirect ? (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  data-testid="retest-repeater-follow"
-                  onClick={() => void send(true)}
-                  disabled={sending}
-                  className="gap-1 text-[10.5px]"
-                >
-                  <CornerDownRight aria-hidden="true" className="h-3 w-3" />
-                  {t('retest.repeater.followRedirect')}
-                </Button>
-              ) : null}
-              {formattedJson !== null || responseIsHtml ? (
-                <div className="ml-auto flex items-center gap-0.5 rounded-md border border-border bg-muted p-0.5">
-                  <button
-                    type="button"
-                    data-testid="retest-repeater-view-raw"
-                    onClick={() => setBodyView('raw')}
-                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-                      bodyView === 'raw'
-                        ? 'bg-background font-medium text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {t('retest.repeater.viewRaw')}
-                  </button>
-                  {formattedJson !== null ? (
-                    <button
-                      type="button"
-                      data-testid="retest-repeater-view-json"
-                      onClick={() => setBodyView('pretty')}
-                      className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-                        bodyView === 'pretty'
-                          ? 'bg-background font-medium text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {t('retest.repeater.formatJson')}
-                    </button>
-                  ) : null}
-                  {responseIsHtml ? (
-                    <button
-                      type="button"
-                      data-testid="retest-repeater-view-html"
-                      onClick={() => setBodyView('html')}
-                      className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-                        bodyView === 'html'
-                          ? 'bg-background font-medium text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {t('retest.repeater.viewHtml')}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-        {result === null ? (
-          <p className="flex flex-1 items-center justify-center px-3 text-[11.5px] text-muted-foreground">
-            {t('retest.repeater.emptyResponse')}
-          </p>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col p-3">
-            {responseIsHtml && bodyView === 'html' ? (
-              <iframe
-                title={t('retest.repeater.htmlPreview')}
-                sandbox=""
-                referrerPolicy="no-referrer"
-                srcDoc={htmlPreview}
-                className="min-h-0 w-full flex-1 rounded-md border border-border bg-white"
-              />
-            ) : formattedJson !== null && bodyView === 'pretty' ? (
-              <pre
-                data-testid="retest-repeater-json"
-                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground"
-              >
-                {jsonResponse}
-              </pre>
-            ) : (
-              <pre
-                data-testid="retest-repeater-response"
-                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground"
-              >
-                {rawResponse.slice(0, 200_000)}
-              </pre>
-            )}
-          </div>
-        )}
-      </section>
+      <ResponseView
+        response={result === null ? null : result.response}
+        baseUrl={result === null ? vuln.target_url : result.request.url}
+        testIdPrefix="retest-repeater"
+        rawBodyTestId="retest-repeater-response"
+        jsonBodyTestId="retest-repeater-json"
+        followTestId="retest-repeater-follow"
+        onFollowRedirect={() => void send(true)}
+        followRedirectDisabled={sending}
+      />
 
       <RepeaterHistoryDialog
         open={historyOpen}

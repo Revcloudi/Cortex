@@ -4,6 +4,7 @@ import type { AssetListItem } from '@shared/types'
 import { AssetStatusBadge } from '@renderer/components/common/Badges'
 import { EmptyState } from '@renderer/components/common/EmptyState'
 import { Button } from '@renderer/components/ui/button'
+import { Checkbox } from '@renderer/components/ui/checkbox'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { techStackTags } from '@renderer/lib/assets'
 import { formatDateTime } from '@renderer/lib/format'
@@ -15,6 +16,9 @@ interface AssetTableProps {
   loading: boolean
   error: string | null
   filtersActive: boolean
+  selectedIds: ReadonlySet<string>
+  onToggleSelection: (assetId: string) => void
+  onToggleAll: (selectAll: boolean) => void
   onOpen: (hostPort: string) => void
   onClearFilters: () => void
   onRetry: () => void
@@ -63,6 +67,9 @@ function TableSkeleton() {
         <table className="w-full table-fixed">
           <thead>
             <tr>
+              <th className={cn(thBase, 'w-10 pl-4')}>
+                <Skeleton className="h-3.5 w-3.5 rounded-sm" />
+              </th>
               <th className={cn(thBase, 'w-[240px]')}>{t('asset.table.asset')}</th>
               <th className={cn(thBase, 'w-[160px]')}>{t('asset.table.project')}</th>
               <th className={thBase}>{t('asset.table.techStack')}</th>
@@ -77,6 +84,9 @@ function TableSkeleton() {
           <tbody>
             {[0, 1, 2, 3, 4, 5].map((index) => (
               <tr key={index}>
+                <td className="h-14 border-b border-border py-0 pl-4 pr-1">
+                  <Skeleton className="h-3.5 w-3.5 rounded-sm" />
+                </td>
                 <td className="h-14 border-b border-border px-3 py-0">
                   <Skeleton className="h-3.5 w-[182px]" />
                 </td>
@@ -119,6 +129,9 @@ export function AssetTable({
   loading,
   error,
   filtersActive,
+  selectedIds,
+  onToggleSelection,
+  onToggleAll,
   onOpen,
   onClearFilters,
   onRetry
@@ -164,6 +177,9 @@ export function AssetTable({
   }
 
   const rows = items ?? []
+  const selectedOnPage = rows.filter((item) => selectedIds.has(item.asset_id || item.host_port)).length
+  const allSelected = rows.length > 0 && selectedOnPage === rows.length
+  const someSelected = selectedOnPage > 0 && !allSelected
   const handleRowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, hostPort: string) => {
     const target = event.target as HTMLElement
     if (target.tagName === 'BUTTON' || target.tagName === 'A') return
@@ -196,6 +212,15 @@ export function AssetTable({
           <caption className="sr-only">{t('asset.table.caption')}</caption>
           <thead className="sticky top-0 z-10">
             <tr>
+              <th scope="col" className={cn(thBase, 'w-10 pl-4 pr-1')}>
+                <Checkbox
+                  data-testid="asset-select-all"
+                  aria-label={t('asset.selection.selectAll')}
+                  checked={allSelected}
+                  indeterminate={someSelected}
+                  onChange={(event) => onToggleAll(event.target.checked)}
+                />
+              </th>
               <th scope="col" className={cn(thBase, 'w-[240px] pl-3')}>
                 {t('asset.table.asset')}
               </th>
@@ -230,20 +255,40 @@ export function AssetTable({
               const last = index === rows.length - 1
               const assetId = item.asset_id || item.host_port
               const isMiniapp = item.kind === 'miniapp'
+              const selected = selectedIds.has(assetId)
               return (
                 <tr
                   key={assetId}
                   data-testid="asset-row"
                   data-host-port={assetId}
                   data-kind={item.kind || 'web'}
+                  data-selected={selected ? 'true' : 'false'}
                   tabIndex={0}
                   aria-label={t('asset.table.openRow', {
                     host: isMiniapp ? item.display_name || item.appid || assetId : item.host_port
                   })}
                   onClick={() => onOpen(assetId)}
                   onKeyDown={(event) => handleRowKeyDown(event, assetId)}
-                  className="group cursor-pointer transition-colors duration-150 hover:bg-sidebar focus-visible:bg-accent-soft focus-visible:outline-none"
+                  className={cn(
+                    'group cursor-pointer transition-colors duration-150 hover:bg-sidebar focus-visible:bg-accent-soft focus-visible:outline-none',
+                    selected && 'bg-accent-soft/50'
+                  )}
                 >
+                  <td
+                    className={cellClass(last, 'pl-4 pr-1')}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <Checkbox
+                      data-testid="asset-select"
+                      aria-label={t('asset.selection.select', {
+                        name: isMiniapp
+                          ? item.display_name || item.appid || assetId
+                          : item.host_port
+                      })}
+                      checked={selected}
+                      onChange={() => onToggleSelection(assetId)}
+                    />
+                  </td>
                   <td className={cellClass(last, 'pl-3')}>
                     {isMiniapp ? (
                       <span className="flex min-w-0 flex-col gap-0.5">

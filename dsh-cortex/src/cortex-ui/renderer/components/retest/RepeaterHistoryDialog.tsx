@@ -202,7 +202,11 @@ export function RepeaterHistoryDialog({
                           </span>
                         </span>
                         <span className="flex items-center gap-2 text-[9.5px] text-muted-foreground">
-                          <span className="truncate font-mono">{item.vulnId}</span>
+                          <span className="truncate font-mono">
+                            {item.vulnId.trim() === ''
+                              ? t('retest.repeater.history.noVuln')
+                              : item.vulnId}
+                          </span>
                           <span className="ml-auto shrink-0">
                             {t('retest.repeater.history.restore')}
                           </span>

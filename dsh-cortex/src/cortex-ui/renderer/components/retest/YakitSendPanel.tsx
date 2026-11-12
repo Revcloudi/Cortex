@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Braces, CornerDownRight, Loader2, Play } from 'lucide-react'
+import { Braces, Loader2, Play } from 'lucide-react'
 import type { Vulnerability } from '@shared/types'
-import type { RepeaterSendResult } from '@shared/repeater'
+import type { RepeaterSendInput, RepeaterSendResult } from '@shared/repeater'
 import { Button } from '@renderer/components/ui/button'
 import { Checkbox } from '@renderer/components/ui/checkbox'
-import { Skeleton } from '@renderer/components/ui/skeleton'
 import { useI18n } from '@renderer/i18n'
 import { getApi } from '@renderer/lib/api'
 import {
@@ -17,20 +16,27 @@ import {
   extractRepeaterRequests,
   resolveRepeaterUrl
 } from '@renderer/lib/retestRequest'
-import {
-  buildHtmlPreview,
-  headerValue,
-  isHtmlResponse,
-  isRedirectResponse,
-  prettyJsonBody,
-  statusTone
-} from '@renderer/lib/retestResponse'
-import { cn } from '@renderer/lib/utils'
+import { ResponseView } from './ResponseView'
 
 interface YakitSendPanelProps {
-  vuln: Vulnerability | null
-  loading: boolean
+  /**
+   * Optional finding. The Web Fuzzer never needs one: when injected, the finding
+   * is used only to seed the raw editor and to resolve relative request URLs.
+   */
+  vuln?: Vulnerability | null
+  /** Kept for the routed page contract; the standalone sender never blocks on it. */
+  loading?: boolean
 }
+
+const SUPPORTED_METHODS = new Set([
+  'GET',
+  'HEAD',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'OPTIONS'
+])
 
 function describeSendError(cause: unknown, connectionRefused: string): string {
   const raw = cause instanceof Error ? cause.message : String(cause)
@@ -43,48 +49,68 @@ function describeSendError(cause: unknown, connectionRefused: string): string {
 }
 
 /**
- * Yakit-style manual HTTP sender: the request editor fills the left half with
- * the send button at its top-left, the response viewer fills the right half, and
- * both panes use the full available height. This is the plain Web Fuzzer module
- * (no payload markers, attack modes, batch jobs or result table); every request
- * still goes through the retest proxy and the finding origin allowlist.
+ * Resolve the editor target to an absolute http(s) URL. Standalone mode has no
+ * finding target, so relative URLs are rejected with a clear error; an injected
+ * finding still resolves them against its target_url.
  */
-export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
+function resolveAbsoluteUrl(rawUrl: string, vuln: Vulnerability | null): string | null {
+  const value = rawUrl.trim()
+  if (value === '') return null
+  const candidate = /^https?:\/\//i.test(value)
+    ? value
+    : vuln === null
+      ? ''
+      : resolveRepeaterUrl(value, vuln.target_url)
+  if (candidate === '') return null
+  try {
+    const parsed = new URL(candidate)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    if (parsed.hostname === '') return null
+    return parsed.href
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Yakit-style manual HTTP sender: the request editor fills the left half with
+ * the send button at its top-left, the shared response viewer fills the right
+ * half, and both panes use the full available height. The raw request editor is
+ * the only input, no finding is required, and the send payload never carries a
+ * vulnId: the Host validates the target independently.
+ */
+export function YakitSendPanel({ vuln = null }: YakitSendPanelProps) {
   const { t } = useI18n()
   const [raw, setRaw] = useState('')
-  const [step, setStep] = useState(0)
   const [sending, setSending] = useState(false)
   const [followRedirects, setFollowRedirects] = useState(false)
-  const [bodyView, setBodyView] = useState<'raw' | 'pretty' | 'html'>('raw')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<RepeaterSendResult | null>(null)
 
-  const requests = useMemo(() => (vuln === null ? [] : extractRepeaterRequests(vuln)), [vuln])
-
+  // A finding is never required. When one is injected it only seeds the editor;
+  // manual edits survive re-renders because this runs on finding changes only.
   useEffect(() => {
+    if (vuln === null) return
+    const requests = extractRepeaterRequests(vuln)
+    const step = defaultRequestIndex(vuln, requests)
+    const initial = requests[step]?.raw ?? ''
+    setRaw(formatRequestBody(initial) ?? initial)
     setResult(null)
     setError(null)
-    if (vuln === null) {
-      setRaw('')
-      setStep(0)
-      return
-    }
-    const nextStep = defaultRequestIndex(vuln, requests)
-    setStep(nextStep)
-    const initial = requests[nextStep]?.raw ?? ''
-    setRaw(formatRequestBody(initial) ?? initial)
-    // Reset only when the selected vulnerability changes; user edits must survive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vuln?.id])
 
-  const selectStep = (nextStep: number): void => {
-    const next = requests[nextStep]
-    if (next === undefined) return
-    setStep(nextStep)
-    setRaw(formatRequestBody(next.raw) ?? next.raw)
-    setResult(null)
-    setError(null)
-  }
+  /** Parsed editor content; null when empty or unparseable (send is disabled). */
+  const parsedRequest = useMemo(() => {
+    if (raw.trim() === '') return null
+    try {
+      return parseRawRequest(raw)
+    } catch {
+      return null
+    }
+  }, [raw])
+
+  const rawBytes = useMemo(() => new TextEncoder().encode(raw).byteLength, [raw])
 
   /** Pretty-print the JSON request body while keeping the request line/headers. */
   const formatRequest = (): void => {
@@ -97,94 +123,39 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
     setError(null)
   }
 
-  const rawBytes = useMemo(() => new TextEncoder().encode(raw).byteLength, [raw])
-  const responseIsRedirect =
-    result !== null && isRedirectResponse(result.response.status, result.response.headers)
-  const responseIsHtml =
-    result !== null && isHtmlResponse(result.response.body, result.response.headers)
-  const formattedJson = useMemo(
-    () =>
-      result === null
-        ? null
-        : prettyJsonBody(result.response.body, headerValue(result.response.headers, 'content-type')),
-    [result]
-  )
-  const htmlPreview = useMemo(
-    () =>
-      result === null || vuln === null
-        ? ''
-        : buildHtmlPreview(result.response.body, vuln.target_url),
-    [result, vuln]
-  )
-  /** Status line + response headers, shared by the raw and formatted views. */
-  const responseHead = useMemo(() => {
-    if (result === null) return ''
-    const lines = [`HTTP/1.1 ${result.response.status}`]
-    for (const [name, value] of Object.entries(result.response.headers)) {
-      lines.push(`${name}: ${value}`)
-    }
-    return lines.join('\n')
-  }, [result])
-  /** Raw response as one block: status + headers + blank line + body. */
-  const rawResponse = useMemo(
-    () => (result === null ? '' : `${responseHead}\n\n${result.response.body}`),
-    [result, responseHead]
-  )
-  /** JSON view keeps the status/header block and only formats the body. */
-  const jsonResponse = useMemo(
-    () => (formattedJson === null ? '' : `${responseHead}\n\n${formattedJson}`),
-    [formattedJson, responseHead]
-  )
-
-  const send = async (): Promise<void> => {
-    if (vuln === null || sending) return
+  const send = async (forceFollowRedirect = false): Promise<void> => {
+    if (sending || parsedRequest === null) return
     const api = getApi()
     if (!api) {
       setError(t('common.apiUnavailable'))
       return
     }
+    const url = resolveAbsoluteUrl(parsedRequest.url, vuln)
+    if (url === null) {
+      setError(t('fuzzer.request.urlRequired'))
+      return
+    }
+    if (!SUPPORTED_METHODS.has(parsedRequest.method)) {
+      setError(t('fuzzer.request.methodUnsupported', { method: parsedRequest.method }))
+      return
+    }
     setSending(true)
     setError(null)
     try {
-      const parsed = parseRawRequest(raw)
       const response = await api.sendRepeaterRequest({
-        vulnId: vuln.id,
-        method: parsed.method,
-        url: resolveRepeaterUrl(parsed.url, vuln.target_url),
-        headers: stripDerivedHeaders(parsed.headers),
-        ...(parsed.body === '' ? {} : { body: parsed.body }),
-        followRedirects
+        method: parsedRequest.method as RepeaterSendInput['method'],
+        url,
+        headers: stripDerivedHeaders(parsedRequest.headers),
+        ...(parsedRequest.body === '' ? {} : { body: parsedRequest.body }),
+        followRedirects: forceFollowRedirect || followRedirects
       })
       setResult(response)
-      // Formatted JSON is the default response view; raw stays one click away.
-      setBodyView(
-        prettyJsonBody(response.response.body, headerValue(response.response.headers, 'content-type')) !== null
-          ? 'pretty'
-          : 'raw'
-      )
     } catch (cause) {
       setError(describeSendError(cause, t('retest.repeater.connectionFailed')))
       setResult(null)
     } finally {
       setSending(false)
     }
-  }
-
-  if (loading && vuln === null) {
-    return (
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
-        <Skeleton className="h-full min-h-[360px] w-full" />
-        <Skeleton className="h-full min-h-[360px] w-full" />
-      </div>
-    )
-  }
-
-  if (vuln === null) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-background/60 text-[12px] text-muted-foreground">
-        {t('retest.repeater.empty')}
-      </div>
-    )
   }
 
   return (
@@ -203,8 +174,8 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             size="sm"
             data-testid="fuzzer-send"
             onClick={() => void send()}
-            disabled={sending || raw.trim() === ''}
-            className="gap-1.5"
+            disabled={sending || parsedRequest === null}
+            className="shrink-0 gap-1.5"
           >
             {sending ? (
               <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin poc-spinner" />
@@ -227,42 +198,13 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             data-testid="fuzzer-format-request"
             title={t('retest.repeater.formatRequestTitle')}
             onClick={formatRequest}
+            disabled={raw.trim() === ''}
             className="shrink-0 gap-1"
           >
             <Braces aria-hidden="true" className="h-3 w-3" />
             {t('retest.repeater.formatRequest')}
           </Button>
-          <span className="shrink-0 rounded border border-border bg-sidebar px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
-            {vuln.id}
-          </span>
-          {requests.length > 0 ? (
-            <div
-              className="ml-auto flex min-w-0 items-center gap-1 overflow-x-auto"
-              role="tablist"
-              aria-label={t('retest.repeater.stepsAria')}
-            >
-              {requests.map((request, index) => (
-                <button
-                  key={`${index}-${request.label}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={index === step}
-                  title={request.label}
-                  data-testid={`fuzzer-request-step-${index}`}
-                  onClick={() => selectStep(index)}
-                  className={cn(
-                    'h-6 shrink-0 rounded border px-2 font-mono text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    index === step
-                      ? 'border-accent/50 bg-accent-soft font-medium text-accent'
-                      : 'border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
-                  )}
-                >
-                  {t('retest.repeater.stepN', { n: index + 1 })}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <span className={cn('shrink-0 font-mono text-[9.5px] tabular-nums text-muted-foreground', requests.length === 0 && 'ml-auto')}>
+          <span className="ml-auto shrink-0 font-mono text-[9.5px] tabular-nums text-muted-foreground">
             {t('retest.repeater.bytes', { count: rawBytes })}
           </span>
         </div>
@@ -273,6 +215,7 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             aria-label={t('retest.repeater.requestAria')}
             value={raw}
             spellCheck={false}
+            placeholder={t('fuzzer.request.placeholder')}
             onChange={(event) => setRaw(event.target.value)}
             className="min-h-0 w-full flex-1 resize-none rounded-lg border border-border bg-white px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground caret-accent placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           />
@@ -284,128 +227,28 @@ export function YakitSendPanel({ vuln, loading }: YakitSendPanelProps) {
             >
               {error}
             </p>
+          ) : parsedRequest === null && raw.trim() !== '' ? (
+            <p
+              role="status"
+              data-testid="fuzzer-request-invalid"
+              className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10.5px] leading-relaxed text-amber-800"
+            >
+              {t('fuzzer.request.invalidHint')}
+            </p>
           ) : null}
         </div>
       </section>
 
       {/* ------------------------------------------------------------ response */}
-      <section
-        data-testid="fuzzer-response-pane"
-        aria-label={t('fuzzer.response.aria')}
-        className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background"
-      >
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
-          <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 text-[12px] font-medium text-foreground">{t('retest.repeater.responseTitle')}</span>
-          {result !== null ? (
-            <>
-              <span
-                data-testid="fuzzer-response-status"
-                className={`rounded border px-1.5 py-0.5 font-mono text-[10px] tabular-nums ${statusTone(result.response.status)}`}
-              >
-                {result.response.status}
-              </span>
-              <span className="font-mono text-[9.5px] tabular-nums text-muted-foreground">
-                {result.response.durationMs} ms · {result.response.body.length} B
-              </span>
-              {result.response.truncated ? (
-                <span className="text-[9.5px] text-amber-700">{t('retest.repeater.truncated')}</span>
-              ) : null}
-              {responseIsRedirect ? (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={() => void send()}
-                  disabled={sending}
-                  className="gap-1 text-[10.5px]"
-                >
-                  <CornerDownRight aria-hidden="true" className="h-3 w-3" />
-                  {t('retest.repeater.followRedirect')}
-                </Button>
-              ) : null}
-              {formattedJson !== null || responseIsHtml ? (
-                <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-muted p-0.5">
-                  <button
-                    type="button"
-                    data-testid="fuzzer-view-raw"
-                    onClick={() => setBodyView('raw')}
-                    className={cn(
-                      'rounded px-1.5 py-0.5 text-[10px] transition-colors',
-                      bodyView === 'raw'
-                        ? 'bg-background font-medium text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    {t('retest.repeater.viewRaw')}
-                  </button>
-                  {formattedJson !== null ? (
-                    <button
-                      type="button"
-                      data-testid="fuzzer-view-json"
-                      onClick={() => setBodyView('pretty')}
-                      className={cn(
-                        'rounded px-1.5 py-0.5 text-[10px] transition-colors',
-                        bodyView === 'pretty'
-                          ? 'bg-background font-medium text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      {t('retest.repeater.formatJson')}
-                    </button>
-                  ) : null}
-                  {responseIsHtml ? (
-                    <button
-                      type="button"
-                      data-testid="fuzzer-view-html"
-                      onClick={() => setBodyView('html')}
-                      className={cn(
-                        'rounded px-1.5 py-0.5 text-[10px] transition-colors',
-                        bodyView === 'html'
-                          ? 'bg-background font-medium text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      {t('retest.repeater.viewHtml')}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-
-        {result === null ? (
-          <p className="flex flex-1 items-center justify-center px-3 text-[11.5px] text-muted-foreground">
-            {t('retest.repeater.emptyResponse')}
-          </p>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col p-3">
-            {responseIsHtml && bodyView === 'html' ? (
-              <iframe
-                title={t('retest.repeater.htmlPreview')}
-                sandbox=""
-                referrerPolicy="no-referrer"
-                srcDoc={htmlPreview}
-                className="min-h-0 w-full flex-1 rounded-md border border-border bg-white"
-              />
-            ) : formattedJson !== null && bodyView === 'pretty' ? (
-              <pre
-                data-testid="fuzzer-response-json"
-                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground"
-              >
-                {jsonResponse}
-              </pre>
-            ) : (
-              <pre
-                data-testid="fuzzer-response-body"
-                className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-white px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground"
-              >
-                {rawResponse.slice(0, 200_000)}
-              </pre>
-            )}
-          </div>
-        )}
-      </section>
+      <ResponseView
+        response={result === null ? null : result.response}
+        baseUrl={result === null ? '' : result.request.url}
+        testIdPrefix="fuzzer"
+        paneTestId="fuzzer-response-pane"
+        ariaLabel={t('fuzzer.response.aria')}
+        onFollowRedirect={() => void send(true)}
+        followRedirectDisabled={sending}
+      />
     </div>
   )
 }
