@@ -5,8 +5,8 @@
     "zh": "Cortex"
   },
   "description": {
-    "en": "Local-first pentest intelligence memory as a native DeepSeek Harness panel: vulnerability board, internal operations, 3D Memory Nebula, assets, snapshots, retest, standalone Web Fuzzer with safe raw/JSON/render responses, project and selected-asset export (JSON/CSV/DefectDojo), asset batch export/delete, and mini-program (wxapkg) reversing, plus 22 native agent tools that use the local Cortex SQLite without MCP.",
-    "zh": "本地优先的渗透测试情报记忆，作为 DeepSeek Harness 原生面板：漏洞看板、内网作战、3D 记忆星云、资产库、认知快照、漏洞复测、独立 Web Fuzzer（原始/JSON/安全渲染响应）、项目与选中资产导出（JSON/CSV/DefectDojo）、资产批量导出/删除与小程序逆向（wxapkg 检测/解密/解包/分析），并内置 22 个原生 Agent 工具，直接读写本地 Cortex SQLite，无需 MCP。"
+    "en": "Local-first pentest intelligence memory as a native DeepSeek Harness panel: vulnerability board with separate client findings (Android/iOS/desktop), internal operations with per-entity delete, 3D Memory Nebula, assets with editable system names, snapshots, retest, standalone Web Fuzzer with safe raw/JSON/render responses, project and selected-asset export (JSON/CSV/DefectDojo), asset batch export/delete, and mini-program (wxapkg) reversing, plus 22 native agent tools that use the local Cortex SQLite without MCP. Raw local data is shown/exported without masking.",
+    "zh": "本地优先的渗透测试情报记忆，作为 DeepSeek Harness 原生面板：漏洞看板（含独立 Android/iOS/桌面客户端漏洞）、内网作战（实体逐条删除）、3D 记忆星云、资产库（可编辑系统名）、认知快照、漏洞复测、独立 Web Fuzzer（原始/JSON/安全渲染响应）、项目与选中资产导出（JSON/CSV/DefectDojo）、资产批量导出/删除与小程序逆向（wxapkg 检测/解密/解包/分析），并内置 22 个原生 Agent 工具，直接读写本地 Cortex SQLite，无需 MCP。本地数据按原始值展示与导出，不做脱敏。"
   },
   "plugins": [
     {
@@ -16,8 +16,8 @@
         "zh": "Cortex"
       },
       "description": {
-        "en": "Cortex workbench for DSH: the original Cortex UI (vulnerabilities, assets, internal operations, Memory Nebula, snapshots, retest, standalone Web Fuzzer, mini-program reversing) as a native panel, plus project/selected-asset export (JSON/CSV/DefectDojo), asset batch export/delete, 22 cortex_* agent tools and an injected usage prompt.",
-        "zh": "DSH 版 Cortex 工作台：原版 Cortex UI（漏洞、资产、内网作战、记忆星云、快照、复测、独立 Web Fuzzer、小程序逆向）原生面板，外加项目/选中资产导出（JSON/CSV/DefectDojo）、资产批量导出/删除、22 个 cortex_* Agent 工具与自动注入的使用提示。"
+        "en": "Cortex workbench for DSH: client findings separated from Web findings, internal operations with entity deletion, editable asset system names, the original vulnerability board/assets/Memory Nebula/snapshots/retest/standalone Web Fuzzer/mini-program reversing, project and selected-asset export (JSON/CSV/DefectDojo), asset batch export/delete, raw local data without masking, 22 cortex_* agent tools and an injected usage prompt.",
+        "zh": "DSH 版 Cortex 工作台：客户端漏洞与 Web 漏洞分开、内网作战支持实体删除、资产库支持可编辑系统名，保留原版漏洞看板/资产/记忆星云/快照/复测/独立 Web Fuzzer/小程序逆向，另含项目与选中资产导出（JSON/CSV/DefectDojo）、资产批量导出/删除、本地原始数据不脱敏、22 个 cortex_* Agent 工具与自动注入的使用提示。"
       },
       "icon": "https://raw.githubusercontent.com/Revcloudi/Cortex/main/dsh-cortex/icon.svg",
       "author": "Revcloudi",
@@ -34,7 +34,10 @@
           "cortex",
           "pentest",
           "vulnerability-management",
+          "client-findings",
           "asset-management",
+          "system-name",
+          "internal-operations",
           "snapshot",
           "sqlite",
           "nebula",
@@ -45,6 +48,19 @@
         ]
       },
       "versions": [
+        {
+          "version": "1.3.0",
+          "publishTimestamp": 1794895587,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/Revcloudi/Cortex",
+            "commit": "9cf0b05ccea6d6c7b2e0b387de0fb2695b81b84d",
+            "path": "dsh-cortex"
+          },
+          "engines": {
+            "dsh": "^0.2.2-rc.1"
+          }
+        },
         {
           "version": "1.2.0",
           "publishTimestamp": 1794464432,
