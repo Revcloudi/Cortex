@@ -54,7 +54,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/Revcloudi/Cortex",
-            "commit": "9cf0b05ccea6d6c7b2e0b387de0fb2695b81b84d",
+            "commit": "49ebdcc4b98060120e43ad15d210477ce47e699d",
             "path": "dsh-cortex"
           },
           "engines": {
