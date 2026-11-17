@@ -1,4 +1,11 @@
-import type { AssetStatus, LeakedInfoType, Severity, VulnStatus } from '@shared/types'
+import type {
+  AssetStatus,
+  ClientConnectionValue,
+  ClientTypeValue,
+  LeakedInfoType,
+  Severity,
+  VulnStatus
+} from '@shared/types'
 import { Badge } from '@renderer/components/ui/badge'
 import { useI18n } from '@renderer/i18n'
 import { SEVERITY_STYLES, STATUS_STYLES } from '@renderer/lib/severity'
@@ -40,6 +47,31 @@ export function AssetStatusBadge({
     <Badge className={cn(style.badge, 'whitespace-nowrap', className)}>
       <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', style.dot)} />
       {assetStatusLabel(status)}
+    </Badge>
+  )
+}
+
+/** Small badge that distinguishes Android / iOS / desktop client findings. */
+export function ClientBadge({
+  clientType,
+  clientConnection,
+  className
+}: {
+  clientType: ClientTypeValue
+  clientConnection?: ClientConnectionValue
+  className?: string
+}) {
+  const { t } = useI18n()
+  if (!clientType) return null
+  return (
+    <Badge
+      className={cn(
+        'whitespace-nowrap border-violet-200/70 bg-violet-50 font-mono text-[10px] text-violet-700',
+        className
+      )}
+    >
+      {t(`vuln.clientType.${clientType}`)}
+      {clientConnection ? ` · ${t(`vuln.clientConnection.${clientConnection}`)}` : ''}
     </Badge>
   )
 }

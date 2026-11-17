@@ -21,7 +21,7 @@
  *  - every SQL statement is parameterized (except fixed column/ORDER lists);
  *  - nothing is ever written except `credential_trials` (explicitly allowed);
  *  - raw credential `secret` values never leave this module: the mapping uses
- *    `maskSecret()` exactly like the original `mapCredentialRow`;
+ *    the local-first raw credential projection (no masking);
  *  - tolerant JSON parsing: corrupt columns degrade to an empty value instead
  *    of throwing, mirroring the original `parseJsonArray` behaviour.
  */
@@ -62,8 +62,8 @@ import {
   INTERNAL_LIMITS,
   buildCredentialSuggestions,
   buildSubnetHeatmap,
-  maskSecret,
 } from './shared/internal.js'
+import { hasColumn } from './schema.js'
 
 /* ------------------------------------------------------------- constants -- */
 
@@ -342,18 +342,20 @@ function mapInternalServiceRow(row) {
 }
 
 /**
- * Credential projection. The raw `secret` column is read only to compute the
- * masked preview / length and is NEVER copied into the returned object.
+ * Credential projection. The local-first workbench intentionally exposes the
+ * raw secret; the preview fields stay for older callers.
  */
 function mapCredentialRow(row) {
+  const secret = row.secret ?? ''
   return {
     id: row.id,
     project_name: normalizeProjectName(row.project_name),
     type: toCredentialType(row.type),
     username: row.username,
     domain: row.domain,
-    secret_preview: maskSecret(row.secret ?? ''),
-    secret_length: (row.secret ?? '').length,
+    secret,
+    secret_preview: secret,
+    secret_length: secret.length,
     source: row.source,
     host_id: row.host_id ?? null,
     service_id: row.service_id ?? null,
@@ -487,16 +489,19 @@ function listGraphVulnerabilities(db, limit, host, realm = 'web') {
     status, target_url, created_at, related_vuln_ids,
     substr(COALESCE(reproduction_steps, ''), 1, ${GRAPH_REPRODUCTION_PREVIEW_CHARS}) AS reproduction_steps
   `
+  const clientFilter = hasColumn(db, 'vulnerabilities', 'client_type')
+    ? " AND COALESCE(client_type, '') = ''"
+    : ''
   const rows =
     host === undefined
       ? db
           .prepare(
-            `SELECT ${columns} FROM vulnerabilities WHERE realm = ? ORDER BY created_at DESC, id ASC LIMIT ?`,
+            `SELECT ${columns} FROM vulnerabilities WHERE realm = ?${clientFilter} ORDER BY created_at DESC, id ASC LIMIT ?`,
           )
           .all(realm, bounded)
       : db
           .prepare(
-            `SELECT ${columns} FROM vulnerabilities WHERE lower(host) = lower(?) AND realm = ? ORDER BY created_at DESC, id ASC LIMIT ?`,
+            `SELECT ${columns} FROM vulnerabilities WHERE lower(host) = lower(?) AND realm = ?${clientFilter} ORDER BY created_at DESC, id ASC LIMIT ?`,
           )
           .all(host, realm, bounded)
   return rows.map((row) => ({
@@ -517,10 +522,15 @@ function listGraphVulnerabilities(db, limit, host, realm = 'web') {
 }
 
 function countVulnerabilities(db, realm = 'all') {
+  const clientFilter = hasColumn(db, 'vulnerabilities', 'client_type')
+    ? " AND COALESCE(client_type, '') = ''"
+    : ''
   const row =
     realm === 'all'
-      ? db.prepare('SELECT COUNT(*) AS count FROM vulnerabilities').get()
-      : db.prepare('SELECT COUNT(*) AS count FROM vulnerabilities WHERE realm = ?').get(realm)
+      ? db.prepare(`SELECT COUNT(*) AS count FROM vulnerabilities WHERE 1 = 1${clientFilter}`).get()
+      : db
+          .prepare(`SELECT COUNT(*) AS count FROM vulnerabilities WHERE realm = ?${clientFilter}`)
+          .get(realm)
   return row && Number.isFinite(Number(row.count)) ? Number(row.count) : 0
 }
 

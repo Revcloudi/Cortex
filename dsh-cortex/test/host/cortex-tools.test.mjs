@@ -157,6 +157,45 @@ test('cortex_save_vuln inserts and updates records', async () => {
   assert.match(detail.text, /second write/)
 })
 
+test('client findings and asset system names survive the agent tool round-trip', async () => {
+  const created = await call('cortex_save_vuln', {
+    host: 'com.example.tool-client',
+    vuln_name: 'Android exported component (tool)',
+    severity: 'High',
+    target_url: 'app://com.example.tool-client/orders',
+    client_type: 'android',
+    client_connection: 'usb',
+  })
+  const id = created.text.match(/VULN-\d{8}-\d{3}/)?.[0]
+  assert.ok(id, created.text)
+
+  const clientList = await call('cortex_list_vulns', { client: 'client', client_type: 'android' })
+  assert.match(clientList.text, new RegExp(id))
+  const serverList = await call('cortex_list_vulns', { client: 'server', search: 'Android exported component (tool)' })
+  assert.doesNotMatch(serverList.text, new RegExp(id))
+
+  const detail = await call('cortex_get_vuln', { id })
+  assert.match(detail.text, /client: android \(usb\)/)
+
+  await call('cortex_sync_asset_info', {
+    host_port: 'http://tool-system.example.test:3000/',
+    project_name: 'tool-system-test',
+    system_name: 'Example 工单系统',
+  })
+  const asset = await call('cortex_get_asset', { hostPort: 'http://tool-system.example.test:3000/' })
+  assert.match(asset.text, /system: Example 工单系统/)
+})
+
+test('cortex_sync_internal_scope rejects Android/iOS/USB test devices', async () => {
+  await assert.rejects(
+    call('cortex_sync_internal_scope', {
+      project_name: 'tool-device-test',
+      internal_hosts: [{ ip: '192.168.56.101', hostname: 'pixel-test', os: 'Android 14', source: 'usb' }],
+    }),
+    /client findings/i,
+  )
+})
+
 test('cortex_sync_asset_info merges and replaces asset snapshots', async () => {
   const hostPort = 'http://example.test:9000/'
   const created = await call('cortex_sync_asset_info', {

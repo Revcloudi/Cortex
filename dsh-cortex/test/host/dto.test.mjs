@@ -20,21 +20,18 @@ describe('dto: safe JSON parsing', () => {
   })
 })
 
-describe('dto: credentials are always masked', () => {
-  it('masks a long secret without exposing it', () => {
-    const masked = dto.maskSecret('SuperSecretValue!42')
-    assert.equal(masked.includes('SuperSecret'), false)
-    assert.equal(masked.includes('Value'), false)
-    assert.equal(masked.length > 0, true)
+describe('dto: credentials expose stored values (no masking)', () => {
+  it('returns the secret verbatim', () => {
+    assert.equal(dto.maskSecret('SuperSecretValue!42'), 'SuperSecretValue!42')
   })
 
-  it('masks short/empty secrets', () => {
+  it('handles short/empty secrets', () => {
     assert.equal(dto.maskSecret(''), '')
-    assert.equal(dto.maskSecret('ab'), '••')
-    assert.equal(dto.maskSecret('abcdef'), '••••')
+    assert.equal(dto.maskSecret('ab'), 'ab')
+    assert.equal(dto.maskSecret('abcdef'), 'abcdef')
   })
 
-  it('credential DTO has no `secret` key and carries length', () => {
+  it('credential DTO carries the raw secret and length', () => {
     const row = {
       id: 'CR-1',
       type: 'password',
@@ -49,9 +46,9 @@ describe('dto: credentials are always masked', () => {
       notes: 'x',
     }
     const view = dto.credentialMasked(row)
-    assert.equal(Object.prototype.hasOwnProperty.call(view, 'secret'), false)
+    assert.equal(view.secret, 'SuperSecretValue!42')
     assert.equal(view.secretLength, 'SuperSecretValue!42'.length)
-    assert.equal(JSON.stringify(view).includes('SuperSecretValue'), false)
+    assert.equal(JSON.stringify(view).includes('SuperSecretValue'), true)
     assert.equal(view.hostId, 'IH-1')
     assert.equal(view.serviceId, null)
   })

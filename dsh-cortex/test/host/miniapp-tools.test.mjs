@@ -115,12 +115,12 @@ it('cortex_unpack_miniapp unpacks plaintext + V1MMWX and reports unsupported hon
   assert.match(missing, /failed/)
 })
 
-it('cortex_get_miniapp_overview returns a capped, secret-masked summary', async () => {
+it('cortex_get_miniapp_overview returns a capped summary with raw secrets', async () => {
   const text = await run('cortex_get_miniapp_overview', { appid: APPID, version: '2' })
   assert.ok(text.length <= 8000, `overview ${text.length} chars exceeds 8000`)
   assert.match(text, /api\.demo-target\.test/)
   assert.match(text, /测试健康商城/)
-  assert.doesNotMatch(text, /sk-abcdefghijklmnopqrstuvwxyz/)
+  assert.match(text, /sk-abcdefghijklmnopqrstuvwxyz/)
 
   const notUnpacked = await run('cortex_get_miniapp_overview', { appid: APPID2, version: '9' })
   assert.match(notUnpacked, /not unpacked/)

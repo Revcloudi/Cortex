@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Check, Copy, Link2, Loader2, Network, ShieldAlert, Trash2, Unplug } from 'lucide-react'
+import { Check, Copy, Link2, Loader2, Network, Pencil, ShieldAlert, Trash2, Unplug, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type {
   AssetContext,
@@ -38,6 +38,7 @@ import {
   techStackTags
 } from '@renderer/lib/assets'
 import { apiUnavailableMessage, getApi, toErrorMessage } from '@renderer/lib/api'
+import { updateAssetSystemName } from '@renderer/lib/testDataExportApi'
 import { formatDateTimeFull } from '@renderer/lib/format'
 import { useI18n } from '@renderer/i18n'
 import { cn } from '@renderer/lib/utils'
@@ -270,6 +271,9 @@ export function AssetDetail({
   const [expandedInterfaceKey, setExpandedInterfaceKey] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [systemName, setSystemName] = useState('')
+  const [editingSystem, setEditingSystem] = useState(false)
+  const [savingSystem, setSavingSystem] = useState(false)
   const open = hostPort !== null
 
   useEffect(() => {
@@ -298,6 +302,8 @@ export function AssetDetail({
           setError(t('asset.detail.notFound', { host: hostPort }))
         } else {
           setAsset(next)
+          setSystemName(next.system_name ?? '')
+          setEditingSystem(false)
           setError(null)
         }
       },
@@ -364,6 +370,21 @@ export function AssetDetail({
       ? { footholds: [], hosts: [], services: [], pivots: [], vulns: [] }
       : scopeForEntry(internalOverview, asset.host_port)
   const internalEntryCount = internalScope.footholds.length + internalScope.vulns.length
+
+  const saveSystemName = async (): Promise<void> => {
+    if (!asset || savingSystem) return
+    setSavingSystem(true)
+    try {
+      const result = await updateAssetSystemName(asset.host_port, systemName)
+      setAsset((previous) => (previous ? { ...previous, system_name: result.system_name } : previous))
+      setEditingSystem(false)
+      toast.success(t('asset.detail.systemSaved'))
+    } catch (cause) {
+      toast.error(t('asset.detail.systemSaveFailed', { error: toErrorMessage(cause, t) }))
+    } finally {
+      setSavingSystem(false)
+    }
+  }
 
   const handleDelete = async (): Promise<void> => {
     if (!asset) return
@@ -458,10 +479,7 @@ export function AssetDetail({
                           appid: asset.appid || '—',
                           domains: asset.domains?.length ?? 0
                         })
-                      : t('asset.detail.projectHost', {
-                          project: asset.project_name,
-                          host: asset.host
-                        })}
+                      : t('asset.detail.hostLine', { host: asset.host })}
                   </SheetDescription>
                 </div>
                 <CopyButton
@@ -549,7 +567,70 @@ export function AssetDetail({
 
                 <TabsContent value="overview" className="pt-5">
                   <dl className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2">
-                    <MetaItem label={t('asset.field.project')}>{asset.project_name}</MetaItem>
+                    <MetaItem label={t('asset.field.system')}>
+                      {editingSystem ? (
+                        <span className="flex items-center gap-1.5">
+                          <input
+                            data-testid="asset-system-input"
+                            value={systemName}
+                            spellCheck={false}
+                            autoFocus
+                            maxLength={200}
+                            placeholder={t('asset.detail.systemPlaceholder')}
+                            onChange={(event) => setSystemName(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') void saveSystemName()
+                              if (event.key === 'Escape') {
+                                setSystemName(asset.system_name ?? '')
+                                setEditingSystem(false)
+                              }
+                            }}
+                            className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-[11.5px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={t('asset.detail.systemSave')}
+                            disabled={savingSystem}
+                            onClick={() => void saveSystemName()}
+                          >
+                            {savingSystem ? (
+                              <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Check aria-hidden="true" className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={t('common.cancel')}
+                            disabled={savingSystem}
+                            onClick={() => {
+                              setSystemName(asset.system_name ?? '')
+                              setEditingSystem(false)
+                            }}
+                          >
+                            <X aria-hidden="true" className="h-3.5 w-3.5" />
+                          </Button>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <span className="min-w-0 break-words">
+                            {asset.system_name || t('asset.value.notRecorded')}
+                          </span>
+                          <button
+                            type="button"
+                            data-testid="asset-system-edit"
+                            aria-label={t('asset.detail.editSystem')}
+                            title={t('asset.detail.editSystem')}
+                            onClick={() => setEditingSystem(true)}
+                            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <Pencil aria-hidden="true" className="h-3 w-3" />
+                          </button>
+                        </span>
+                      )}
+                    </MetaItem>
                     <MetaItem label={t('asset.field.kind')}>
                       {asset.kind === 'miniapp' ? t('asset.kind.miniapp') : t('asset.kind.web')}
                     </MetaItem>

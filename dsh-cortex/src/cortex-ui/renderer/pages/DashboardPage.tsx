@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { Download, Trash2 } from 'lucide-react'
 import {
   DEFAULT_VULN_PAGE_SIZE,
+  type ClientType,
   type DashboardStats,
   type Severity,
   type VulnerabilityListItem,
@@ -25,7 +26,7 @@ import { useDebouncedValue } from '@renderer/hooks/useDebouncedValue'
 import { apiUnavailableMessage, getApi, toErrorMessage } from '@renderer/lib/api'
 import { invalidateVulnerabilityCache } from '@renderer/lib/vulnPreload'
 
-type DashboardTab = 'web' | 'internal'
+type DashboardTab = 'web' | 'client' | 'internal'
 
 interface DashboardPageProps {
   dataVersion: number
@@ -46,6 +47,7 @@ export function DashboardPage({
   const debouncedSearch = useDebouncedValue(search.trim(), 180)
   const [severity, setSeverity] = useState<Severity | 'all'>('all')
   const [status, setStatus] = useState<VulnStatus | 'all'>('all')
+  const [clientType, setClientType] = useState<ClientType | 'all'>('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<VulnPageSize>(DEFAULT_VULN_PAGE_SIZE)
 
@@ -103,6 +105,9 @@ export function DashboardPage({
     api
       .listVulnerabilities({
         realm: 'web',
+        // The Web tab is server-only; client findings have their own tab.
+        client: tab === 'client' ? 'client' : 'server',
+        ...(tab === 'client' && clientType !== 'all' ? { client_type: clientType } : {}),
         search: debouncedSearch ? debouncedSearch : undefined,
         severity,
         status,
@@ -130,7 +135,7 @@ export function DashboardPage({
     return () => {
       alive = false
     }
-  }, [debouncedSearch, severity, status, page, pageSize, dataVersion, reloadSeq])
+  }, [tab, clientType, debouncedSearch, severity, status, page, pageSize, dataVersion, reloadSeq])
 
   useEffect(() => {
     if (items === null) return
@@ -152,7 +157,13 @@ export function DashboardPage({
       return
     }
     let alive = true
-    api.getStats({ realm: 'web' }).then(
+    api
+      .getStats({
+        realm: 'web',
+        client: tab === 'client' ? 'client' : 'server',
+        ...(tab === 'client' && clientType !== 'all' ? { client_type: clientType } : {})
+      })
+      .then(
       (next) => {
         if (!alive) return
         setStats(next)
@@ -168,11 +179,11 @@ export function DashboardPage({
     return () => {
       alive = false
     }
-  }, [dataVersion, reloadSeq])
+  }, [dataVersion, reloadSeq, tab, clientType])
 
-  // Header badge on the internal tab: `stats.internal` is computed across both
-  // realms, so it stays accurate next to the Web-realm metrics.
+  // Header badges: server and client findings are scoped independently.
   const internalCount = stats === null ? null : stats.internal.total
+  const clientCount = stats === null ? null : stats.client.total
 
   // `/` focuses the Web-tab search input. The shortcut is gated to the Web tab
   // (the internal tab mounts no FilterBar) and to plain keystrokes.
@@ -195,16 +206,24 @@ export function DashboardPage({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [tab])
 
-  const filtersActive = search.trim() !== '' || severity !== 'all' || status !== 'all'
+  const filtersActive =
+    search.trim() !== '' ||
+    severity !== 'all' ||
+    status !== 'all' ||
+    (tab === 'client' && clientType !== 'all')
 
-  const handleTabChange = useCallback((next: string) => {
-    const value: DashboardTab = next === 'internal' ? 'internal' : 'web'
-    setTab(value)
-    if (value === 'internal') {
+  const handleTabChange = useCallback(
+    (next: string) => {
+      const value: DashboardTab =
+        next === 'internal' ? 'internal' : next === 'client' ? 'client' : 'web'
+      setTab(value)
+      setPage(1)
       setSelectedId(null)
       setBulkConfirmOpen(false)
-    }
-  }, [])
+      clearSelection()
+    },
+    [clearSelection]
+  )
 
   const handleSearchChange = useCallback(
     (value: string) => {
@@ -233,10 +252,20 @@ export function DashboardPage({
     [clearSelection]
   )
 
+  const handleClientTypeChange = useCallback(
+    (value: ClientType | 'all') => {
+      setClientType(value)
+      setPage(1)
+      clearSelection()
+    },
+    [clearSelection]
+  )
+
   const handleClearFilters = useCallback(() => {
     setSearch('')
     setSeverity('all')
     setStatus('all')
+    setClientType('all')
     setPage(1)
     clearSelection()
   }, [clearSelection])
@@ -366,6 +395,113 @@ export function DashboardPage({
   const selectedCount = selectedIds.size
   const showBulkBar = selectMode && selectedCount > 0
 
+  const vulnWorkspace = (clientView: boolean) => (
+    <>
+      <div className="shrink-0">
+        <FilterBar
+          search={search}
+          severity={severity}
+          status={status}
+          stats={stats}
+          total={items === null ? null : total}
+          filtersActive={filtersActive}
+          selectMode={selectMode}
+          clientType={clientType}
+          showClientType={clientView}
+          searchInputRef={searchInputRef}
+          onSearchChange={handleSearchChange}
+          onSeverityChange={handleSeverityChange}
+          onStatusChange={handleStatusChange}
+          onClientTypeChange={handleClientTypeChange}
+          onToggleSelectMode={handleToggleSelectMode}
+          onClear={handleClearFilters}
+          onRefresh={refresh}
+        />
+      </div>
+
+      {showBulkBar ? (
+        <div
+          data-testid="vuln-bulk-bar"
+          role="region"
+          aria-label={t('dashboard.bulk.region')}
+          className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-accent-soft px-3 py-2"
+        >
+          <span
+            className="text-[12px] font-medium tabular-nums text-foreground"
+            aria-live="polite"
+          >
+            {t('dashboard.bulk.selected', { count: selectedCount })}
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExportOpen(true)}
+              disabled={exporting}
+              className="gap-1.5"
+            >
+              <Download aria-hidden="true" className="h-3.5 w-3.5" />
+              {exporting ? t('dashboard.bulk.exporting') : t('dashboard.bulk.export')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="vuln-export-test-data"
+              onClick={() => setTestDataExportOpen(true)}
+              className="gap-1.5"
+            >
+              <Download aria-hidden="true" className="h-3.5 w-3.5" />
+              {t('dashboard.bulk.exportTestData')}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setBulkConfirmOpen(true)}
+              disabled={bulkDeleting}
+              className="gap-1.5"
+            >
+              <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+              {t('dashboard.bulk.deleteSelected')}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleCancelSelection}>
+              {t('dashboard.bulk.cancelSelection')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-2 flex min-h-0 flex-1 flex-col">
+        <VulnTable
+          items={items}
+          loading={listLoading}
+          error={listError}
+          filtersActive={filtersActive}
+          seeding={seeding}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          onToggleSelect={handleToggleSelect}
+          onToggleSelectAll={handleToggleSelectAll}
+          onOpen={setSelectedId}
+          onClearFilters={handleClearFilters}
+          onSeedDemo={() => void handleSeedDemo()}
+          onRetry={refresh}
+          fillHeight={(items?.length ?? 0) >= pageSize}
+          footer={
+            items !== null && total > 0 ? (
+              <PaginationBar
+                page={page}
+                pageSize={pageSize}
+                total={total}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+              />
+            ) : null
+          }
+        />
+      </div>
+    </>
+  )
+
   return (
     <>
       <Tabs
@@ -385,6 +521,22 @@ export function DashboardPage({
               className="h-7 rounded-[5px] border border-transparent px-2.5 text-[12px] data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:after:hidden data-[state=active]:shadow-none"
             >
               {t('dashboard.tab.web')}
+            </TabsTrigger>
+            <TabsTrigger
+              value="client"
+              data-testid="dashboard-tab-client"
+              className="h-7 rounded-[5px] border border-transparent px-2.5 text-[12px] data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:after:hidden data-[state=active]:shadow-none"
+            >
+              {t('dashboard.tab.client')}
+              {clientCount !== null ? (
+                <span
+                  data-testid="dashboard-client-count"
+                  aria-label={t('dashboard.tab.clientCountAria', { count: clientCount })}
+                  className="rounded-full border border-border bg-background px-1.5 font-mono text-[9.5px] tabular-nums text-muted-foreground"
+                >
+                  {clientCount}
+                </span>
+              ) : null}
             </TabsTrigger>
             <TabsTrigger
               value="internal"
@@ -512,6 +664,14 @@ export function DashboardPage({
               }
             />
           </div>
+        </TabsContent>
+
+        <TabsContent
+          value="client"
+          data-testid="dashboard-client-panel"
+          className="mt-3 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+        >
+          {vulnWorkspace(true)}
         </TabsContent>
 
         <TabsContent

@@ -8,12 +8,12 @@
  *
  *   - pages / subpackages from `app-config.json`,
  *   - business domains and API endpoint candidates from text files,
- *   - hard-coded secrets (masked in every summary / persisted masked overview),
+ *   - hard-coded secrets (raw values in every summary / persisted overview),
  *   - authz-test parameter candidates (query / path / config values).
  *
  * `analyzeUnpacked` keeps full secret values in the returned object so the
  * local asset importer can persist them. `saveOverview` writes `overview.json`
- * with masked values only plus `extracted.json` with the full values.
+ * with the full values plus `extracted.json` for local asset import.
  */
 
 import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync } from 'node:fs'
@@ -390,8 +390,7 @@ function walkFiles(rootPath) {
 
 export function maskSecret(value) {
   const text = typeof value === 'string' ? value : String(value === undefined || value === null ? '' : value)
-  if (text.length <= 8) return '***'
-  return `${text.slice(0, 4)}\u2026${text.slice(-2)}`
+  return text
 }
 
 function isPlaceholder(value) {
@@ -901,8 +900,8 @@ export function analyzeUnpacked({ unpackedPath, appid = '', version = '', manife
 }
 
 /**
- * Render a compact, token-friendly overview. Secret values are NEVER printed:
- * only `value_masked` is used.
+ * Render a compact, token-friendly overview. Secret values are printed verbatim:
+ * `value_masked` is kept as an alias of the raw value.
  *
  * @param {object} overview
  * @param {{maxChars?:number}} [options]
@@ -954,7 +953,7 @@ export function buildOverviewText(overview, { maxChars = 8000 } = {}) {
 
   const secrets = Array.isArray(data.secrets) ? data.secrets : []
   push('')
-  push(`Secrets (${secrets.length}, masked):`)
+  push(`Secrets (${secrets.length}):`)
   list(
     secrets,
     (item) =>
@@ -1040,8 +1039,8 @@ function extractedPayload(overview) {
 /**
  * Persist the analyzer output inside the unpacked directory.
  *
- * `overview.json` contains masked secret values only; `extracted.json` contains
- * the full values for local asset import.
+ * `overview.json` contains the full secret values; `extracted.json` keeps the
+ * same values for local asset import.
  *
  * @param {string} unpackedPath
  * @param {object} overview
@@ -1056,7 +1055,7 @@ export function saveOverview(unpackedPath, overview) {
 }
 
 /**
- * Read a previously saved `overview.json` (masked secrets only).
+ * Read a previously saved `overview.json` (raw secret values).
  *
  * @param {string} unpackedPath
  * @returns {object|null}

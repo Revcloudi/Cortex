@@ -42,6 +42,7 @@ import * as misc from './misc.js'
 import * as settings from './settings.js'
 import * as repeater from './repeater.js'
 import * as repeaterStore from './repeater-store.js'
+import { ensureFeatureColumns } from './schema.js'
 import * as snapshots from './snapshots.js'
 import * as vulns from './vulns.js'
 
@@ -88,6 +89,7 @@ const ROUTES = [
   // removes only asset rows + identity sidecars; vulnerabilities stay intact.
   { pattern: /^\/assets\/bulk-delete$/, methods: { POST: assets.handleBulkDelete } },
   { pattern: /^\/assets\/(.+)\/related-vulns$/, methods: { GET: assets.handleRelatedVulns } },
+  { pattern: /^\/assets\/(.+)\/system-name$/, methods: { PATCH: assets.handleUpdateSystemName } },
   { pattern: /^\/assets\/(.+)$/, methods: { GET: assets.handleDetail, DELETE: assets.handleDelete } },
 
   { pattern: /^\/snapshots$/, methods: { GET: snapshots.handleList } },
@@ -386,6 +388,7 @@ export async function handleCortex(deps) {
       if (method !== 'POST') throw methodNotAllowed()
       holder.ensure()
       holder.assertUsable()
+      ensureFeatureColumns(holder)
       const handled = await runDelegated(await loadDelegatedHandler('graph', 'handleGraph'), ctx)
       if (!handled) misc.sendUnsupported(res, 'Memory Nebula graph is not available in this host')
       return
@@ -395,6 +398,7 @@ export async function handleCortex(deps) {
       if (method !== 'GET') throw methodNotAllowed()
       holder.ensure()
       holder.assertUsable()
+      ensureFeatureColumns(holder)
       const handled = await runDelegated(await loadDelegatedHandler('internal', 'handleInternal'), ctx)
       if (!handled) misc.sendUnsupported(res, 'loot history is not available in this host')
       return
@@ -403,6 +407,7 @@ export async function handleCortex(deps) {
     if (path === '/internal' || path.startsWith('/internal/')) {
       holder.ensure()
       holder.assertUsable()
+      ensureFeatureColumns(holder)
       if (path === '/internal/credential-trial') holder.assertWritable()
       const handled = await runDelegated(await loadDelegatedHandler('internal', 'handleInternal'), ctx)
       if (!handled) misc.sendUnsupported(res, 'internal operations are not available in this host')
@@ -432,6 +437,7 @@ export async function handleCortex(deps) {
     holder.ensure()
     if (route.db !== false) {
       holder.assertUsable()
+      ensureFeatureColumns(holder)
       if (WRITE_METHODS.has(method)) holder.assertWritable()
     }
 

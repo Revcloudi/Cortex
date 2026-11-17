@@ -129,6 +129,10 @@ import type { RepeaterSendInput, RepeaterSendResult } from './repeater'
 export interface DashboardStatsQuery {
   /** Realm scope of the main counters; default `all` (legacy behavior). */
   realm?: RealmFilter
+  /** `server` excludes client findings; `client` shows only client findings. */
+  client?: 'server' | 'client'
+  /** Narrow client findings to one platform. */
+  client_type?: 'android' | 'ios' | 'desktop'
 }
 
 /**
@@ -305,8 +309,8 @@ export const MCP_TOOL_DOCS: readonly McpToolDoc[] = [
     name: 'query_asset_context',
     title: { zh: '查询资产上下文', en: 'Query asset context' },
     description: {
-      zh: '只读查询入口，二选一：传 host_port 返回该资产的完整上下文（项目名、技术栈、interfaces[]、test_parameters[]、敏感泄露、关联漏洞）；传 project_name 模糊查询返回资产数组。开始测试前用于复用已有侦察成果。可选 include_internal 返回该入口资产/项目的内网作战摘要（foothold、内网主机/服务、pivot），include_credentials 额外返回脱敏后的凭据（默认关闭，避免上下文膨胀与敏感值外泄）。',
-      en: 'Read-only lookup, one of two modes: host_port returns the full asset context (project, tech stack, interfaces[], test_parameters[], leaked info, related vulnerabilities); project_name performs a fuzzy lookup and returns an asset array. Use it before testing to reuse existing recon. Optional include_internal adds the internal-scope summary for the entry asset / project (footholds, internal hosts/services, pivots); include_credentials additionally returns masked credentials (off by default to avoid context bloat and secret exposure).'
+      zh: '只读查询入口，二选一：传 host_port 返回该资产的完整上下文（系统名、项目名、技术栈、interfaces[]、test_parameters[]、敏感泄露、关联漏洞）；传 project_name 模糊查询返回资产数组。开始测试前用于复用已有侦察成果。可选 include_internal 返回该入口资产/项目的内网作战摘要（foothold、内网主机/服务、pivot），include_credentials 额外返回原始凭据（默认关闭，避免上下文膨胀）。',
+      en: 'Read-only lookup, one of two modes: host_port returns the full asset context (system name, project, tech stack, interfaces[], test_parameters[], leaked info, related vulnerabilities); project_name performs a fuzzy lookup and returns an asset array. Use it before testing to reuse existing recon. Optional include_internal adds the internal-scope summary for the entry asset / project (footholds, internal hosts/services, pivots); include_credentials additionally returns raw credentials (off by default to keep context small).'
     },
     input: {
       zh: '{ host_port?: string, project_name?: string }（二选一）+ { include_internal?: boolean, include_credentials?: boolean }',
@@ -337,8 +341,8 @@ export const MCP_TOOL_DOCS: readonly McpToolDoc[] = [
     name: 'sync_internal_scope',
     title: { zh: '同步内网作战域', en: 'Sync internal operations scope' },
     description: {
-      zh: '将内网作战域写入本地 SQLite：foothold、internal hosts/services、credentials、pivots。调用前先用 query_asset_context({ host_port }) 查看已有上下文，并用 save_vulnerability 保存入口 RCE/初始访问漏洞。所有实体按 project 归属；mode=merge（默认，增量、不删除）或 replace（仅替换本次传入的数组）；删除用 removed 显式指定。service_host / internal_service_id 用于把内网漏洞关联到服务。凭据是高敏数据：只记录必要字段，secret 会自动脱敏返回，不要把 secret 写进 notes/日志。',
-      en: 'Persist the internal operations domain into local SQLite: footholds, internal hosts/services, credentials and pivots. Call query_asset_context({ host_port }) first and save the entry RCE / initial-access finding with save_vulnerability. Every entity belongs to a project; mode=merge (default, incremental, never deletes) or replace (only the arrays provided are replaced); deletions are explicit via removed. service_host / internal_service_id link internal vulnerabilities to a service. Credentials are sensitive: record only necessary fields — secrets are masked on read, never put them in notes/logs.'
+      zh: '将内网作战域写入本地 SQLite：foothold、internal hosts/services、credentials、pivots。调用前先用 query_asset_context({ host_port }) 查看已有上下文，并用 save_vulnerability 保存入口 RCE/初始访问漏洞。所有实体按 project 归属；mode=merge（默认，增量、不删除）或 replace（仅替换本次传入的数组）；删除用 removed 显式指定。service_host / internal_service_id 用于把内网漏洞关联到服务。凭据按原值返回，不脱敏。Android/iOS 测试机的 USB/SSH 连接属于客户端漏洞上下文，不要写入内网作战。',
+      en: 'Persist the internal operations domain into local SQLite: footholds, internal hosts/services, credentials and pivots. Call query_asset_context({ host_port }) first and save the entry RCE / initial-access finding with save_vulnerability. Every entity belongs to a project; mode=merge (default, incremental, never deletes) or replace (only the arrays provided are replaced); deletions are explicit via removed. service_host / internal_service_id link internal vulnerabilities to a service. Credentials are returned raw (no masking). USB/SSH connections to Android/iOS test devices belong to client findings, not internal operations.'
     },
     input: {
       zh: '{ project_name, mode?: "merge" | "replace", footholds?: FootholdInput[], hosts?: InternalHostInput[], services?: InternalServiceInput[], credentials?: CredentialInput[], pivots?: PivotInput[], removed?: { foothold_ids[], host_ids[], service_ids[], credential_ids[], pivot_ids[] } }',

@@ -23,10 +23,13 @@ import {
   listLinkedVulnIds,
   listMiniappVersions,
 } from './asset-identity.js'
+import { ensureFeatureColumns, hasColumn } from './schema.js'
 
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 const STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed']
 const REALMS = ['web', 'internal', 'all']
+const CLIENT_TYPES = ['android', 'ios', 'desktop']
+const CLIENT_CONNECTIONS = ['usb', 'ssh', 'remote', 'emulator', 'wifi']
 
 const OUTPUT_SCHEMA = {
   type: 'object',
@@ -132,6 +135,7 @@ function ensureDb(holder) {
     const reason = status.error || `unsupported schema v${status.schemaVersion ?? '?'}`
     throw new Error(`Cortex database unavailable: ${reason}. This plugin supports schema v5 only and never migrates.`)
   }
+  ensureFeatureColumns(holder)
   return holder.db
 }
 
@@ -165,6 +169,12 @@ export function createCortexToolDefinitions({ holder, config }) {
     'List local Cortex vulnerabilities (vulnerability library) with optional realm/search/severity/status filters and paging. Returns a compact table plus totals. Use ids with cortex_get_vuln.',
     {
       realm: { type: 'string', enum: REALMS, description: 'web | internal | all (default all)' },
+      client: {
+        type: 'string',
+        enum: ['server', 'client'],
+        description: 'server = normal web findings; client = Android/iOS/desktop findings',
+      },
+      client_type: { type: 'string', enum: CLIENT_TYPES, description: 'Narrow client findings to one platform' },
       search: { type: 'string', description: 'Substring match on id/host/name/type/target/service host' },
       severity: { type: 'string', enum: SEVERITIES },
       status: { type: 'string', enum: STATUSES },
@@ -180,6 +190,19 @@ export function createCortexToolDefinitions({ holder, config }) {
       if (realm) {
         where.push('realm = ?')
         params.push(realm)
+      }
+      const hasClient = hasColumn(db, 'vulnerabilities', 'client_type')
+      const client = text(args.client)
+      const clientType = text(args.client_type)
+      if (!hasClient) {
+        if (client === 'client' || clientType) where.push('0 = 1')
+      } else {
+        if (client === 'server') where.push("COALESCE(client_type, '') = ''")
+        else if (client === 'client') where.push("COALESCE(client_type, '') <> ''")
+        if (clientType) {
+          where.push('client_type = ?')
+          params.push(clientType)
+        }
       }
       const severity = severityClause(args.severity)
       if (severity) {
@@ -201,11 +224,13 @@ export function createCortexToolDefinitions({ holder, config }) {
       const page = Math.max(1, Number(args.page) || 1)
       const pageSize = Math.min(200, Math.max(1, Number(args.pageSize) || 20))
       const rows = db
-        .prepare(`SELECT id, host, realm, severity, status, vuln_name, service_host, created_at FROM vulnerabilities${whereSql} ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?`)
+        .prepare(
+          `SELECT id, host, realm, severity, status, vuln_name, service_host, created_at${hasClient ? ', client_type, client_connection' : ''} FROM vulnerabilities${whereSql} ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?`,
+        )
         .all(...params, pageSize, (page - 1) * pageSize)
       const lines = rows.map(
         (row) =>
-          `${row.id} | ${row.severity} | ${row.status} | ${row.realm} | ${row.host}${row.service_host ? ` (${row.service_host})` : ''} | ${row.vuln_name}`,
+          `${row.id} | ${row.severity} | ${row.status} | ${row.realm}${row.client_type ? `/${row.client_type}` : ''} | ${row.host}${row.service_host ? ` (${row.service_host})` : ''}${row.client_connection ? ` · ${row.client_connection}` : ''} | ${row.vuln_name}`,
       )
       const header = `${LOG} ${total} vulnerabilities (page ${page}, ${pageSize}/page; realm ${args.realm || 'all'})`
       return { text: [header, ...lines].join('\n') }
@@ -224,7 +249,7 @@ export function createCortexToolDefinitions({ holder, config }) {
       const parts = [
         `# ${row.vuln_name} (${row.id})`,
         `host: ${row.host}`,
-        `realm: ${row.realm}${row.service_host ? ` · service_host: ${row.service_host}` : ''}`,
+        `realm: ${row.realm}${row.service_host ? ` · service_host: ${row.service_host}` : ''}${row.client_type ? ` · client: ${row.client_type}${row.client_connection ? ` (${row.client_connection})` : ''}` : ''}`,
         `severity: ${row.severity} · status: ${row.status} · type: ${row.vuln_type}`,
         `target: ${row.target_url}${row.entry_point ? ` · entry: ${row.entry_point}` : ''}`,
         `created: ${row.created_at}`,
@@ -341,6 +366,16 @@ export function createCortexToolDefinitions({ holder, config }) {
       severity: { type: 'string', enum: SEVERITIES },
       target_url: { type: 'string' },
       realm: { type: 'string', enum: ['web', 'internal'] },
+      client_type: {
+        type: 'string',
+        enum: ['', 'android', 'ios', 'desktop'],
+        description: 'Empty for normal web findings; android/ios/desktop for client findings. Client findings are excluded from retest and Nebula.',
+      },
+      client_connection: {
+        type: 'string',
+        enum: ['', 'usb', 'ssh', 'remote', 'emulator', 'wifi'],
+        description: 'How the client/test device was reached. USB/SSH devices belong here, never in the internal-operations scope.',
+      },
       service_host: { type: 'string', description: 'Internal service label, e.g. 10.0.1.10:6379 (realm=internal)' },
       internal_service_id: { type: 'string' },
       entry_point: { type: 'string' },
@@ -364,6 +399,17 @@ export function createCortexToolDefinitions({ holder, config }) {
       if (!STATUSES.includes(status)) throw new Error(`status must be one of ${STATUSES.join(', ')}`)
       const realm = text(args.realm) || 'web'
       if (realm !== 'web' && realm !== 'internal') throw new Error('realm must be web or internal')
+      const clientType = text(args.client_type).trim()
+      if (clientType && !CLIENT_TYPES.includes(clientType)) {
+        throw new Error(`client_type must be one of ${CLIENT_TYPES.join(', ')}`)
+      }
+      const clientConnection = text(args.client_connection).trim()
+      if (clientConnection && !CLIENT_CONNECTIONS.includes(clientConnection)) {
+        throw new Error(`client_connection must be one of ${CLIENT_CONNECTIONS.join(', ')}`)
+      }
+      if ((clientType || clientConnection) && realm === 'internal') {
+        throw new Error('client findings must use realm=web; USB/SSH devices do not belong to the internal scope')
+      }
       const existingId = text(args.id).trim()
       const existing = existingId ? db.prepare('SELECT id FROM vulnerabilities WHERE id = ?').get(existingId) : null
       if (existingId && !existing) throw new Error(`id ${existingId} does not exist; omit id to create a new record`)
@@ -390,6 +436,8 @@ export function createCortexToolDefinitions({ holder, config }) {
         related_vuln_ids: jsonColumn(args.related_vuln_ids),
         status,
         realm,
+        client_type: clientType,
+        client_connection: clientConnection,
         service_host: text(args.service_host),
         internal_service_id: text(args.internal_service_id),
       }
@@ -423,6 +471,10 @@ export function createCortexToolDefinitions({ holder, config }) {
     {
       host_port: { type: 'string', description: 'Full URL/authority, e.g. http://127.0.0.1:8080/' },
       project_name: { type: 'string' },
+      system_name: {
+        type: 'string',
+        description: 'Human-facing system name (company + system), e.g. 某公司工单系统. Shown in the asset library instead of project_name.',
+      },
       host: { type: 'string' },
       tech_stack: { type: 'string' },
       auth_required: { type: 'boolean' },
@@ -497,6 +549,12 @@ export function createCortexToolDefinitions({ holder, config }) {
       const values = {
         host: merge && existing ? existing.host : text(args.host) || text(new URL(hostPort.startsWith('http') ? hostPort : `http://${hostPort}`).host),
         project_name: project,
+        system_name:
+          args.system_name !== undefined
+            ? text(args.system_name).trim().slice(0, 200)
+            : merge && existing && hasColumn(db, 'assets', 'system_name')
+              ? text(existing.system_name)
+              : '',
         tech_stack: args.tech_stack !== undefined ? text(args.tech_stack) : merge && existing ? existing.tech_stack : '',
         auth_required: scalar('auth_required', false) ? 1 : 0,
         status: scalar('status', 'Alive'),
@@ -760,7 +818,7 @@ export function createCortexToolDefinitions({ holder, config }) {
         meta?.kind === 'miniapp'
           ? `domain relations: ${domains.map((domain) => domain.host).join(', ') || '-'} · versions: ${versions.length}`
           : `host: ${row.host}`,
-        `project: ${normalizeProjectName(row.project_name)} · status: ${row.status} · auth_required: ${row.auth_required ? 'true' : 'false'} · last_seen: ${row.last_seen}`,
+        `system: ${row.system_name || '-'} · project: ${normalizeProjectName(row.project_name)} · status: ${row.status} · auth_required: ${row.auth_required ? 'true' : 'false'} · last_seen: ${row.last_seen}`,
         `tech_stack: ${row.tech_stack}`,
         '',
         `## interfaces (${interfaces.length})`,
@@ -841,7 +899,7 @@ export function createCortexToolDefinitions({ holder, config }) {
 
   const internalOverview = defineTool(
     'cortex_internal_overview',
-    'Summarise the local Cortex internal-operation scope: footholds, internal hosts/services, credentials (masked) and pivots, optionally scoped to one project.',
+    'Summarise the local Cortex internal-operation scope: footholds, internal hosts/services, credentials (raw values) and pivots, optionally scoped to one project.',
     { project: { type: 'string' } },
     [],
     async (args) => {
@@ -909,7 +967,7 @@ export function createCortexToolDefinitions({ holder, config }) {
 
   const internalSyncTool = defineTool(
     'cortex_sync_internal_scope',
-    'Register internal operations data for a project (schema v3): internal_hosts, internal_services, footholds, credentials and pivots. Call it after initial access and whenever new internal hosts/services/credentials are found. Arrays are upserted; footholds accept host_ips to link reachable hosts, pivots accept hops [{ref_kind, ref_id, label?, via?}].',
+    'Register internal operations data for a project (schema v3): internal_hosts, internal_services, footholds, credentials and pivots. Call it after initial access and whenever new internal hosts/services/credentials are found. Arrays are upserted; footholds accept host_ips to link reachable hosts, pivots accept hops [{ref_kind, ref_id, label?, via?}]. Do NOT put USB/SSH-connected Android/iOS test devices here: save those as client findings with client_type/client_connection instead.',
     {
       project_name: { type: 'string', minLength: 1, maxLength: 120 },
       internal_hosts: {

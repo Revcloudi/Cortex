@@ -58,7 +58,7 @@ function MatrixSkeleton() {
 
 /**
  * Credential × service matrix (§8.2). Rows are credentials rendered with the
- * masked `secret_preview` only (the raw secret never reaches the renderer), the
+ * raw secret is shown intentionally (no masking), the
  * columns are internal services sorted by host IP / port, and each non-empty
  * cell is a deterministic suggestion carrying rule / caveat / confidence.
  *
@@ -273,9 +273,9 @@ export function CredentialMatrix({
                         <span className="mt-1 flex items-center gap-1.5">
                           <code
                             className="truncate font-mono text-[10.5px] text-muted-foreground"
-                            title={t('internal.matrix.maskedSecret')}
+                            title={t('internal.matrix.rawSecret')}
                           >
-                            {credential.secret_preview || '—'}
+                            {credential.secret || credential.secret_preview || '—'}
                           </code>
                           <span className="shrink-0 text-[9.5px] tabular-nums text-muted-foreground/70">
                             {t('internal.matrix.secretLength', {

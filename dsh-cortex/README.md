@@ -2,13 +2,17 @@
 
 在 DeepSeek Harness 内使用原版 Cortex 工作台：漏洞看板、内网作战、记忆星云图谱、资产库、认知快照、漏洞复测、Web Fuzzer 与小程序逆向（wxapkg 检测/解密/解包/分析/资产入库），内置 22 个 `cortex_*` Agent 工具，无需 MCP。
 
-## 1.2.0 新增
+## 1.3.0 新增
 
-- **项目 / 选中资产导出**：`cortex.export/v1` JSON、CSV、DefectDojo Generic Findings；默认脱敏（泄露值、Cookie、Authorization、Token、密钥类字段），CSV 防注入，可选 Markdown 证据文件；可写入用户选择的目录。
-- **资产库多选**：复选列、全选当前筛选结果、批量导出与批量删除；删除只清理资产及 `asset_meta / asset_domains / miniapp_versions / asset_vuln_links`，漏洞记录保留。
-- **独立 Web Fuzzer**：不再依赖漏洞记录，删除目标漏洞选择器；原始请求编辑器即唯一入口，发送请求不携带 `vulnId`；Host 使用独立的公网目标 SSRF 策略（拒绝本机/内网/link-local/metadata，重定向逐跳复检）。
-- **响应渲染**：原始 / JSON / 渲染三视图；HTML 在 `sandbox=""` + CSP 的 iframe 中渲染，脚本、事件属性与 `javascript:` URL 会被移除；非 HTML 文本用安全 `<pre>`，二进制显示不可渲染提示；三种视图都保留状态行与响应头。
-- 每个小程序仍按 appid 独立成资产（无 appid 时用包哈希），域名是关联关系而不是资产身份；数据库仍为 Cortex schema v5，不修改 `PRAGMA user_version`。
+- **客户端漏洞独立**：`client_type=android|ios|desktop`、`client_connection=usb|ssh|remote|emulator|wifi`；新增“客户端漏洞”页签。客户端漏洞不进入复测页面和记忆星图；USB/SSH 测试机连接记录为客户端上下文，不写入内网作战。
+- **内网实体清理**：内网作战新增主机、服务、foothold、凭据、代理的逐条删除（带确认，级联清理依赖实体）。
+- **资产系统名**：资产库主列改为“系统名”，可在资产详情编辑；项目名只用于关联/筛选，不再是主展示名称。小程序继续按 appid 独立成资产。
+- **移除脱敏**：漏洞详情、资产泄露信息、凭据、Loot、导出、POC 文本均返回/写出原始值；CSV 仍保留公式注入转义。本地优先使用，请自行控制导出文件与日志的保存位置。
+- **项目 / 选中资产导出**：`cortex.export/v1` JSON、CSV、DefectDojo Generic Findings，可选 Markdown 证据文件；可写入用户选择的目录。
+- **资产库多选**：复选列、全选当前筛选结果、批量导出与批量删除；删除只清理资产及 sidecar，漏洞记录保留。
+- **独立 Web Fuzzer**：不再依赖漏洞记录，无目标漏洞选择器；原始请求编辑器即唯一入口，发送请求不携带 `vulnId`；Host 使用独立的公网目标 SSRF 策略。
+- **响应渲染**：原始 / JSON / 渲染三视图；HTML 在 `sandbox=""` + CSP 的 iframe 中渲染，状态行和响应头保留。
+- 数据库仍为 Cortex schema v5；新字段通过 additive `ALTER TABLE` 补充，不修改 `PRAGMA user_version`。
 
 ## 安装
 

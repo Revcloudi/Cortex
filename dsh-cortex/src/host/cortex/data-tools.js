@@ -73,6 +73,19 @@ export function syncInternalScope({ holder, args }) {
   const warnings = []
   const hostIdByIp = new Map()
 
+  // USB/SSH-connected Android/iOS test devices are client findings, not
+  // internal network hosts. Reject obvious mobile-device descriptors instead
+  // of silently polluting the internal-operations scope.
+  const mobileHost = list(args.internal_hosts).find((host) => {
+    const descriptor = [host.os, host.hostname, host.source].map(text).join(' ').toLowerCase()
+    return /\b(android|ios|iphone|ipad|usb)\b/.test(descriptor)
+  })
+  if (mobileHost) {
+    throw new Error(
+      'Android/iOS/USB test devices belong to client findings; use cortex_save_vuln with client_type/client_connection instead of cortex_sync_internal_scope',
+    )
+  }
+
   const findHost = (ip) => {
     if (hostIdByIp.has(ip)) return hostIdByIp.get(ip)
     const row = db.prepare('SELECT id FROM internal_hosts WHERE project_name = ? AND ip = ?').get(project, ip)

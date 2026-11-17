@@ -254,7 +254,7 @@ export const retestMessages: MessageBundle = {
     'retest.run.resultAria': '最近一次执行结果',
     'retest.run.resultRequests': '请求数',
     'retest.run.resultDuration': '耗时',
-    'retest.run.resultEvidence': '脚本证据（已脱敏）',
+    'retest.run.resultEvidence': '脚本证据',
     'retest.run.resultNoEvidence': '脚本没有返回 evidence。',
     'retest.run.resultError': '错误信息',
     'retest.run.resultDisclaimer': '脚本自述，需人工确认；不会自动修改漏洞状态。',
@@ -270,7 +270,7 @@ export const retestMessages: MessageBundle = {
     'retest.console.empty': '还没有日志；开始执行后脚本的 log() 输出会显示在这里。',
     'retest.console.clear': '清空日志',
     'retest.console.copy': '复制日志',
-    'retest.console.copyDone': '已复制脱敏日志',
+    'retest.console.copyDone': '已复制日志',
     'retest.console.autoScroll': '自动滚动',
     'retest.console.autoScrollAria': '日志自动滚动到底部',
     'retest.console.lineCount': '{count} / {max} 行',
@@ -302,7 +302,7 @@ export const retestMessages: MessageBundle = {
     'retest.dialog.conclusionPlaceholder':
       '记录人工核验过程与结论；不要粘贴脚本代码、Cookie 或请求头。',
     'retest.dialog.conclusionHint':
-      '结论来自脱敏后的脚本 evidence，请人工核对；提交时还会去除脚本与已知敏感值。',
+      '结论来自脚本 evidence，请人工核对。',
     'retest.dialog.statusLabel': '同步漏洞状态（可选）',
     'retest.dialog.statusKeep': '保持当前状态（{status}）',
     'retest.dialog.sanitizeHint': '仅写入人类可读摘要，不含 JS 代码、请求头与 Cookie。',
@@ -792,7 +792,7 @@ export const retestMessages: MessageBundle = {
     'retest.run.resultAria': 'Result of the latest run',
     'retest.run.resultRequests': 'Requests',
     'retest.run.resultDuration': 'Duration',
-    'retest.run.resultEvidence': 'Script evidence (redacted)',
+    'retest.run.resultEvidence': 'Script evidence',
     'retest.run.resultNoEvidence': 'The script returned no evidence.',
     'retest.run.resultError': 'Error',
     'retest.run.resultDisclaimer':
@@ -841,7 +841,7 @@ export const retestMessages: MessageBundle = {
     'retest.dialog.conclusionPlaceholder':
       'Describe the manual verification and conclusion; never paste script code, cookies or headers.',
     'retest.dialog.conclusionHint':
-      'Prefilled from redacted script evidence; review it before submitting. Scripts and known secrets are stripped again on submit.',
+      'Prefilled from script evidence; review it before submitting.',
     'retest.dialog.statusLabel': 'Sync finding status (optional)',
     'retest.dialog.statusKeep': 'Keep current status ({status})',
     'retest.dialog.sanitizeHint':

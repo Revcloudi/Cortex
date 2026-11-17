@@ -121,6 +121,52 @@ export function deleteSelectedAssets(assetIds: string[]): Promise<BulkDeleteAsse
   return requestJson<BulkDeleteAssetsResult>('/assets/bulk-delete', { asset_ids: assetIds })
 }
 
+/** PATCH /assets/:id/system-name: set the human-facing company/system label. */
+export async function updateAssetSystemName(
+  assetId: string,
+  systemName: string
+): Promise<{ ok: true; system_name: string }> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}/assets/${encodeURIComponent(assetId)}/system-name`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ system_name: systemName })
+    })
+  } catch (cause) {
+    throw new TestDataExportError(
+      'NETWORK_ERROR',
+      cause instanceof Error ? cause.message : String(cause),
+      0
+    )
+  }
+  const text = await response.text().catch(() => '')
+  let payload: unknown = null
+  if (text !== '') {
+    try {
+      payload = JSON.parse(text) as unknown
+    } catch {
+      payload = null
+    }
+  }
+  if (!response.ok) {
+    const envelope = (payload ?? {}) as ApiErrorPayload
+    const message =
+      typeof envelope.error === 'string' && envelope.error !== ''
+        ? envelope.error
+        : `HTTP ${response.status}`
+    throw new TestDataExportError(
+      typeof envelope.code === 'string' && envelope.code !== '' ? envelope.code : `HTTP_${response.status}`,
+      message,
+      response.status,
+      envelope.details
+    )
+  }
+  return payload as { ok: true; system_name: string }
+}
+
 /** Read the Host-remembered export directory (best effort, never throws). */
 export async function readRememberedExportDir(): Promise<string> {
   try {

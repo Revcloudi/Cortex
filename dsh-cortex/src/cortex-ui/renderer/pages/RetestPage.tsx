@@ -59,6 +59,8 @@ export function RetestPage({ dataVersion }: RetestPageProps) {
     api
       .listVulnerabilities({
         realm: 'web',
+        // Client findings cannot be retested through the HTTP repeater.
+        client: 'server',
         ...(debouncedSearch === '' ? {} : { search: debouncedSearch }),
         ...(severity === 'all' ? {} : { severity }),
         page: 1,

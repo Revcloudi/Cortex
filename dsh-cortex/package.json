@@ -1,7 +1,7 @@
 {
   "name": "@lievclouds/dsh-cortex",
-  "version": "1.2.0",
-  "description": "Cortex workbench for DeepSeek Harness: the original Cortex UI (vulnerabilities, assets, internal operations, Memory Nebula, snapshots, retest, standalone Web Fuzzer with raw/JSON/render responses, mini-program reversing), project/selected-asset export to JSON/CSV/DefectDojo with default redaction, multi-select asset batch export/delete, plus 22 native agent tools so DSH conversations use the local Cortex SQLite without MCP.",
+  "version": "1.3.0",
+  "description": "Cortex workbench for DeepSeek Harness: the original Cortex UI (vulnerabilities, client findings, assets, internal operations, Memory Nebula, snapshots, retest, standalone Web Fuzzer with raw/JSON/render responses, mini-program reversing), project/selected-asset export to JSON/CSV/DefectDojo, multi-select asset batch export/delete, editable system names, internal entity cleanup and raw local data (no masking), plus 22 native agent tools so DSH conversations use the local Cortex SQLite without MCP.",
   "type": "module",
   "main": "index.js",
   "license": "MIT",

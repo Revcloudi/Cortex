@@ -48,6 +48,7 @@ const nodeRequire = createRequire(join(repoRoot, 'package.json'))
 /* 1 internal project. No secrets are included.                                 */
 /* -------------------------------------------------------------------------- */
 const PROJECT = 'Starport Portal 物流客户门户靶场'
+const SYSTEM_NAME = '星港物流客户门户'
 const ASSET_HOST_PORT = 'http://127.0.0.1:8080/'
 const SNAPSHOT_ID = 'SESS-20261102-001'
 
@@ -64,7 +65,9 @@ const VULNS = [
   { id: 'VULN-20261102-010', host: '127.0.0.1:8080', service_host: '', realm: 'web', internal_service_id: '', entry_point: 'POST /upload、POST /login（无 CSRF token）', vuln_name: '缺少 CSRF 防护且会话 Cookie 未设置 SameSite', vuln_type: 'CSRF', severity: 'Medium', target_url: 'http://127.0.0.1:8080/upload', status: 'Confirmed', created_at: '2026-11-02T08:07:09.557Z' },
   { id: 'VULN-20261102-011', host: '127.0.0.1:8080', service_host: '', realm: 'web', internal_service_id: '', entry_point: 'POST /login', vuln_name: '登录接口无速率限制可无限速爆破', vuln_type: 'Brute Force', severity: 'Medium', target_url: 'http://127.0.0.1:8080/login', status: 'Confirmed', created_at: '2026-11-02T08:07:09.563Z' },
   { id: 'VULN-20261102-012', host: '127.0.0.1:8080', service_host: '', realm: 'web', internal_service_id: '', entry_point: '全部 HTTP 响应头', vuln_name: '缺少安全响应头（可点击劫持、无 nosniff/CSP/HSTS）', vuln_type: 'Security Misconfiguration', severity: 'Low', target_url: 'http://127.0.0.1:8080/', status: 'Confirmed', created_at: '2026-11-02T08:07:21.746Z' },
-  { id: 'VULN-20261102-013', host: '127.0.0.1:8080', service_host: 'redis:6379', realm: 'internal', internal_service_id: '', entry_point: 'redis:6379 AUTH', vuln_name: 'Redis 凭据泄露导致管理权限暴露（CONFIG/INFO 可读写）', vuln_type: 'Sensitive Service Exposure', severity: 'Medium', target_url: 'redis://redis:6379', status: 'Confirmed', created_at: '2026-11-02T08:07:21.753Z' }
+  { id: 'VULN-20261102-013', host: '127.0.0.1:8080', service_host: 'redis:6379', realm: 'internal', internal_service_id: '', entry_point: 'redis:6379 AUTH', vuln_name: 'Redis 凭据泄露导致管理权限暴露（CONFIG/INFO 可读写）', vuln_type: 'Sensitive Service Exposure', severity: 'Medium', target_url: 'redis://redis:6379', status: 'Confirmed', created_at: '2026-11-02T08:07:21.753Z' },
+  { id: 'VULN-20261102-014', host: 'com.example.starport', service_host: '', realm: 'web', internal_service_id: '', entry_point: 'Android Activity exported=true', vuln_name: 'Android 客户端导出组件导致本地越权调用', vuln_type: 'Android Exported Component', severity: 'High', target_url: 'app://com.example.starport/activity/Orders', status: 'Confirmed', client_type: 'android', client_connection: 'usb', created_at: '2026-11-02T08:08:01.000Z' },
+  { id: 'VULN-20261102-015', host: 'com.example.starport.ios', service_host: '', realm: 'web', internal_service_id: '', entry_point: 'iOS URL Scheme', vuln_name: 'iOS 客户端 URL Scheme 未校验导致任意页面跳转', vuln_type: 'iOS URL Scheme', severity: 'Medium', target_url: 'app://com.example.starport/orders', status: 'Confirmed', client_type: 'ios', client_connection: 'ssh', created_at: '2026-11-02T08:08:02.000Z' }
 ]
 
 const ASSETS = [
@@ -72,6 +75,7 @@ const ASSETS = [
     host_port: ASSET_HOST_PORT,
     host: '127.0.0.1',
     project_name: PROJECT,
+    system_name: SYSTEM_NAME,
     tech_stack:
       'nginx 1.27.5, Flask (Python 3), pymysql, MariaDB 11.4.13, Redis 7.4.12, Docker Compose 多容器, Gitea 1.22.6, Jenkins 2.541.3 (Jetty 12.1.5), Debian 13 trixie, OpenSSH',
     auth_required: true,
@@ -292,7 +296,123 @@ const SETUP_INFO = {
 }
 
 const INTERNAL_PROJECTS = [
-  { project_name: PROJECT, counts: { footholds: 0, hosts: 0, services: 0, credentials: 0, pivots: 0 } }
+  {
+    project_name: PROJECT,
+    counts: { footholds: 1, hosts: 2, services: 1, credentials: 1, pivots: 1 }
+  }
+]
+
+const INTERNAL_HOSTS = [
+  {
+    id: 'IH-1',
+    project_name: PROJECT,
+    ip: '10.0.0.5',
+    hostname: 'db01',
+    os: 'Ubuntu 22.04',
+    subnet: '10.0.0.0/24',
+    state: 'alive',
+    source: 'nmap',
+    confidence: 'high',
+    last_seen: '2026-11-02T08:08:00.000Z',
+    created_at: '',
+    updated_at: '',
+    service_count: 1
+  },
+  {
+    id: 'IH-2',
+    project_name: PROJECT,
+    ip: '10.0.0.6',
+    hostname: 'jump01',
+    os: 'Debian 12',
+    subnet: '10.0.0.0/24',
+    state: 'compromised',
+    source: 'ssh',
+    confidence: 'high',
+    last_seen: '2026-11-02T08:08:01.000Z',
+    created_at: '',
+    updated_at: '',
+    service_count: 0
+  }
+]
+
+const INTERNAL_SERVICES = [
+  {
+    id: 'IS-1',
+    project_name: PROJECT,
+    host_id: 'IH-1',
+    port: 6379,
+    protocol: 'tcp',
+    service: 'redis',
+    banner: 'Redis 7.4',
+    state: 'open',
+    source: 'nmap',
+    last_seen: '',
+    created_at: '',
+    updated_at: '',
+    host_ip: '10.0.0.5',
+    host_hostname: 'db01'
+  }
+]
+
+const INTERNAL_FOOTHOLDS = [
+  {
+    id: 'FH-1',
+    project_name: PROJECT,
+    entry_host_port: ASSET_HOST_PORT,
+    entry_vuln_id: 'VULN-20261102-001',
+    access_type: 'rce',
+    privilege_level: 'user',
+    status: 'established',
+    evidence: 'id; whoami',
+    notes: 'demo foothold',
+    established_at: '',
+    last_verified_at: '',
+    created_at: '',
+    updated_at: '',
+    host_ids: ['IH-1', 'IH-2']
+  }
+]
+
+const INTERNAL_CREDENTIALS = [
+  {
+    id: 'CR-1',
+    project_name: PROJECT,
+    type: 'password',
+    username: 'deploy',
+    domain: 'CORP',
+    secret: 'demo-secret-value',
+    secret_preview: 'demo-secret-value',
+    secret_length: 17,
+    source: 'backup.sh',
+    host_id: 'IH-1',
+    service_id: 'IS-1',
+    confidence: 'high',
+    status: 'valid',
+    notes: '',
+    created_at: '',
+    updated_at: ''
+  }
+]
+
+const INTERNAL_PIVOTS = [
+  {
+    id: 'PV-1',
+    project_name: PROJECT,
+    foothold_id: 'FH-1',
+    kind: 'proxy',
+    local_host: '127.0.0.1',
+    local_port: 1080,
+    local_protocol: 'socks5',
+    tool: 'chisel',
+    status: 'established',
+    notes: '',
+    established_at: '',
+    last_verified_at: '',
+    created_at: '',
+    updated_at: '',
+    hops: [],
+    reachable_subnets: []
+  }
 ]
 
 function statsFor(rows) {
@@ -310,7 +430,10 @@ function statsFor(rows) {
   return { total: rows.length, critical: bySeverity.Critical, high: bySeverity.High, hosts: hosts.size, today, bySeverity, byStatus }
 }
 
-const WEB_STATS = statsFor(VULNS.filter((vuln) => vuln.realm === 'web'))
+const SERVER_ROWS = VULNS.filter((vuln) => vuln.realm === 'web' && !vuln.client_type)
+const CLIENT_ROWS = VULNS.filter((vuln) => vuln.realm === 'web' && vuln.client_type)
+const WEB_STATS = statsFor(SERVER_ROWS)
+const CLIENT_STATS = statsFor(CLIENT_ROWS)
 const INTERNAL_ROWS = VULNS.filter((vuln) => vuln.realm === 'internal')
 const INTERNAL_STATS = statsFor(INTERNAL_ROWS)
 const INTERNAL_COUNT = INTERNAL_ROWS.length
@@ -341,6 +464,7 @@ function createMockFetch() {
   /** Parsed bodies of the project export / bulk-delete calls for assertions. */
   const exportRequests = []
   const bulkDeleteRequests = []
+  const internalDeleteRequests = []
   /** Mini-program host state: a scan adds MINIAPP_EXTRA once. */
   let miniappRows = MINIAPP_ROWS.map((row) => ({ ...row }))
   let miniappScanCount = 0
@@ -361,6 +485,11 @@ function createMockFetch() {
     let rows = VULNS.slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
     const realm = query.get('realm')
     if (realm && realm !== 'all') rows = rows.filter((row) => row.realm === realm)
+    const client = query.get('client')
+    if (client === 'server') rows = rows.filter((row) => !row.client_type)
+    else if (client === 'client') rows = rows.filter((row) => Boolean(row.client_type))
+    const clientType = query.get('client_type')
+    if (clientType) rows = rows.filter((row) => row.client_type === clientType)
     const severity = query.get('severity')
     if (severity && severity !== 'all') rows = rows.filter((row) => row.severity === severity)
     const status = query.get('status')
@@ -418,9 +547,23 @@ function createMockFetch() {
     if (method === 'GET' && route === '/rev') return respond({ rev: 13 })
     if (method === 'GET' && route === '/stats') {
       const realm = query.get('realm')
-      const rows = realm === 'internal' ? INTERNAL_ROWS : realm === 'web' ? VULNS.filter((v) => v.realm === 'web') : VULNS
+      const client = query.get('client')
+      const rows =
+        realm === 'internal'
+          ? INTERNAL_ROWS
+          : realm === 'web'
+            ? client === 'client'
+              ? CLIENT_ROWS
+              : client === 'server'
+                ? SERVER_ROWS
+                : VULNS.filter((v) => v.realm === 'web')
+            : VULNS
       const stats = statsFor(rows)
-      return respond({ ...stats, internal: { total: INTERNAL_STATS.total, critical: INTERNAL_STATS.critical, high: INTERNAL_STATS.high, hosts: 0 } })
+      return respond({
+        ...stats,
+        internal: { total: INTERNAL_STATS.total, critical: INTERNAL_STATS.critical, high: INTERNAL_STATS.high, hosts: 0 },
+        client: { total: CLIENT_STATS.total, critical: CLIENT_STATS.critical, high: CLIENT_STATS.high, hosts: CLIENT_STATS.hosts }
+      })
     }
     if (method === 'GET' && route === '/vulns') return respond(filterVulns(query))
     if (method === 'GET' && /^\/vulns\/[^/]+$/.test(route)) {
@@ -432,7 +575,7 @@ function createMockFetch() {
       return respond(rows)
     }
     if (method === 'GET' && /^\/assets\/[^/]+\/related-vulns$/.test(route)) {
-      return respond(WEB_STATS.total > 0 ? VULNS.filter((row) => row.realm === 'web') : [])
+      return respond(WEB_STATS.total > 0 ? SERVER_ROWS : [])
     }
     if (method === 'GET' && /^\/assets\/[^/]+$/.test(route)) {
       const hostPort = decodeURIComponent(route.slice('/assets/'.length))
@@ -442,6 +585,7 @@ function createMockFetch() {
         host_port: asset.host_port,
         host: asset.host,
         project_name: asset.project_name,
+        system_name: asset.system_name,
         tech_stack: asset.tech_stack,
         auth_required: asset.auth_required,
         status: asset.status,
@@ -622,12 +766,20 @@ function createMockFetch() {
     if (method === 'GET' && route === '/internal/overview') {
       return respond({
         project_name: PROJECT,
-        counts: { footholds: 0, hosts: 0, services: 0, credentials: 0, pivots: 0, internal_vulns: INTERNAL_COUNT, loot_imports: 0 },
-        footholds: [],
-        hosts: [],
-        services: [],
-        credentials: [],
-        pivots: [],
+        counts: {
+          footholds: INTERNAL_FOOTHOLDS.length,
+          hosts: INTERNAL_HOSTS.length,
+          services: INTERNAL_SERVICES.length,
+          credentials: INTERNAL_CREDENTIALS.length,
+          pivots: INTERNAL_PIVOTS.length,
+          internal_vulns: INTERNAL_COUNT,
+          loot_imports: 0
+        },
+        footholds: INTERNAL_FOOTHOLDS,
+        hosts: INTERNAL_HOSTS,
+        services: INTERNAL_SERVICES,
+        credentials: INTERNAL_CREDENTIALS,
+        pivots: INTERNAL_PIVOTS,
         trials: [],
         internal_vulns: INTERNAL_ROWS,
         loot_imports: [],
@@ -640,18 +792,33 @@ function createMockFetch() {
       return respond({
         project_name: PROJECT,
         generated_at: '2026-11-02T08:08:09.226Z',
-        counts: { footholds: 0, hosts: 0, services: 0, credentials: 0, pivots: 0, internal_vulns: INTERNAL_COUNT, loot_imports: 0 },
-        footholds: [],
-        hosts: [],
-        services: [],
-        credentials: [],
-        pivots: [],
+        counts: {
+          footholds: INTERNAL_FOOTHOLDS.length,
+          hosts: INTERNAL_HOSTS.length,
+          services: INTERNAL_SERVICES.length,
+          credentials: INTERNAL_CREDENTIALS.length,
+          pivots: INTERNAL_PIVOTS.length,
+          internal_vulns: INTERNAL_COUNT,
+          loot_imports: 0
+        },
+        footholds: INTERNAL_FOOTHOLDS,
+        hosts: INTERNAL_HOSTS,
+        services: INTERNAL_SERVICES,
+        credentials: INTERNAL_CREDENTIALS,
+        pivots: INTERNAL_PIVOTS,
         trials: [],
         heatmap: [],
         suggestions: [],
         truncated: false,
         warnings: []
       })
+    }
+    if (method === 'DELETE' && /^\/internal\/(hosts|services|footholds|credentials|pivots)\/[^/]+$/.test(route)) {
+      const parts = route.split('/')
+      const kind = parts[2]
+      const id = decodeURIComponent(parts[3] || '')
+      internalDeleteRequests.push({ kind, id })
+      return respond({ deleted: true, id })
     }
     if (method === 'GET' && route === '/loot') return respond([])
     if (method === 'GET' && route === '/db/info') return respond(DB_INFO)
@@ -809,7 +976,7 @@ function createMockFetch() {
     return notFound(route)
   }
 
-  return { fetch: mockFetch, requests, exportRequests, bulkDeleteRequests }
+  return { fetch: mockFetch, requests, exportRequests, bulkDeleteRequests, internalDeleteRequests }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1318,7 +1485,11 @@ export async function runCortexUiSmoke(options = {}) {
       const tabLabels = Array.from(tabs.querySelectorAll('button')).map((button) =>
         squash(button.textContent, 40).replace(/\d+$/, '')
       )
-      assert.deepEqual(tabLabels.slice(0, 2), ['Web 漏洞', '内网作战'], `dashboard tabs: ${tabLabels.join('|')}`)
+      assert.deepEqual(
+        tabLabels.slice(0, 3),
+        ['Web 漏洞', '客户端漏洞', '内网作战'],
+        `dashboard tabs: ${tabLabels.join('|')}`
+      )
       const internalBadge = byTestId('dashboard-internal-count')
       assert.ok(internalBadge, 'missing internal count badge')
       assert.equal(textOf(internalBadge), String(INTERNAL_COUNT), 'internal realm badge value')
@@ -1359,6 +1530,80 @@ export async function runCortexUiSmoke(options = {}) {
       structural.vulnRows = rows.length
       structural.vulnSeverities = bySeverity
       return `${rows.length} rows, ${JSON.stringify(bySeverity)}`
+    })
+
+    await check('client findings have a separate dashboard tab and stay out of Web', async () => {
+      const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
+      const windowBefore = windowErrors.length
+      const clientTab = byTestId('dashboard-tab-client')
+      await act(async () => {
+        clientTab.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+        clientTab.click()
+      })
+      await waitFor(act, () => (clientTab.getAttribute('aria-selected') === 'true' ? true : null), {
+        label: 'client tab active',
+        timeoutMs: 5_000
+      })
+      const panel = await waitFor(act, () => byTestId('dashboard-client-panel'), {
+        label: 'client dashboard panel',
+        timeoutMs: 5_000
+      })
+      assert.ok(byTestId('dashboard-client-count'), 'missing client count badge')
+      const clientFilter = await waitFor(act, () => byTestId('client-type-filter'), {
+        label: 'client platform filter',
+        timeoutMs: 5_000
+      })
+      assert.ok(clientFilter, 'client tab must expose the platform filter')
+      const clientRows = await waitFor(
+        act,
+        () => {
+          const rows = panel.querySelectorAll('[data-testid="vuln-row"]')
+          return rows.length === CLIENT_ROWS.length ? rows : null
+        },
+        { label: 'client vulnerability rows', timeoutMs: 10_000 }
+      )
+      const clientText = Array.from(clientRows).map((row) => row.textContent || '').join('\n')
+      assert.ok(clientText.includes('VULN-20261102-014'), 'Android client finding missing')
+      assert.ok(clientText.includes('VULN-20261102-015'), 'iOS client finding missing')
+      assert.ok(/Android|iOS/.test(clientText), 'client platform badge missing')
+      await waitFor(
+        act,
+        () => (textOf(byTestId('dashboard-client-count')) === String(CLIENT_STATS.total) ? true : null),
+        { label: 'client count badge', timeoutMs: 5_000 }
+      )
+      assert.equal(
+        squash(byTestId('metric-total').children[1]?.textContent, 40),
+        String(CLIENT_STATS.total),
+        'client tab metric strip must follow the client scope'
+      )
+      const webTab = byTestId('dashboard-tab-web')
+      await act(async () => {
+        webTab.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+        webTab.click()
+      })
+      await waitFor(act, () => (webTab.getAttribute('aria-selected') === 'true' ? true : null), {
+        label: 'web tab active again',
+        timeoutMs: 5_000
+      })
+      await waitFor(
+        act,
+        () => {
+          const rows = shadow.querySelectorAll('[data-testid="vuln-row"]')
+          if (rows.length !== SERVER_ROWS.length) return null
+          return Array.from(rows).some((row) => (row.textContent || '').includes('VULN-20261102-014'))
+            ? null
+            : true
+        },
+        { label: 'web tab excludes client findings', timeoutMs: 10_000 }
+      )
+      assert.equal(consoleErrors.filter(isFatalConsoleMessage).length, fatalBefore, 'React error in client tab')
+      assert.equal(
+        windowErrors.length,
+        windowBefore,
+        `page error in client tab: ${windowErrors.slice(windowBefore).join(' | ')}`
+      )
+      structural.clientTab = { rows: CLIENT_ROWS.length, separate: true }
+      return 'client tab shows Android/iOS findings; Web tab is server-only'
     })
 
     await check('data layer talks to the real plugin routes (/stats, /vulns, /rev)', () => {
@@ -1475,7 +1720,12 @@ export async function runCortexUiSmoke(options = {}) {
       const pageText = textOf(shadow.querySelector('main'))
       assert.ok(pageText.includes('资产库') || pageText.includes('资产'), `asset page heading missing: ${pageText}`)
       assert.ok(assetRow.textContent.includes('127.0.0.1:8080'), 'asset row does not show host_port')
-      assert.ok(assetRow.textContent.includes(PROJECT), 'asset row does not show project name')
+      assert.ok(assetRow.textContent.includes(SYSTEM_NAME), 'asset row does not show the system name')
+      assert.equal(
+        assetRow.textContent.includes(PROJECT),
+        false,
+        'asset row must not use the project name as its primary label'
+      )
       structural.assetPage = { rows: allTestIds('asset-row').length, hostPort: assetRow.getAttribute('data-host-port') }
       const techStack = shadow.querySelector('[data-testid="asset-tech-stack"]')
       assert.ok(techStack, 'asset tech-stack cell missing')
@@ -1602,16 +1852,16 @@ export async function runCortexUiSmoke(options = {}) {
         true,
         'DefectDojo is project-level only'
       )
-      const secretsToggle = byTestId('asset-export-secrets')
-      assert.ok(
-        secretsToggle,
-        `secrets checkbox missing; export ids=${Array.from(
-          exportDialog.querySelectorAll('[data-testid]')
-        )
-          .map((element) => element.getAttribute('data-testid'))
-          .join(',')}`
+      assert.equal(
+        byTestId('asset-export-secrets'),
+        null,
+        'the export dialog must not offer a redaction toggle any more'
       )
-      assert.equal(secretsToggle.checked, false, 'secrets must be off (redacted) by default')
+      assert.match(
+        exportDialog.textContent || '',
+        /原始值|raw stored values/i,
+        'the export dialog must explain that raw values are written'
+      )
       assert.ok(byTestId('asset-export-evidence'), 'missing evidence option')
       assert.ok(byTestId('asset-export-output-dir'), 'missing output directory field')
       const confirmExport = byTestId('asset-export-confirm')
@@ -1627,7 +1877,11 @@ export async function runCortexUiSmoke(options = {}) {
       assert.ok(selectedExport, 'no export request was sent')
       assert.equal(selectedExport.format, 'json')
       assert.deepEqual(selectedExport.asset_ids, [ASSET_HOST_PORT])
-      assert.equal(selectedExport.include_secrets, false)
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(selectedExport, 'include_secrets'),
+        false,
+        'the raw-value export no longer asks for a redaction choice'
+      )
       assert.equal(selectedExport.include_evidence, false)
 
       // Project-level export: whole-project scope + DefectDojo format.
@@ -1859,12 +2113,100 @@ export async function runCortexUiSmoke(options = {}) {
         // eslint-disable-next-line no-await-in-loop
         await waitFor(act, () => shadow.querySelector(target.selector), { label: `${target.label} page`, timeoutMs: 10_000 })
         assert.equal(byTestId(target.nav).getAttribute('aria-current'), 'page', `${target.nav} should be active`)
+        if (target.label.startsWith('retest')) {
+          await waitFor(act, () => byTestId('retest-candidate-row'), {
+            label: 'retest candidate list',
+            timeoutMs: 10_000
+          })
+          assert.equal(
+            (byTestId('retest-page').textContent || '').includes('VULN-20261102-014'),
+            false,
+            'client findings must stay out of the retest workbench'
+          )
+          assert.ok(
+            mock.requests.some((request) => {
+              if (request.path !== `${API_BASE}/vulns`) return false
+              const query = new URLSearchParams(request.search || '')
+              return query.get('client') === 'server'
+            }),
+            'retest list must request server findings only'
+          )
+        }
         assert.equal(consoleErrors.filter(isFatalConsoleMessage).length, fatalBefore, `React error while mounting ${target.label}`)
         assert.equal(windowErrors.length, windowErrorsBefore, `page error while mounting ${target.label}: ${windowErrors.slice(windowErrorsBefore).join(' | ')}`)
         mounted.push(target.label)
       }
       structural.pagesMounted = mounted
       return `mounted: ${mounted.join(', ')}`
+    })
+
+    await check('internal operations: entity cleanup deletes rows and shows raw credentials', async () => {
+      const fatalBefore = consoleErrors.filter(isFatalConsoleMessage).length
+      const windowBefore = windowErrors.length
+      await act(async () => {
+        byTestId('nav-internal').click()
+      })
+      await waitFor(act, () => byTestId('internal-page'), { label: 'internal page', timeoutMs: 10_000 })
+      const entities = await waitFor(act, () => byTestId('internal-entities'), {
+        label: 'internal entity cleanup panel',
+        timeoutMs: 10_000
+      })
+      const rows = await waitFor(
+        act,
+        () => {
+          const list = entities.querySelectorAll('[data-testid="internal-entity-row"]')
+          return list.length === 6 ? list : null
+        },
+        { label: 'internal entity rows', timeoutMs: 10_000 }
+      )
+      const hostRow = Array.from(rows).find((row) => row.getAttribute('data-kind') === 'hosts')
+      assert.ok(hostRow, 'host row missing from cleanup panel')
+      const deleteButton = hostRow.querySelector('[data-testid="internal-delete-hosts"]')
+      assert.ok(deleteButton, 'host delete button missing')
+      const before = mock.internalDeleteRequests.length
+      await act(async () => {
+        deleteButton.click()
+      })
+      const dialog = await waitFor(act, () => byTestId('internal-delete-dialog'), {
+        label: 'internal delete dialog',
+        timeoutMs: 5_000
+      })
+      assert.ok((dialog.textContent || '').includes('10.0.0.5'), 'delete dialog must name the host')
+      const cancel = Array.from(dialog.querySelectorAll('button')).find((button) =>
+        /取消|Cancel/.test(button.textContent || '')
+      )
+      assert.ok(cancel)
+      await act(async () => {
+        cancel.click()
+      })
+      assert.equal(mock.internalDeleteRequests.length, before, 'cancel must not delete')
+      await act(async () => {
+        deleteButton.click()
+      })
+      await waitFor(act, () => byTestId('internal-delete-dialog'), {
+        label: 'internal delete dialog reopened',
+        timeoutMs: 5_000
+      })
+      await act(async () => {
+        byTestId('internal-delete-confirm').click()
+      })
+      await waitFor(act, () => (byTestId('internal-delete-dialog') ? null : true), {
+        label: 'internal delete dialog closes',
+        timeoutMs: 8_000
+      })
+      assert.deepEqual(mock.internalDeleteRequests.at(-1), { kind: 'hosts', id: 'IH-1' })
+      assert.ok(
+        (entities.textContent || '').includes('demo-secret-value'),
+        'credential panel must expose the raw secret (no masking)'
+      )
+      assert.equal(consoleErrors.filter(isFatalConsoleMessage).length, fatalBefore, 'React error in internal cleanup')
+      assert.equal(
+        windowErrors.length,
+        windowBefore,
+        `page error in internal cleanup: ${windowErrors.slice(windowBefore).join(' | ')}`
+      )
+      structural.internalCleanup = { rows: rows.length, deleted: 'IH-1', rawSecret: true }
+      return '6 entity rows, cancel-safe delete confirmation, DELETE /internal/hosts/IH-1, raw credential visible'
     })
 
     await check('web fuzzer page: standalone Yakit send, raw/JSON/render, safe HTML', async () => {

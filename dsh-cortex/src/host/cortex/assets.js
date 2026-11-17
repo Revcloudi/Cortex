@@ -15,12 +15,14 @@
 import {
   MAX_SEARCH_VALUE,
   badRequest,
+  notFound,
   queryEnum,
   queryString,
   readJsonBody,
   safeDecode,
   sendJson,
 } from '../http.js'
+import { hasColumn } from './schema.js'
 import { jsonArray, text, vulnListItem } from './vulns.js'
 import {
   deleteAssetIdentity,
@@ -133,6 +135,7 @@ function assetListItem(row, meta = null, domainCount = 0) {
     host_port: hostPort,
     host: text(source.host),
     project_name: normalizeProjectName(text(source.project_name)),
+    system_name: text(source.system_name),
     tech_stack: text(source.tech_stack),
     auth_required: bool01(source.auth_required),
     status: ASSET_STATUSES.includes(text(source.status)) ? text(source.status) : 'Alive',
@@ -171,6 +174,7 @@ export function assetContext(row, meta = null, domains = [], versions = [], link
     host_port: hostPort,
     host: text(source.host),
     project_name: normalizeProjectName(text(source.project_name)),
+    system_name: text(source.system_name),
     tech_stack: text(source.tech_stack),
     auth_required: bool01(source.auth_required),
     status: ASSET_STATUSES.includes(text(source.status)) ? text(source.status) : 'Alive',
@@ -280,6 +284,7 @@ export function handleList({ res, searchParams, holder }) {
             row.host_port,
             row.host,
             row.project_name,
+            row.system_name,
             row.tech_stack,
             meta?.display_name,
             meta?.appid,
@@ -340,6 +345,34 @@ export function handleRelatedVulns({ res, params, holder }) {
     if (!ids.includes(id)) ids.push(id)
   }
   sendJson(res, 200, relatedByIds(holder.db, ids))
+}
+
+/**
+ * PATCH /assets/:hostPort/system-name -> { ok, system_name }
+ *
+ * `system_name` is the human-facing company/system label; the project name
+ * stays the relation key used by snapshots, exports and filters.
+ */
+export async function handleUpdateSystemName({ req, res, params, holder, bumpRev }) {
+  if (!hasColumn(holder.db, 'assets', 'system_name')) {
+    throw badRequest('system_name is not available in this database', { field: 'system_name' })
+  }
+  const hostPort = hostPortParam(params[0])
+  const row = holder.db.prepare('SELECT host_port FROM assets WHERE host_port = ?').get(hostPort)
+  if (!row) throw notFound('asset not found')
+  const body = await readJsonBody(req)
+  if (typeof body.system_name !== 'string') {
+    throw badRequest('system_name must be a string', { field: 'system_name' })
+  }
+  const systemName = body.system_name.trim()
+  if (systemName.length > 200) {
+    throw badRequest('system_name is too long', { field: 'system_name', max: 200 })
+  }
+  await holder.withWriteTransaction((db) =>
+    db.prepare('UPDATE assets SET system_name = ? WHERE host_port = ?').run(systemName, hostPort),
+  )
+  bumpRev()
+  sendJson(res, 200, { ok: true, system_name: systemName })
 }
 
 /** DELETE /assets/:hostPort -> DeleteAssetResult */

@@ -35,6 +35,7 @@ import {
 } from '../http.js'
 import * as dto from '../dto.js'
 import { buildVulnReport, reportFilename } from '../reports.js'
+import { hasColumn } from './schema.js'
 import { rememberExportDir } from './settings.js'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -43,6 +44,25 @@ import { isAbsolute, join, resolve } from 'node:path'
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 const STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed']
 const REALM_FILTERS = ['web', 'internal', 'all']
+const CLIENT_TYPES = ['android', 'ios', 'desktop']
+const CLIENT_SCOPES = ['server', 'client']
+
+/** Add the optional client filter to a WHERE builder (column may be absent). */
+function applyClientFilter(db, searchParams, where, params) {
+  const client = queryEnum(searchParams, 'client', [...CLIENT_SCOPES, 'all'])
+  const clientType = queryEnum(searchParams, 'client_type', CLIENT_TYPES)
+  const available = hasColumn(db, 'vulnerabilities', 'client_type')
+  if (!available) {
+    if (client === 'client' || clientType !== undefined) where.push('0 = 1')
+    return
+  }
+  if (client === 'server') where.push("COALESCE(client_type, '') = ''")
+  else if (client === 'client') where.push("COALESCE(client_type, '') <> ''")
+  if (clientType !== undefined) {
+    where.push('client_type = ?')
+    params.push(clientType)
+  }
+}
 
 const DEFAULT_PAGE_SIZE = 10
 /** The Cortex renderer itself asks for pageSize=200 on the retest page. */
@@ -153,6 +173,8 @@ export function vulnListItem(row) {
     severity: text(source.severity),
     target_url: text(source.target_url),
     status: text(source.status),
+    client_type: text(source.client_type),
+    client_connection: text(source.client_connection),
     created_at: text(source.created_at),
   }
 }
@@ -294,6 +316,7 @@ export function handleList({ res, searchParams, holder }) {
   const sort = queryString(searchParams, 'sort', { max: 100 })
   const order = orderClause(sort)
 
+  const db = holder.db
   const where = []
   /** @type {any[]} */
   const params = []
@@ -301,6 +324,7 @@ export function handleList({ res, searchParams, holder }) {
     where.push('realm = ?')
     params.push(realm)
   }
+  applyClientFilter(db, searchParams, where, params)
   for (const [column, value] of [
     ['severity', severity],
     ['status', status],
@@ -323,7 +347,6 @@ export function handleList({ res, searchParams, holder }) {
     for (let i = 0; i < 6; i += 1) params.push(pattern)
   }
   const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''
-  const db = holder.db
 
   const total = int(db.prepare(`SELECT COUNT(*) AS c FROM vulnerabilities${whereSql}`).get(...params).c)
   const pages = total === 0 ? 0 : Math.ceil(total / pageSize)
@@ -354,17 +377,24 @@ export function handleStats({ res, searchParams, holder }) {
   const realm = realmFilter(searchParams)
   const db = holder.db
 
-  const realmWhere = realm === 'all' ? '' : ' WHERE realm = ?'
-  const realmParams = realm === 'all' ? [] : [realm]
+  const where = []
+  /** @type {any[]} */
+  const params = []
+  if (realm !== 'all') {
+    where.push('realm = ?')
+    params.push(realm)
+  }
+  applyClientFilter(db, searchParams, where, params)
+  const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''
 
   const scopedCount = int(
-    db.prepare(`SELECT COUNT(*) AS c FROM vulnerabilities${realmWhere}`).get(...realmParams).c,
+    db.prepare(`SELECT COUNT(*) AS c FROM vulnerabilities${whereSql}`).get(...params).c,
   )
 
   const bySeverity = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
   for (const row of db
-    .prepare(`SELECT severity, COUNT(*) AS c FROM vulnerabilities${realmWhere} GROUP BY severity`)
-    .all(...realmParams)) {
+    .prepare(`SELECT severity, COUNT(*) AS c FROM vulnerabilities${whereSql} GROUP BY severity`)
+    .all(...params)) {
     if (Object.prototype.hasOwnProperty.call(bySeverity, row.severity)) {
       bySeverity[row.severity] = int(row.c)
     }
@@ -372,29 +402,27 @@ export function handleStats({ res, searchParams, holder }) {
 
   const byStatus = { Confirmed: 0, Inconclusive: 0, Retest_Passed: 0 }
   for (const row of db
-    .prepare(`SELECT status, COUNT(*) AS c FROM vulnerabilities${realmWhere} GROUP BY status`)
-    .all(...realmParams)) {
+    .prepare(`SELECT status, COUNT(*) AS c FROM vulnerabilities${whereSql} GROUP BY status`)
+    .all(...params)) {
     if (Object.prototype.hasOwnProperty.call(byStatus, row.status)) {
       byStatus[row.status] = int(row.c)
     }
   }
 
-  const todayWhere = realm === 'all' ? 'created_at >= ?' : 'realm = ? AND created_at >= ?'
-  const todayParams = realm === 'all' ? [localDayStartIso()] : [realm, localDayStartIso()]
+  const todayWhere = where.length > 0 ? `${where.join(' AND ')} AND created_at >= ?` : 'created_at >= ?'
   const today = int(
-    db.prepare(`SELECT COUNT(*) AS c FROM vulnerabilities WHERE ${todayWhere}`).get(...todayParams).c,
+    db
+      .prepare(`SELECT COUNT(*) AS c FROM vulnerabilities WHERE ${todayWhere}`)
+      .get(...params, localDayStartIso()).c,
   )
 
   // "Affected hosts": distinct entry hosts of the scoped vulnerabilities (the
   // dashboard shows an average of findings per affected host).
+  const hostWhere = where.length > 0 ? ` AND ${where.join(' AND ')}` : ''
   const hosts = int(
     db
-      .prepare(
-        `SELECT COUNT(DISTINCT host) AS c FROM vulnerabilities WHERE host <> ''${
-          realm === 'all' ? '' : ' AND realm = ?'
-        }`,
-      )
-      .get(...(realm === 'all' ? [] : [realm])).c,
+      .prepare(`SELECT COUNT(DISTINCT host) AS c FROM vulnerabilities WHERE host <> ''${hostWhere}`)
+      .get(...params).c,
   )
 
   const internalRow = db
@@ -406,6 +434,19 @@ export function handleStats({ res, searchParams, holder }) {
          FROM vulnerabilities WHERE realm = 'internal'`,
     )
     .get()
+
+  const clientRow = hasColumn(db, 'vulnerabilities', 'client_type')
+    ? db
+        .prepare(
+          `SELECT COUNT(*) AS total,
+                  COALESCE(SUM(CASE WHEN severity = 'Critical' THEN 1 ELSE 0 END), 0) AS critical,
+                  COALESCE(SUM(CASE WHEN severity = 'High' THEN 1 ELSE 0 END), 0) AS high,
+                  COUNT(DISTINCT CASE WHEN host <> '' THEN host END) AS hosts
+             FROM vulnerabilities
+            WHERE realm = 'web' AND COALESCE(client_type, '') <> ''`,
+        )
+        .get()
+    : { total: 0, critical: 0, high: 0, hosts: 0 }
 
   sendJson(res, 200, {
     total: scopedCount,
@@ -420,6 +461,12 @@ export function handleStats({ res, searchParams, holder }) {
       critical: int(internalRow.critical),
       high: int(internalRow.high),
       hosts: int(internalRow.hosts),
+    },
+    client: {
+      total: int(clientRow.total),
+      critical: int(clientRow.critical),
+      high: int(clientRow.high),
+      hosts: int(clientRow.hosts),
     },
   })
 }

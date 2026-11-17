@@ -224,6 +224,8 @@ export function createHttpApi(): CortexApi {
           ['severity', filters.severity],
           ['status', filters.status],
           ['realm', filters.realm],
+          ['client', filters.client],
+          ['client_type', filters.client_type],
           ['page', filters.page],
           ['pageSize', filters.pageSize]
         ])
@@ -236,7 +238,11 @@ export function createHttpApi(): CortexApi {
 
     getStats: (query: DashboardStatsQuery = {}) =>
       request<DashboardStats>(WEB_API_PATHS.stats, {
-        query: toQuery([['realm', query.realm]])
+        query: toQuery([
+          ['realm', query.realm],
+          ['client', query.client],
+          ['client_type', query.client_type]
+        ])
       }),
 
     updateVulnerabilityStatus: (input: UpdateVulnStatusRequest) =>

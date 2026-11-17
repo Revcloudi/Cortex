@@ -23,6 +23,7 @@ import {
 import { VulnDetail } from '@renderer/components/vuln/VulnDetail'
 import { CredentialMatrix, type CredentialTrialInput } from '@renderer/components/internal/CredentialMatrix'
 import { InternalOverviewCards } from '@renderer/components/internal/InternalOverviewCards'
+import { InternalEntityAdmin } from '@renderer/components/internal/InternalEntityAdmin'
 import { InternalVulnList } from '@renderer/components/internal/InternalVulnList'
 import { LootPanel } from '@renderer/components/internal/LootPanel'
 import { RouteView } from '@renderer/components/internal/RouteView'
@@ -562,6 +563,15 @@ export function InternalPage({ dataVersion, embedded = false, onOpenPage }: Inte
             loading={graphLoading}
             error={graphError}
             onRetry={refresh}
+          />
+
+          <InternalEntityAdmin
+            graph={graph}
+            loading={graphLoading}
+            error={graphError}
+            readOnly={readOnly}
+            onRetry={refresh}
+            onDeleted={refresh}
           />
 
           <LootPanel

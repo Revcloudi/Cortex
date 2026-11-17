@@ -71,7 +71,7 @@ function TableSkeleton() {
                 <Skeleton className="h-3.5 w-3.5 rounded-sm" />
               </th>
               <th className={cn(thBase, 'w-[240px]')}>{t('asset.table.asset')}</th>
-              <th className={cn(thBase, 'w-[160px]')}>{t('asset.table.project')}</th>
+              <th className={cn(thBase, 'w-[180px]')}>{t('asset.table.system')}</th>
               <th className={thBase}>{t('asset.table.techStack')}</th>
               <th className={cn(thBase, 'w-[104px] text-center')}>{t('common.status')}</th>
               <th className={cn(thBase, 'w-[64px] text-center')}>{t('asset.table.interfaces')}</th>
@@ -224,8 +224,8 @@ export function AssetTable({
               <th scope="col" className={cn(thBase, 'w-[240px] pl-3')}>
                 {t('asset.table.asset')}
               </th>
-              <th scope="col" className={cn(thBase, 'w-[160px]')}>
-                {t('asset.table.project')}
+              <th scope="col" className={cn(thBase, 'w-[180px]')}>
+                {t('asset.table.system')}
               </th>
               <th scope="col" className={thBase}>
                 {t('asset.table.techStack')}
@@ -320,10 +320,24 @@ export function AssetTable({
                   <td className={cellClass(last)}>
                     <span
                       className="block truncate text-[12.5px] text-foreground"
-                      title={item.project_name}
+                      title={
+                        item.system_name ||
+                        (isMiniapp ? item.display_name || item.appid : item.host_port)
+                      }
                     >
-                      {item.project_name}
+                      {item.system_name ||
+                        (isMiniapp
+                          ? item.display_name || item.appid || item.host_port
+                          : item.host_port)}
                     </span>
+                    {item.system_name ? (
+                      <span
+                        className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground"
+                        title={item.host_port}
+                      >
+                        {isMiniapp ? item.appid || item.host_port : item.host_port}
+                      </span>
+                    ) : null}
                   </td>
                   <td className={cellClass(last)}>
                     <TechStackTags techStack={item.tech_stack} />

@@ -117,7 +117,7 @@ describe('internal operations', () => {
     ])
   })
 
-  it('returns the default project overview with masked credentials', async () => {
+  it('returns the default project overview with raw credentials (no masking)', async () => {
     const res = await server.request('/cortex-api/internal/overview')
     assert.equal(res.status, 200)
     const body = res.json
@@ -142,13 +142,13 @@ describe('internal operations', () => {
     assert.deepEqual(body.pivots[0].hops.map((hop) => hop.seq), [0, 1])
     assert.deepEqual(body.pivots[0].reachableSubnets, ['10.0.0.0/24'])
 
-    const masked = body.credentials.find((item) => item.id === 'CR-1')
-    assert.equal(masked.secretLength, 'SuperSecretValue!42'.length)
-    assert.equal(masked.secretMasked.includes('SuperSecretValue'), false)
-    assert.equal(Object.prototype.hasOwnProperty.call(masked, 'secret'), false)
-    // Raw response must never contain any credential secret material.
-    assert.equal(res.text.includes('SuperSecretValue'), false)
-    assert.equal(res.text.includes('ssh-private-key-material'), false)
+    const credential = body.credentials.find((item) => item.id === 'CR-1')
+    assert.equal(credential.secretLength, 'SuperSecretValue!42'.length)
+    assert.equal(credential.secret, 'SuperSecretValue!42')
+    assert.equal(credential.secretMasked, 'SuperSecretValue!42')
+    // The local-first DTO returns raw credential material.
+    assert.equal(res.text.includes('SuperSecretValue'), true)
+    assert.equal(res.text.includes('ssh-private-key-material'), true)
   })
 
   it('404s unknown projects and validates project params', async () => {

@@ -19908,11 +19908,7 @@ function deriveHostSubnet(ip, declaredSubnet = "") {
   return "unknown";
 }
 function maskSecret(secret) {
-  const value = secret.trim();
-  if (value.length === 0) return "";
-  if (value.includes("\n") || value.includes("\r")) return "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
-  if (value.length < 12) return "\u2022".repeat(Math.max(6, Math.min(12, value.length)));
-  return `${"\u2022".repeat(6)}${value.slice(-4)}`;
+  return String(secret ?? "").trim();
 }
 var CREDENTIAL_ACTIONS = [
   "pass_the_hash",
@@ -20656,30 +20652,8 @@ function lintPocCode(code, maxCodeBytes = POC_LIMITS.maxCodeBytes) {
   }
   return { ok: errors.length === 0, errors, warnings };
 }
-var LONG_BASE64_PATTERN = /[A-Za-z0-9+/_-]{80,}={0,2}/g;
-var LONG_HEX_PATTERN = /\b[0-9a-fA-F]{64,}\b/g;
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-function redactPocText(text, secrets = []) {
-  let result = text;
-  for (const secret of secrets) {
-    const value = secret.trim();
-    if (value.length < 4) continue;
-    result = result.replace(new RegExp(escapeRegExp(value), "g"), "[REDACTED]");
-  }
-  result = result.replace(
-    /\b(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key)\s*:\s*[^\r\n]*/gi,
-    "$1: [REDACTED]"
-  ).replace(
-    /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|passwd|secret|client[_-]?secret)\b(\s*[=:]\s*)(["']?)[^\s"'&,;}\]]+/gi,
-    "$1$2$3[REDACTED]"
-  ).replace(
-    /"(apiKey|api_key|token|access_token|password|secret|clientSecret|authorization|cookie)"\s*:\s*"[^"]*"/gi,
-    '"$1":"[REDACTED]"'
-  );
-  result = result.replace(LONG_BASE64_PATTERN, "[REDACTED_B64]").replace(LONG_HEX_PATTERN, "[REDACTED_HEX]");
-  return result;
+function redactPocText(text, _secrets = []) {
+  return String(text ?? "");
 }
 function truncatePocText(text, maxBytes) {
   const encoder = new TextEncoder();
@@ -20742,6 +20716,9 @@ function collectPocSecretValues(uiSchema, inputs) {
 // src/cortex-ui/shared/types.ts
 var SEVERITIES = ["Critical", "High", "Medium", "Low", "Info"];
 var VULN_STATUSES = ["Confirmed", "Inconclusive", "Retest_Passed"];
+var CLIENT_TYPES = ["android", "ios", "desktop"];
+var CLIENT_CONNECTIONS = ["usb", "ssh", "remote", "emulator", "wifi"];
+var CLIENT_SCOPES = ["server", "client"];
 var SEVERITY_LABELS = {
   Critical: "\u4E25\u91CD",
   High: "\u9AD8\u5371",
@@ -20822,6 +20799,10 @@ var VulnerabilityPayloadSchema = external_exports.object({
   retest_results: external_exports.array(RetestResultSchema).max(100).default([]),
   related_vuln_ids: external_exports.array(external_exports.string().trim().min(1).max(100)).max(200).default([]),
   status: external_exports.enum(VULN_STATUSES).default("Confirmed"),
+  /** Leave empty for a normal web/server finding. */
+  client_type: external_exports.union([external_exports.enum(CLIENT_TYPES), external_exports.literal("")]).default(""),
+  /** USB / SSH / emulator / remote context for client findings; empty otherwise. */
+  client_connection: external_exports.union([external_exports.enum(CLIENT_CONNECTIONS), external_exports.literal("")]).default(""),
   created_at: isoDateString.default(() => (/* @__PURE__ */ new Date()).toISOString())
 }).strict();
 var VulnerabilitySchema = VulnerabilityPayloadSchema.extend({
@@ -21035,6 +21016,8 @@ var AssetContextPayloadSchema = external_exports.object({
   host_port: assetIdentifierSchema,
   host: assetHostSchema.optional(),
   project_name: external_exports.string().trim().min(1, "project_name \u4E0D\u80FD\u4E3A\u7A7A").max(120),
+  /** Human-readable system name (company + system); project stays the relation key. */
+  system_name: external_exports.string().trim().max(200).optional(),
   tech_stack: external_exports.string().trim().max(1e3).optional(),
   auth_required: external_exports.boolean().default(false),
   status: external_exports.enum(ASSET_STATUSES).default("Alive"),
@@ -21056,9 +21039,37 @@ var AssetContextPayloadSchema = external_exports.object({
   related_vuln_ids: external_exports.array(external_exports.string().trim().min(1).max(100)).max(200).default([]),
   last_seen: external_exports.string().trim().min(1).max(64).optional()
 }).strict();
+var AssetDomainSchema = external_exports.object({
+  host: external_exports.string(),
+  role: external_exports.string().default("api"),
+  source: external_exports.string().default(""),
+  confidence: external_exports.string().default("medium"),
+  first_seen: external_exports.string().default(""),
+  last_seen: external_exports.string().default("")
+}).passthrough();
+var MiniappVersionSchema = external_exports.object({
+  version: external_exports.string().default(""),
+  package_sha256: external_exports.string().default(""),
+  package_dir: external_exports.string().default(""),
+  scanned_at: external_exports.string().default(""),
+  tool_version: external_exports.string().default(""),
+  metadata_json: external_exports.string().default("{}")
+}).passthrough();
 var AssetContextSchema = AssetContextPayloadSchema.extend({
   host: assetHostSchema,
-  last_seen: external_exports.string().trim().min(1).max(64)
+  last_seen: external_exports.string().trim().min(1).max(64),
+  /** Identity layer: web assets use host_port; mini-programs use appid/hash. */
+  asset_id: external_exports.string().default(""),
+  kind: external_exports.enum(["web", "miniapp"]).default("web"),
+  external_id: external_exports.string().default(""),
+  display_name: external_exports.string().default(""),
+  appid: external_exports.string().default(""),
+  platform: external_exports.string().default(""),
+  identity_confidence: external_exports.enum(["low", "medium", "high"]).default("high"),
+  primary_domain: external_exports.string().default(""),
+  domains: external_exports.array(AssetDomainSchema).default([]),
+  versions: external_exports.array(MiniappVersionSchema).default([]),
+  linked_vuln_ids: external_exports.array(external_exports.string()).default([])
 }).strict();
 var SyncAssetInfoInputSchema = AssetContextPayloadSchema.extend({
   mode: external_exports.enum(["replace", "merge"]).default("replace")
@@ -21148,12 +21159,16 @@ var QueryVulnerabilitiesInputSchema = external_exports.object({
   status: external_exports.enum(VULN_STATUSES).optional(),
   /** Realm isolation; default `all` keeps the legacy behavior for old agents. */
   realm: external_exports.enum(REALM_FILTERS).optional(),
+  /** Restrict to normal web findings or client findings. */
+  client: external_exports.enum(CLIENT_SCOPES).optional(),
+  /** Narrow client findings to one platform. */
+  client_type: external_exports.enum(CLIENT_TYPES).optional(),
   page: external_exports.number().int().min(1).max(1e5).optional(),
   pageSize: external_exports.number().int().min(1).max(200).optional()
 }).strict().refine(
-  (value) => value.vuln_id !== void 0 || value.host !== void 0 || value.search !== void 0 && value.search.length > 0 || value.severity !== void 0 || value.status !== void 0 || value.realm !== void 0,
+  (value) => value.vuln_id !== void 0 || value.host !== void 0 || value.search !== void 0 && value.search.length > 0 || value.severity !== void 0 || value.status !== void 0 || value.realm !== void 0 || value.client !== void 0 || value.client_type !== void 0,
   {
-    message: "\u81F3\u5C11\u63D0\u4F9B vuln_id\u3001host\u3001search\u3001severity\u3001status\u3001realm \u4E4B\u4E00",
+    message: "\u81F3\u5C11\u63D0\u4F9B vuln_id\u3001host\u3001search\u3001severity\u3001status\u3001realm\u3001client \u6216 client_type \u4E4B\u4E00",
     path: ["vuln_id"]
   }
 );
@@ -21174,7 +21189,7 @@ var QueryAssetContextInputSchema = external_exports.object({
   project_name: external_exports.string().trim().min(1, "project_name \u4E0D\u80FD\u4E3A\u7A7A").max(120).optional(),
   /** Include the internal-scope summary (footholds / hosts / services / pivots). */
   include_internal: external_exports.boolean().optional(),
-  /** Include masked credentials (implies `include_internal`). */
+  /** Include raw credentials (implies `include_internal`). */
   include_credentials: external_exports.boolean().optional()
 }).strict().refine(
   (value) => value.host_port === void 0 !== (value.project_name === void 0),
@@ -21189,7 +21204,11 @@ export {
   AppendPocRetestInputSchema,
   AssetContextPayloadSchema,
   AssetContextSchema,
+  AssetDomainSchema,
   AssetInterfaceSchema,
+  CLIENT_CONNECTIONS,
+  CLIENT_SCOPES,
+  CLIENT_TYPES,
   CONFIDENCE_LEVELS,
   CREDENTIAL_ACTIONS,
   CREDENTIAL_RULES,
@@ -21221,6 +21240,7 @@ export {
   LeakedInfoSchema,
   ListPocModelsInputSchema,
   ManageSnapshotInputSchema,
+  MiniappVersionSchema,
   PIVOT_HOP_REF_KINDS,
   PIVOT_KINDS,
   PIVOT_STATUSES,

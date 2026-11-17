@@ -107,7 +107,7 @@ test('analyzeUnpacked: pages, subpackages, domains, endpoints, secrets, paramete
   const openai = byValue(OPENAI_KEY)
   assert.ok(openai)
   assert.equal(openai.info_type, 'API_Key')
-  assert.equal(openai.value_masked, 'sk-a\u202656')
+  assert.equal(openai.value_masked, OPENAI_KEY)
   assert.equal(openai.source, 'app-service.js')
   assert.equal(openai.line, service.split('\n').findIndex((line) => line.includes(OPENAI_KEY)) + 1)
   assert.ok(openai.potential_impact.length > 0)
@@ -141,10 +141,10 @@ test('analyzeUnpacked: pages, subpackages, domains, endpoints, secrets, paramete
   assert.ok(overview.largestFiles[0].size >= overview.largestFiles[overview.largestFiles.length - 1].size)
 })
 
-test('maskSecret: first 4 + ellipsis + last 2, short values fully masked', () => {
-  assert.equal(maskSecret('sk-abcdefghijklmnopqrstuvwxyz123456'), 'sk-a\u202656')
-  assert.equal(maskSecret('12345678'), '***')
-  assert.equal(maskSecret(''), '***')
+test('maskSecret is a raw pass-through in this local-first build', () => {
+  assert.equal(maskSecret('sk-abcdefghijklmnopqrstuvwxyz123456'), 'sk-abcdefghijklmnopqrstuvwxyz123456')
+  assert.equal(maskSecret('12345678'), '12345678')
+  assert.equal(maskSecret(''), '')
 })
 
 test('analyzeUnpacked: deterministic caps are enforced', (t) => {
@@ -175,7 +175,7 @@ test('analyzeUnpacked: deterministic caps are enforced', (t) => {
   assert.ok(overview.warnings.some((warning) => /parameters truncated/.test(warning)))
 })
 
-test('buildOverviewText: capped, readable and never prints full secrets', (t) => {
+test('buildOverviewText: capped, readable and prints the stored secret values', (t) => {
   const { root } = buildFixture(t)
   const overview = analyzeUnpacked({ unpackedPath: root, appid: APPID, version: '135' })
   const text = buildOverviewText(overview)
@@ -183,17 +183,16 @@ test('buildOverviewText: capped, readable and never prints full secrets', (t) =>
   assert.ok(text.length <= 8000)
   assert.ok(text.includes(APPID))
   assert.ok(text.includes('/api/user/list'))
-  assert.ok(text.includes('sk-a\u202656'))
-  assert.equal(text.includes(OPENAI_KEY), false)
-  assert.equal(text.includes(JWT), false)
-  assert.equal(text.includes(AKID), false)
+  assert.ok(text.includes(OPENAI_KEY))
+  assert.equal(text.includes(JWT), true)
+  assert.equal(text.includes(AKID), true)
 
   const tiny = buildOverviewText(overview, { maxChars: 300 })
   assert.ok(tiny.length <= 300)
   assert.ok(tiny.includes('truncated'))
 })
 
-test('saveOverview/loadOverview: overview.json masked, extracted.json keeps full values', (t) => {
+test('saveOverview/loadOverview: overview.json and extracted.json both keep full values', (t) => {
   const { root } = buildFixture(t)
   const overview = analyzeUnpacked({ unpackedPath: root, appid: APPID, version: '135' })
   saveOverview(root, overview)
@@ -202,7 +201,7 @@ test('saveOverview/loadOverview: overview.json masked, extracted.json keeps full
   assert.equal(existsSync(join(root, 'extracted.json')), true)
   const maskedRaw = readFileSync(join(root, 'overview.json'), 'utf8')
   const extractedRaw = readFileSync(join(root, 'extracted.json'), 'utf8')
-  assert.equal(maskedRaw.includes(OPENAI_KEY), false)
+  assert.equal(maskedRaw.includes(OPENAI_KEY), true)
   assert.equal(maskedRaw.includes('"value"'), false)
   assert.ok(maskedRaw.includes('value_masked'))
   assert.equal(extractedRaw.includes(OPENAI_KEY), true)

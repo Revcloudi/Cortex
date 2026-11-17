@@ -12,10 +12,9 @@
  *    plugin export root (`CORTEX_EXPORT_DIR` / `~/.cortex/exports/<stamp>`).
  *    Every generated file name is sanitized and the resolved target must stay
  *    inside that root (no `..`, no absolute file names).
- *  - The default export is redacted: leaked values, Cookie/Set-Cookie,
- *    Authorization and token/password/key-like fields are masked. Only an
- *    explicit `include_secrets: true` keeps raw values in the JSON format.
- *    CSV and DefectDojo exports always redact.
+ *  - This is a local-first workbench: exports carry the stored values as-is.
+ *    There is no masking/redaction layer. `include_secrets` is accepted for
+ *    backward compatibility but no longer changes the output.
  *  - Exporting to files while the database is read-only is rejected with 403
  *    READ_ONLY, matching the rest of the write surface.
  *
@@ -46,122 +45,37 @@ const MAX_OUTPUT_DIR = 1000
 const MAX_URL_LENGTH = 8000
 
 const REDACTED = '[REDACTED]'
-const SENSITIVE_HEADERS = new Set([
-  'authorization',
-  'proxy-authorization',
-  'cookie',
-  'set-cookie',
-  'x-api-key',
-  'api-key',
-  'x-auth-token',
-  'x-csrf-token',
-  'token',
-  'secret',
-  'password',
-])
-
-/** Property/parameter names that indicate a secret value. */
-const SENSITIVE_NAME_RE =
-  /(?:^|[^a-z0-9])(?:access[_-]?token|refresh[_-]?token|id[_-]?token|auth(?:orization)?|cookie|session(?:id)?|secret|password|passwd|pwd|api[_-]?key|apikey|private[_-]?key|credential|signature|sig)(?:[^a-z0-9]|$)/i
-
-/** Values that are recognisably credentials even without a sensitive key. */
-const SECRET_VALUE_RE = /^(?:sk-[A-Za-z0-9_-]{8,}|AKIA[0-9A-Z]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{8,}\.)/
 
 /* ------------------------------------------------------------------------- */
 /* Redaction                                                                 */
 /* ------------------------------------------------------------------------- */
 
 /**
- * Mask credential-looking header lines and sensitive key/value pairs in a raw
- * HTTP request, response, URL, Markdown evidence or JSON body. This is a
- * best-effort textual scrubber; the structured field redaction below is the
- * primary control.
+ * Pass-through kept for compatibility. The local-first export surfaces stored
+ * values verbatim; no credential/header/key masking is applied.
  * @param {unknown} value
  * @returns {string}
  */
 export function redactText(value) {
-  let text = value === null || value === undefined ? '' : String(value)
-  if (text.length === 0) return ''
-
-  // Header lines: `Cookie: ...`, `Authorization: Bearer ...`, `X-Api-Key: ...`
-  text = text
-    .split('\n')
-    .map((line) => {
-      const match = /^(\s*)([!#$%&'*+\-.^_`|~0-9A-Za-z]+)\s*:\s*(.*)$/.exec(line)
-      if (!match) return line
-      if (!SENSITIVE_HEADERS.has(match[2].toLowerCase())) return line
-      return `${match[1]}${match[2]}: ${REDACTED}`
-    })
-    .join('\n')
-
-  // JSON object properties such as `"token":"..."` / `'password': '...'`.
-  text = text.replace(
-    /("([^"\\]|\\.)*"\s*:\s*)"(?:[^"\\]|\\.)*"/g,
-    (whole, prefix, key) => (SENSITIVE_NAME_RE.test(key) ? `${prefix}"${REDACTED}"` : whole),
-  )
-
-  // URL query strings, form bodies and path parameters: `?token=...&a=1`.
-  text = text.replace(/([?&;])([^=&\s;]+)=([^&\s;]*)/g, (whole, separator, name, rawValue) => {
-    const decodedName = (() => {
-      try {
-        return decodeURIComponent(name)
-      } catch {
-        return name
-      }
-    })()
-    if (!SENSITIVE_NAME_RE.test(decodedName)) return whole
-    return `${separator}${name}=${REDACTED}`
-  })
-
-  return text
+  return value === null || value === undefined ? '' : String(value)
 }
 
 /**
- * Redact one leaked-info entry. The value never survives in a default export;
- * the metadata (type/source/impact) stays useful for triage.
- * @param {Record<string, any>} entry
- * @param {boolean} includeSecrets
- */
-function redactLeak(entry, includeSecrets) {
-  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return entry
-  const next = { ...entry }
-  if (!includeSecrets) next.value = REDACTED
-  return next
-}
-
-/** Mask values of test-parameter candidates that look like credentials. */
-function redactTestParameter(entry, includeSecrets) {
-  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return entry
-  if (includeSecrets) return { ...entry }
-  const next = { ...entry }
-  const name = String(next.name || '')
-  const values = Array.isArray(next.values) ? next.values : []
-  next.values = values.map((value) => {
-    const text = String(value)
-    return SENSITIVE_NAME_RE.test(name) || SECRET_VALUE_RE.test(text) ? REDACTED : value
-  })
-  return next
-}
-
-/**
- * Deep-ish asset copy with sensitive request/leak material masked.
+ * Copy an asset without changing any stored value. Kept as a named helper so
+ * existing call sites and external tests keep working.
  * @param {Record<string, any>} asset
- * @param {boolean} includeSecrets
+ * @param {boolean} _includeSecrets retained for API compatibility
  */
-export function redactAsset(asset, includeSecrets = false) {
+export function redactAsset(asset, _includeSecrets = false) {
   const next = { ...(asset || {}) }
-  next.interfaces = (Array.isArray(next.interfaces) ? next.interfaces : []).map((item) => {
-    const entry = item && typeof item === 'object' && !Array.isArray(item) ? { ...item } : item
-    if (!includeSecrets && entry && typeof entry === 'object' && typeof entry.request === 'string') {
-      entry.request = redactText(entry.request)
-    }
-    return entry
-  })
+  next.interfaces = (Array.isArray(next.interfaces) ? next.interfaces : []).map((item) =>
+    item && typeof item === 'object' && !Array.isArray(item) ? { ...item } : item,
+  )
   next.leaked_infos = (Array.isArray(next.leaked_infos) ? next.leaked_infos : []).map((entry) =>
-    redactLeak(entry, includeSecrets),
+    entry && typeof entry === 'object' && !Array.isArray(entry) ? { ...entry } : entry,
   )
   next.test_parameters = (Array.isArray(next.test_parameters) ? next.test_parameters : []).map((entry) =>
-    redactTestParameter(entry, includeSecrets),
+    entry && typeof entry === 'object' && !Array.isArray(entry) ? { ...entry } : entry,
   )
   next.domains = Array.isArray(next.domains) ? next.domains.map((entry) => ({ ...entry })) : []
   next.versions = Array.isArray(next.versions) ? next.versions.map((entry) => ({ ...entry })) : []
@@ -169,23 +83,20 @@ export function redactAsset(asset, includeSecrets = false) {
 }
 
 /**
- * Redacted copy of a vulnerability. Retest results are append-only evidence, so
- * their conclusions are scrubbed while the time range is preserved.
+ * Copy a vulnerability without changing any stored value.
  * @param {Record<string, any>} vuln
- * @param {boolean} includeSecrets
+ * @param {boolean} _includeSecrets retained for API compatibility
  */
-export function redactVulnerability(vuln, includeSecrets = false) {
+export function redactVulnerability(vuln, _includeSecrets = false) {
   const next = { ...(vuln || {}) }
-  const scrub = (value) => (includeSecrets ? value : redactText(value))
   for (const key of ['description', 'impact', 'test_boundaries', 'crypto_details', 'reproduction_steps']) {
-    next[key] = scrub(next[key])
+    next[key] = next[key] === null || next[key] === undefined ? '' : String(next[key])
   }
-  next.affected_interfaces = (Array.isArray(next.affected_interfaces) ? next.affected_interfaces : []).map(scrub)
-  next.remediation = (Array.isArray(next.remediation) ? next.remediation : []).map(scrub)
-  next.retest_results = (Array.isArray(next.retest_results) ? next.retest_results : []).map((entry) => {
-    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return entry
-    return { ...entry, conclusion: includeSecrets ? entry.conclusion : redactText(entry.conclusion) }
-  })
+  next.affected_interfaces = (Array.isArray(next.affected_interfaces) ? next.affected_interfaces : []).map(String)
+  next.remediation = (Array.isArray(next.remediation) ? next.remediation : []).map(String)
+  next.retest_results = (Array.isArray(next.retest_results) ? next.retest_results : []).map((entry) =>
+    entry && typeof entry === 'object' && !Array.isArray(entry) ? { ...entry } : entry,
+  )
   return next
 }
 
@@ -325,9 +236,8 @@ export function defectDojoEndpoints(targetUrl) {
 }
 
 /**
- * Build the Generic Findings Import envelope. Secrets are always redacted here:
- * CSV and DefectDojo output never carries raw credential material, even when
- * the caller asked for it.
+ * Build the Generic Findings Import envelope from the stored record.
+ * No masking is applied; evidence is exported exactly as captured locally.
  *
  * @param {{vulnerabilities: Record<string, any>[], assets: Record<string, any>[], exportedAt: string}} input
  */
@@ -600,7 +510,7 @@ function loadVulnerabilities(db, ids) {
 }
 
 /**
- * Build the versioned JSON envelope (already redacted where requested).
+ * Build the versioned JSON envelope.
  * @param {{projectName:string, assets:Record<string,any>[], vulnerabilities:Record<string,any>[], exportedAt:string, warnings:string[]}} input
  */
 export function buildProjectJsonExport({ projectName, assets, vulnerabilities, exportedAt, warnings = [] }) {
@@ -657,7 +567,7 @@ export function buildProjectJsonExport({ projectName, assets, vulnerabilities, e
   }
 }
 
-/** Redacted Markdown evidence for one finding. */
+/** Markdown evidence for one finding, with stored values verbatim. */
 export function buildEvidenceMarkdown(vuln) {
   const lines = [
     `# ${vuln.vuln_name || vuln.id}`,
@@ -711,7 +621,8 @@ async function exportToFiles({ holder, config, mode, body }) {
   }
   const format = formatField(body)
   const includeEvidence = boolField(body, 'include_evidence')
-  const includeSecrets = boolField(body, 'include_secrets')
+  // Accepted for backward compatibility; this local-first export never masks.
+  boolField(body, 'include_secrets')
   const projectName = projectField(body, mode === 'project')
   const assetIds = idList(body, 'asset_ids')
   const vulnIds = idList(body, 'vuln_ids')
@@ -768,7 +679,7 @@ async function exportToFiles({ holder, config, mode, body }) {
       listMiniappVersions(db, entry.key),
       listLinkedVulnIds(db, entry.key),
     )
-    return redactAsset(context, includeSecrets)
+    return redactAsset(context)
   })
 
   const linkedVulnIds = new Set()
@@ -797,18 +708,11 @@ async function exportToFiles({ holder, config, mode, body }) {
       ...detail,
       asset_id: [...assetIdSet][0] || '',
       asset_ids: [...assetIdSet],
-    }, includeSecrets)
+    })
   })
 
   if (assets.length === 0) warnings.push('no matching asset was found')
   if (vulnerabilities.length === 0) warnings.push('no matching vulnerability was found')
-  if (format === 'csv' || format === 'defectdojo') {
-    warnings.push('secrets and session headers are always redacted in CSV and DefectDojo exports')
-  } else if (!includeSecrets) {
-    warnings.push('secrets and session headers are redacted by default')
-  } else {
-    warnings.push('include_secrets=true: raw leaked values and request headers are included in the JSON export')
-  }
 
   /** @type {{name:string, content:string}[]} */
   const files = []
@@ -823,13 +727,8 @@ async function exportToFiles({ holder, config, mode, body }) {
     const name = `cortex-export-${projectSlug(projectName)}-${timestampSlug(new Date(exportedAt))}.json`
     files.push({ name, content: JSON.stringify(exportJson, null, 2) })
   } else if (format === 'csv') {
-    // CSV is shared with spreadsheets and other tools: always redacted,
-    // independently of the JSON include_secrets choice.
-    files.push({ name: 'assets.csv', content: assetsCsv(assets.map((asset) => redactAsset(asset, false))) })
-    files.push({
-      name: 'vulnerabilities.csv',
-      content: vulnerabilitiesCsv(vulnerabilities.map((vuln) => redactVulnerability(vuln, false))),
-    })
+    files.push({ name: 'assets.csv', content: assetsCsv(assets) })
+    files.push({ name: 'vulnerabilities.csv', content: vulnerabilitiesCsv(vulnerabilities) })
   } else {
     files.push({
       name: 'defectdojo-findings.json',

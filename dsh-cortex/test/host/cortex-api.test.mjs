@@ -89,6 +89,8 @@ function expectCode(res, status, code) {
 }
 
 const VULN_ITEM_KEYS = [
+  'client_connection',
+  'client_type',
   'created_at',
   'entry_point',
   'host',
@@ -134,6 +136,7 @@ const ASSET_ITEM_KEYS = [
   'project_name',
   'related_vuln_count',
   'status',
+  'system_name',
   'tech_stack',
 ]
 
@@ -338,6 +341,7 @@ describe('cortex: GET /stats', () => {
     assert.deepEqual(Object.keys(web).sort(), [
       'bySeverity',
       'byStatus',
+      'client',
       'critical',
       'high',
       'hosts',
@@ -352,6 +356,7 @@ describe('cortex: GET /stats', () => {
     assert.deepEqual(web.bySeverity, { Critical: 1, High: 2, Medium: 2, Low: 1, Info: 1 })
     assert.deepEqual(web.byStatus, { Confirmed: 5, Inconclusive: 1, Retest_Passed: 1 })
     assert.deepEqual(web.internal, { total: 2, critical: 1, high: 1, hosts: 1 })
+    assert.deepEqual(web.client, { total: 0, critical: 0, high: 0, hosts: 0 })
 
     const internal = expectOk(await readServer.request('/cortex-api/cortex/stats?realm=internal'))
     assert.equal(internal.total, 2)
@@ -622,7 +627,7 @@ describe('cortex: delegated /graph + /internal + /loot', () => {
       assert.ok(Array.isArray(graph[field]), `internal graph ${field} must be an array`)
     }
     assert.equal(typeof graph.truncated, 'boolean')
-    assert.ok(graph.credentials.every((credential) => credential.secret === undefined))
+    assert.ok(graph.credentials.every((credential) => typeof credential.secret === 'string'))
 
     const loot = expectOk(await readServer.request('/cortex-api/cortex/loot'))
     assert.ok(Array.isArray(loot))

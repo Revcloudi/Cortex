@@ -61,7 +61,6 @@ export interface NodeInspectorProps {
 }
 
 /** Preview limits: the drawer never renders full evidence / inventories. */
-const LEAK_PREVIEW_CHARS = 32
 const TEXT_PREVIEW_CHARS = 90
 const RELATION_LIMIT = 6
 const CHIP_LIMIT = 4
@@ -292,16 +291,14 @@ function VulnSections(node: VulnNode, t: Translate): NodeSections {
   return { identity, metrics }
 }
 
-/** Truncated, copyable leak value (secrets are never rendered in full). */
+/** Copyable leak value; this local-first build shows the raw stored value. */
 function LeakValue({ value }: { value: string }) {
   const { t } = useI18n()
   const { copied, copy } = useCopy()
-  const truncated = value.length > LEAK_PREVIEW_CHARS
-  const shown = truncated ? `${value.slice(0, LEAK_PREVIEW_CHARS)}…` : value
   return (
     <div className="min-w-0">
       <p className="break-all rounded-[2px] border border-[#00E5FF]/20 bg-[#01060D]/80 px-2 py-1.5 font-mono text-[12.5px] leading-relaxed text-[#C7E9F5]">
-        {shown}
+        {value}
       </p>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         <HudButton

@@ -14,6 +14,8 @@ export const dashboardMessages: MessageBundle = {
     'dashboard.metric.todayContext': '本地时间自 00:00 起写入',
     'dashboard.tab.groupAria': '切换漏洞看板标签',
     'dashboard.tab.web': 'Web 漏洞',
+    'dashboard.tab.client': '客户端漏洞',
+    'dashboard.tab.clientCountAria': '{count} 条客户端漏洞',
     'dashboard.tab.internal': '内网作战',
     'dashboard.tab.internalHint': '内网作战域：foothold、内网主机/服务、凭据、代理与 Loot',
     'dashboard.tab.internalCountAria': '{count} 条内网漏洞',
@@ -41,6 +43,8 @@ export const dashboardMessages: MessageBundle = {
     'dashboard.metric.todayContext': 'Written since 00:00 local time',
     'dashboard.tab.groupAria': 'Switch dashboard tabs',
     'dashboard.tab.web': 'Web vulns',
+    'dashboard.tab.client': 'Client vulns',
+    'dashboard.tab.clientCountAria': '{count} client vulnerabilities',
     'dashboard.tab.internal': 'Internal ops',
     'dashboard.tab.internalHint':
       'Internal operations: footholds, internal hosts/services, credentials, pivots and loot',

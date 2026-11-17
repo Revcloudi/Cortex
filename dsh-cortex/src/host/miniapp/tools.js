@@ -183,7 +183,7 @@ export function createMiniappToolDefinitions({ holder } = {}) {
 
   const overviewTool = defineTool(
     'cortex_get_miniapp_overview',
-    'Summarise an unpacked mini-program: pages, subpackages, business domains, endpoint candidates, hard-coded secret counts (masked) and candidate test parameters. Capped at ~8000 characters. Requires unpack first.',
+    'Summarise an unpacked mini-program: pages, subpackages, business domains, endpoint candidates, hard-coded secrets (raw values) and candidate test parameters. Capped at ~8000 characters. Requires unpack first.',
     {
       appid: { type: 'string', minLength: 1, maxLength: 64 },
       version: { type: 'string', maxLength: 64, description: 'Omit for the newest detected version' },

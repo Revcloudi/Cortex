@@ -21,9 +21,9 @@ Cortex: local-first pentest intelligence hub. Agents (pure stdio MCP server), th
 
 Cortex also ships as a native **DeepSeek Harness** plugin (`dsh-cortex/` in this repository):
 
-- the full Cortex workbench — vulnerability board, internal operations, 3D Memory Nebula, assets, snapshots, retest and mini-program reversing;
-- **project / selected-asset export** to versioned JSON (`cortex.export/v1`), CSV and DefectDojo Generic Findings, redacted by default with optional evidence files;
-- **multi-select asset batch export/delete**; deletion removes only assets and their sidecars, never vulnerability records;
+- the full Cortex workbench — vulnerability board with a separate **client-findings** tab (Android / iOS / desktop, USB/SSH context), internal operations with per-entity delete, 3D Memory Nebula, assets, snapshots, retest and mini-program reversing;
+- **project / selected-asset export** to versioned JSON (`cortex.export/v1`), CSV and DefectDojo Generic Findings, with optional evidence files; local values are exported verbatim (no masking);
+- **multi-select asset batch export/delete**; deletion removes only assets and their sidecars, never vulnerability records; the asset library shows an editable **system name** instead of the project key;
 - a standalone Yakit-style **Web Fuzzer** for manual HTTP requests with raw / JSON / sandboxed render response views and independent SSRF-safe target validation;
 - a **WeChat mini-program** reverse-engineering workbench (wxapkg detect / decrypt / unpack / analyze / import); each mini-program is its own appid-keyed asset (package-hash fallback), with domains stored as relations;
 - **22 native agent tools** over the same local SQLite, **without any MCP server**.

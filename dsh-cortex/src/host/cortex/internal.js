@@ -30,8 +30,10 @@ import {
   assertLoopbackPeer,
   badRequest,
   methodNotAllowed,
+  notFound,
   parseRequestUrl,
   readJsonBody,
+  safeDecode,
   sendError,
   sendJson,
 } from '../http.js'
@@ -54,6 +56,17 @@ const ROUTES = new Map([
   [PATHS.credentialTrial, 'POST'],
   [PATHS.loot, 'GET'],
 ])
+
+/** entity kind -> table (whitelist; never interpolate request input). */
+const DELETE_TABLES = new Map([
+  ['hosts', 'internal_hosts'],
+  ['services', 'internal_services'],
+  ['footholds', 'footholds'],
+  ['credentials', 'credentials'],
+  ['pivots', 'pivots'],
+])
+
+const DELETE_PATH_RE = /^\/internal\/(hosts|services|footholds|credentials|pivots)\/([^/]+)$/
 
 function upperMethod(ctx) {
   const method = ctx?.method ?? ctx?.req?.method ?? 'GET'
@@ -78,8 +91,12 @@ function searchParamsOf(ctx) {
 export async function handleInternal(ctx) {
   if (!ctx || typeof ctx !== 'object') return false
   const path = resolveCortexPath(ctx)
-  const expectedMethod = ROUTES.get(path)
-  if (expectedMethod === undefined) return false
+  const deleteMatch = DELETE_PATH_RE.exec(path)
+  const expectedMethod = deleteMatch ? 'DELETE' : ROUTES.get(path)
+  if (expectedMethod === undefined) {
+    if (path.startsWith('/internal/')) throw notFound('internal route not found')
+    return false
+  }
 
   const { req, res, holder } = ctx
   try {
@@ -92,6 +109,20 @@ export async function handleInternal(ctx) {
 
     holder.ensure()
     holder.assertUsable()
+
+    if (deleteMatch) {
+      const kind = deleteMatch[1]
+      const table = DELETE_TABLES.get(kind)
+      const id = safeDecode(deleteMatch[2], 'entity id')
+      if (id.length === 0 || id.length > 200) throw badRequest('entity id is invalid')
+      const changes = await holder.withWriteTransaction((db) =>
+        Number(db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id).changes) || 0,
+      )
+      if (changes === 0) throw notFound('internal entity not found')
+      if (typeof ctx.bumpRev === 'function') ctx.bumpRev()
+      sendJson(res, 200, { deleted: true, id })
+      return true
+    }
 
     const adapter = createGraphDatabaseAdapter(holder)
     const searchParams = searchParamsOf(ctx)

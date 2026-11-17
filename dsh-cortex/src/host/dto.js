@@ -4,7 +4,7 @@
  * Rules:
  *  - every field is always present; missing values fall back to '' / [] / 0 / null
  *  - JSON columns are parsed defensively; corrupt data degrades to the fallback
- *  - `credentials.secret` is NEVER serialized: only `secretMasked` + `secretLength`
+ *  - `credentials.secret` is serialized as stored (local-first, no masking)
  *  - column names are snake_case in SQLite, DTO keys are camelCase
  */
 
@@ -266,15 +266,13 @@ export function assetDetail(row) {
 /* ------------------------------------------------------------------------- */
 
 /**
+ * Pass-through kept for compatibility: this local-first workbench displays
+ * raw credential material and does not mask stored information.
  * @param {unknown} secret
- * @returns {string} masked preview only, never the real secret
+ * @returns {string}
  */
 export function maskSecret(secret) {
-  const value = text(secret)
-  if (value.length === 0) return ''
-  if (value.length <= 2) return '••'
-  if (value.length <= 6) return '••••'
-  return `${value.slice(0, 2)}••••${value.slice(-1)}`
+  return text(secret)
 }
 
 /** @param {Record<string, any>} row @param {string[]} hostIds */
@@ -345,7 +343,8 @@ export function credentialMasked(row) {
     confidence: text(source.confidence),
     status: text(source.status),
     notes: text(source.notes),
-    secretMasked: maskSecret(secret),
+    secret,
+    secretMasked: secret,
     secretLength: secret.length,
   }
 }

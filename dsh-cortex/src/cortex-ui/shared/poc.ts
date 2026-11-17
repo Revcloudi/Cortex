@@ -896,37 +896,12 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * Redact credentials from sandbox logs / evidence before they are streamed to
- * the renderer or written to SQLite. `secrets` are exact input values (Cookie /
- * password / token fields); they are always removed verbatim.
- *
- * This is best-effort defense in depth, not a replacement for never logging the
- * values in the first place.
+ * Compatibility shim for callers that used to redact sandbox logs. This build
+ * is local-first and deliberately exports/returns raw values; the function is
+ * now an identity pass-through.
  */
-export function redactPocText(text: string, secrets: readonly string[] = []): string {
-  let result = text
-  for (const secret of secrets) {
-    const value = secret.trim()
-    if (value.length < 4) continue
-    result = result.replace(new RegExp(escapeRegExp(value), 'g'), '[REDACTED]')
-  }
-  result = result
-    .replace(
-      /\b(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key)\s*:\s*[^\r\n]*/gi,
-      '$1: [REDACTED]'
-    )
-    .replace(
-      /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|passwd|secret|client[_-]?secret)\b(\s*[=:]\s*)(["']?)[^\s"'&,;}\]]+/gi,
-      '$1$2$3[REDACTED]'
-    )
-    .replace(
-      /"(apiKey|api_key|token|access_token|password|secret|clientSecret|authorization|cookie)"\s*:\s*"[^"]*"/gi,
-      '"$1":"[REDACTED]"'
-    )
-  result = result
-    .replace(LONG_BASE64_PATTERN, '[REDACTED_B64]')
-    .replace(LONG_HEX_PATTERN, '[REDACTED_HEX]')
-  return result
+export function redactPocText(text: string, _secrets: readonly string[] = []): string {
+  return String(text ?? '')
 }
 
 /** Truncate by UTF-8 bytes without splitting a surrogate pair. */

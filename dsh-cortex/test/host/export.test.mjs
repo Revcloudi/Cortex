@@ -186,24 +186,24 @@ describe('export: project JSON', () => {
     )
   })
 
-  it('redacts leaked values, cookie/authorization headers and token-like test data by default', async () => {
+  it('exports stored values verbatim (no masking layer)', async () => {
     const res = await exportProject({ project_name: PROJECT, format: 'json', output_dir: exportDir })
     assert.equal(res.status, 200)
     const raw = readFileSync(res.json.savedPaths[0], 'utf8')
     const payload = JSON.parse(raw)
     const miniapp = payload.assets.find((asset) => asset.asset_id === MINIAPP_KEY)
-    assert.equal(miniapp.leaked_infos[0].value, '[REDACTED]')
-    assert.doesNotMatch(miniapp.interfaces[0].request, /raw-token-value|raw-session/)
-    assert.match(miniapp.interfaces[0].request, /Authorization: \[REDACTED\]/)
-    assert.match(miniapp.interfaces[0].request, /Cookie: \[REDACTED\]/)
+    assert.equal(miniapp.leaked_infos[0].value, 'demo-api-key-value')
+    assert.match(miniapp.interfaces[0].request, /raw-token-value/)
+    assert.match(miniapp.interfaces[0].request, /raw-session/)
+    assert.doesNotMatch(miniapp.interfaces[0].request, /\[REDACTED\]/)
     const injected = payload.vulnerabilities.find((item) => item.id === 'VULN-INJECT-001')
-    assert.doesNotMatch(injected.reproduction_steps, /raw-token-value/)
-    assert.equal(raw.includes('demo-api-key-value'), false)
-    assert.equal(raw.includes('SecretLeakValue!'), false)
-    assert.ok(res.json.warnings.some((warning) => /redacted/i.test(warning)))
+    assert.match(injected.reproduction_steps, /raw-token-value/)
+    assert.equal(raw.includes('demo-api-key-value'), true)
+    assert.equal(raw.includes('SecretLeakValue!'), true)
+    assert.equal(res.json.warnings.some((warning) => /redact|mask/i.test(warning)), false)
   })
 
-  it('includes raw values only when include_secrets is explicitly true', async () => {
+  it('keeps the same raw output when include_secrets is true (compatibility flag)', async () => {
     const res = await exportProject({
       project_name: PROJECT,
       format: 'json',
@@ -215,7 +215,6 @@ describe('export: project JSON', () => {
     const miniapp = payload.assets.find((asset) => asset.asset_id === MINIAPP_KEY)
     assert.equal(miniapp.leaked_infos[0].value, 'demo-api-key-value')
     assert.match(miniapp.interfaces[0].request, /raw-token-value/)
-    assert.ok(res.json.warnings.some((warning) => /include_secrets=true/.test(warning)))
   })
 })
 
@@ -235,11 +234,11 @@ describe('export: CSV', () => {
     assert.ok(vulnsCsv.includes("'=HYPERLINK"), 'formula cell must be escaped')
     assert.equal(vulnsCsv.includes('\n=HYPERLINK'), false, 'raw formula must not start a cell')
     assert.equal(assetsCsv.includes('demo-api-key-value'), false)
-    assert.equal(vulnsCsv.includes('raw-token-value'), false)
+    assert.equal(vulnsCsv.includes('raw-token-value'), true)
     assert.ok(vulnsCsv.includes('VULN-20260101-001'))
   })
 
-  it('ignores include_secrets for CSV (always redacted)', async () => {
+  it('exports the same raw vulnerability evidence when include_secrets is true', async () => {
     const res = await exportProject({
       project_name: PROJECT,
       format: 'csv',
@@ -254,7 +253,7 @@ describe('export: CSV', () => {
     )
     assert.equal(assetsCsv.includes('demo-api-key-value'), false)
     assert.equal(assetsCsv.includes('SecretLeakValue!'), false)
-    assert.equal(vulnsCsv.includes('raw-token-value'), false)
+    assert.equal(vulnsCsv.includes('raw-token-value'), true)
   })
 
   it('writes optional evidence files', async () => {
@@ -266,12 +265,13 @@ describe('export: CSV', () => {
     })
     assert.equal(res.status, 200)
     assert.ok(res.json.savedPaths.some((path) => /evidence[\\/].*\.md$/.test(path)))
-    const evidence = readFileSync(
-      res.json.savedPaths.find((path) => /evidence[\\/]/.test(path)),
-      'utf8',
+    const evidencePath = res.json.savedPaths.find(
+      (path) => /evidence[\\/]/.test(path) && path.includes('VULN-INJECT-001'),
     )
+    assert.ok(evidencePath, 'injected finding evidence file missing')
+    const evidence = readFileSync(evidencePath, 'utf8')
     assert.match(evidence, /## Reproduction/)
-    assert.doesNotMatch(evidence, /raw-token-value/)
+    assert.match(evidence, /raw-token-value/)
   })
 
   it('rejects relative output_dir and traversal-shaped file names stay inside the root', async () => {
@@ -298,7 +298,7 @@ describe('export: CSV', () => {
 })
 
 describe('export: DefectDojo', () => {
-  it('builds the Generic Findings envelope, maps fields and never leaks secrets', async () => {
+  it('builds the Generic Findings envelope and maps fields verbatim', async () => {
     const res = await exportProject({
       project_name: PROJECT,
       format: 'defectdojo',
@@ -329,10 +329,8 @@ describe('export: DefectDojo', () => {
     assert.ok(Array.isArray(first.endpoints))
     assert.ok(first.endpoints.some((endpoint) => endpoint.startsWith('http://127.0.0.1:8080/')))
     const raw = readFileSync(res.json.savedPaths[0], 'utf8')
-    assert.equal(raw.includes('SecretLeakValue!'), false)
-    assert.equal(raw.includes('demo-api-key-value'), false)
-    assert.equal(raw.includes('raw-token-value'), false)
-    assert.equal(raw.includes('raw-session'), false)
+    assert.equal(raw.includes('raw-token-value'), true)
+    assert.equal(raw.includes('raw-session'), false, 'asset-only headers are not part of findings')
   })
 })
 

@@ -1,5 +1,5 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { AlertTriangle, Download, FolderOpen, Loader2, ShieldCheck } from 'lucide-react'
+import { Download, FolderOpen, Loader2, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Checkbox } from '@renderer/components/ui/checkbox'
@@ -53,8 +53,8 @@ function rememberedDirectory(): string {
 
 /**
  * Project-level test-data export: format, scope (project vs selected assets),
- * evidence, redaction and the real output directory. Defaults to redacted; the
- * raw-secret option is an explicit, warned choice. The Host returns the actual
+ * evidence and the real output directory. The local-first Host exports stored
+ * values verbatim (no masking). The Host returns the actual
  * saved paths so the toast can point at a real file.
  */
 export function AssetExportDialog({
@@ -72,7 +72,6 @@ export function AssetExportDialog({
   const [project, setProject] = useState('')
   const [format, setFormat] = useState<TestDataExportFormat>('json')
   const [includeEvidence, setIncludeEvidence] = useState(false)
-  const [includeSecrets, setIncludeSecrets] = useState(false)
   const [directory, setDirectory] = useState('')
   const [invalidDirectory, setInvalidDirectory] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -86,7 +85,6 @@ export function AssetExportDialog({
     setProject(initialProject ?? availableProjects[0] ?? '')
     setFormat('json')
     setIncludeEvidence(false)
-    setIncludeSecrets(false)
     setInvalidDirectory(false)
     setError(null)
     setPending(false)
@@ -144,7 +142,6 @@ export function AssetExportDialog({
         project_name: project.trim() || undefined,
         format,
         include_evidence: includeEvidence,
-        include_secrets: includeSecrets,
         ...(trimmed === '' ? {} : { output_dir: trimmed })
       }
       const result =
@@ -341,31 +338,10 @@ export function AssetExportDialog({
                   </span>
                 </span>
               </label>
-              <label className="flex cursor-pointer items-start gap-2 text-[11.5px] text-foreground">
-                <Checkbox
-                  data-testid="asset-export-secrets"
-                  checked={includeSecrets}
-                  disabled={pending}
-                  onChange={(event) => setIncludeSecrets(event.target.checked)}
-                  className="mt-0.5"
-                />
-                <span>
-                  {t('asset.export.secretsLabel')}
-                  <span className="block text-[10px] font-normal text-muted-foreground">
-                    {t('asset.export.secretsHint')}
-                  </span>
-                </span>
-              </label>
               <div className="flex items-start gap-1.5 text-[10.5px] text-emerald-700">
                 <ShieldCheck aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
-                <span>{t('asset.export.redactionNote')}</span>
+                <span>{t('asset.export.rawNote')}</span>
               </div>
-              {includeSecrets ? (
-                <div className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[10.5px] leading-relaxed text-red-700">
-                  <AlertTriangle aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>{t('asset.export.secretsWarning')}</span>
-                </div>
-              ) : null}
             </div>
 
             {/* output directory */}

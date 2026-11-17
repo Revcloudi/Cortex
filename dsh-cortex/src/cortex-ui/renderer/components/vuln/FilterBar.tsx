@@ -1,7 +1,9 @@
 import type { RefObject } from 'react'
 import {
+  CLIENT_TYPES,
   SEVERITIES,
   VULN_STATUSES,
+  type ClientType,
   type DashboardStats,
   type Severity,
   type VulnStatus
@@ -28,10 +30,14 @@ interface FilterBarProps {
   total: number | null
   filtersActive: boolean
   selectMode: boolean
+  /** Shown only on the client-findings tab. */
+  clientType?: ClientType | 'all'
+  showClientType?: boolean
   searchInputRef: RefObject<HTMLInputElement | null>
   onSearchChange: (value: string) => void
   onSeverityChange: (value: Severity | 'all') => void
   onStatusChange: (value: VulnStatus | 'all') => void
+  onClientTypeChange?: (value: ClientType | 'all') => void
   onToggleSelectMode: () => void
   onClear: () => void
   onRefresh: () => void
@@ -45,10 +51,13 @@ export function FilterBar({
   total,
   filtersActive,
   selectMode,
+  clientType = 'all',
+  showClientType = false,
   searchInputRef,
   onSearchChange,
   onSeverityChange,
   onStatusChange,
+  onClientTypeChange,
   onToggleSelectMode,
   onClear,
   onRefresh
@@ -157,6 +166,29 @@ export function FilterBar({
           ))}
         </SelectContent>
       </Select>
+
+      {showClientType ? (
+        <Select
+          value={clientType}
+          onValueChange={(value) => onClientTypeChange?.(value as ClientType | 'all')}
+        >
+          <SelectTrigger
+            data-testid="client-type-filter"
+            aria-label={t('vuln.filter.clientTypeAria')}
+            className="h-8 w-[136px] text-[12px]"
+          >
+            <SelectValue placeholder={t('vuln.filter.allClientTypes')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('vuln.filter.allClientTypes')}</SelectItem>
+            {CLIENT_TYPES.map((value) => (
+              <SelectItem key={value} value={value}>
+                {t(`vuln.clientType.${value}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
 
       <div className="ml-auto flex items-center gap-2">
         <span className="text-[11px] tabular-nums text-muted-foreground">{resultLabel}</span>

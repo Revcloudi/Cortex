@@ -1,7 +1,7 @@
 import { type KeyboardEvent, type ReactNode } from 'react'
 import { AlertTriangle, ChevronRight, Database, Inbox, Loader2, Search } from 'lucide-react'
 import type { VulnerabilityListItem } from '@shared/types'
-import { SeverityBadge, StatusBadge } from '@renderer/components/common/Badges'
+import { ClientBadge, SeverityBadge, StatusBadge } from '@renderer/components/common/Badges'
 import { EmptyState } from '@renderer/components/common/EmptyState'
 import { Button } from '@renderer/components/ui/button'
 import { Checkbox } from '@renderer/components/ui/checkbox'
@@ -344,11 +344,20 @@ export function VulnTable({
                       last && 'border-b-0'
                     )}
                   >
-                    <p
-                      className="truncate text-[13px] font-medium text-foreground"
-                      title={item.vuln_name}
-                    >
-                      {item.vuln_name}
+                    <p className="flex min-w-0 items-center gap-1.5">
+                      <span
+                        className="truncate text-[13px] font-medium text-foreground"
+                        title={item.vuln_name}
+                      >
+                        {item.vuln_name}
+                      </span>
+                      {item.client_type ? (
+                        <ClientBadge
+                          clientType={item.client_type}
+                          clientConnection={item.client_connection}
+                          className="shrink-0"
+                        />
+                      ) : null}
                     </p>
                     <p className="mt-0.5 truncate font-mono text-[10.5px] text-muted-foreground">
                       {formatVulnType(item.vuln_type, t)}

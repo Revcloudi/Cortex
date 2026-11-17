@@ -518,18 +518,18 @@ test('GET /internal/overview returns InternalOverview without secrets', async (t
   assert.ok(overview.warnings.some((warning) => warning.includes('待归一化')))
   assert.ok(overview.projects.some((item) => item.project_name === 'Project Alpha'))
 
-  // Credentials are masked projections: secret_preview + secret_length only.
+  // Credentials are raw local records: no masking layer.
   for (const credential of overview.credentials) {
+    assert.equal(typeof credential.secret, 'string')
     assert.equal(typeof credential.secret_preview, 'string')
     assert.equal(typeof credential.secret_length, 'number')
-    assert.ok(!('secret' in credential), 'raw secret field is never returned')
   }
-  assert.ok(!res.text.includes('SuperSecretValue!42'))
-  assert.ok(!res.text.includes('ssh-private-key-material'))
+  assert.ok(res.text.includes('SuperSecretValue!42'))
+  assert.ok(res.text.includes('ssh-private-key-material'))
   assert.ok(!res.text.includes(fixture.dir), 'no absolute database path')
-  // The masked preview keeps a recognizable suffix for long secrets.
   const password = overview.credentials.find((item) => item.id === 'CR-1')
-  assert.ok(password.secret_preview.endsWith('e!42'), 'masked preview keeps last 4 chars')
+  assert.equal(password.secret, 'SuperSecretValue!42')
+  assert.equal(password.secret_preview, 'SuperSecretValue!42')
   assert.equal(password.secret_length, 'SuperSecretValue!42'.length)
 
   // No project filter -> empty overview plus the project selector.
@@ -575,8 +575,8 @@ test('GET /internal/graph returns InternalGraphData with heatmap and suggestions
     assert.equal(typeof suggestion.reason, 'string')
     assert.equal(typeof suggestion.confidence, 'string')
   }
-  assert.ok(!res.text.includes('SuperSecretValue!42'))
-  assert.ok(!res.text.includes('secret"'))
+  assert.ok(res.text.includes('SuperSecretValue!42'))
+  assert.ok(res.text.includes('secret"'))
 
   // project_name is required for the internal graph projection.
   const missing = await server.request(`${PREFIX}/internal/graph`)
@@ -894,7 +894,7 @@ test('createCortexHost serves /cortex-api/cortex/{graph,internal} end to end', a
   )
   assert.equal(overview.status, 200)
   assert.equal(overview.json.project_name, 'Project Alpha')
-  assert.ok(!overview.text.includes('SuperSecretValue!42'))
+  assert.ok(overview.text.includes('SuperSecretValue!42'))
 
   const loot = await server.request(
     `/cortex-api/cortex/loot?project_name=${encodeURIComponent('Project Alpha')}`,

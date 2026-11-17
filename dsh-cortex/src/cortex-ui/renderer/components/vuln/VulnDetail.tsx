@@ -21,7 +21,7 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { Skeleton } from '@renderer/components/ui/skeleton'
-import { SeverityBadge, StatusBadge } from '@renderer/components/common/Badges'
+import { ClientBadge, SeverityBadge, StatusBadge } from '@renderer/components/common/Badges'
 import { CopyButton } from '@renderer/components/common/CopyButton'
 import { EmptyState } from '@renderer/components/common/EmptyState'
 import { MarkdownText } from '@renderer/components/common/MarkdownText'
@@ -381,6 +381,12 @@ export function VulnDetail({
                       {formatVulnType(detail.vuln_type, t)}
                     </span>
                     <StatusBadge status={detail.status} />
+                    {detail.client_type ? (
+                      <ClientBadge
+                        clientType={detail.client_type}
+                        clientConnection={detail.client_connection}
+                      />
+                    ) : null}
                     <span
                       className="ml-auto font-mono text-[12.5px] tabular-nums text-foreground/70"
                       title={t('vuln.table.discoveredAt')}
@@ -436,6 +442,14 @@ export function VulnDetail({
                         toastMessage={t('vuln.copy.targetUrlDone')}
                       />
                     </MetaRow>
+                    {detail.client_type ? (
+                      <MetaRow label={t('vuln.detail.client')}>
+                        <ClientBadge
+                          clientType={detail.client_type}
+                          clientConnection={detail.client_connection}
+                        />
+                      </MetaRow>
+                    ) : null}
                   </dl>
                 </header>
 

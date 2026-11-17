@@ -253,7 +253,7 @@ it('GET tree/file/search works inside the workspace and rejects escapes', async 
   assert.equal(badRegex.status, 400, badRegex.text)
 })
 
-it('POST /analyze produces a capped overview with domains, endpoints and masked secrets', async () => {
+it('POST /analyze produces a capped overview with domains, endpoints and raw secrets', async () => {
   const listing = expectOk(await call(`/miniapps?search=${APPID}`))
   const target = listing.miniapps.find((row) => String(row.version) === '2')
   const body = expectOk(await call(`/miniapps/${target.id}/analyze`, { method: 'POST', body: { force: true } }))
@@ -265,7 +265,7 @@ it('POST /analyze produces a capped overview with domains, endpoints and masked 
   assert.ok(body.analysis.secrets.length >= 1)
   assert.ok(body.analysis.parameters.length >= 1)
   assert.ok(body.overviewText.length <= 8000)
-  assert.ok(!/sk-abcdefghijklmnopqrstuvwxyz/.test(body.overviewText), 'overview text must not expose full secrets')
+  assert.match(body.overviewText, /sk-abcdefghijklmnopqrstuvwxyz/, 'overview text carries raw secrets')
 
   const detail = expectOk(await call(`/miniapps/${target.id}`))
   assert.ok(detail.analysis !== null)

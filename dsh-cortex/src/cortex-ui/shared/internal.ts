@@ -293,20 +293,14 @@ export function deriveHostSubnet(ip: string, declaredSubnet = ''): string {
   return 'unknown'
 }
 
-/* --------------------------------------------------------- secret masking -- */
+/* --------------------------------------------------------- secret display -- */
 
 /**
- * Credential secrets are high sensitivity: everything the UI / MCP / CLI
- * receives is masked. Only a long single-line secret keeps its last 4 chars so
- * a human can recognize the record; multi-line material (SSH keys, tickets) is
- * fully hidden. Returns the empty string when there is no secret.
+ * Kept as a pass-through for compatibility. This local-first workbench shows
+ * raw credential material; there is no masking layer any more.
  */
 export function maskSecret(secret: string): string {
-  const value = secret.trim()
-  if (value.length === 0) return ''
-  if (value.includes('\n') || value.includes('\r')) return '••••••••••••'
-  if (value.length < 12) return '•'.repeat(Math.max(6, Math.min(12, value.length)))
-  return `${'•'.repeat(6)}${value.slice(-4)}`
+  return String(secret ?? '').trim()
 }
 
 /* ----------------------------------------------------------- output types -- */
@@ -367,9 +361,9 @@ export interface InternalService {
 }
 
 /**
- * Renderer/MCP facing credential. `secret` is never returned: only a masked
- * preview plus its length, so the UI can render "••••••1234" and a "有密钥"
- * hint without exposing the value.
+ * Renderer/MCP facing credential. Raw `secret` is included deliberately: this
+ * local-first workbench does not mask any information. `secret_preview` and
+ * `secret_length` remain for older callers.
  */
 export interface Credential {
   id: string
@@ -377,6 +371,7 @@ export interface Credential {
   type: CredentialType
   username: string
   domain: string
+  secret: string
   secret_preview: string
   secret_length: number
   source: string

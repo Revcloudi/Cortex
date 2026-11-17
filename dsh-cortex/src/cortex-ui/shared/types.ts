@@ -13,6 +13,24 @@ export type Severity = (typeof SEVERITIES)[number]
 export const VULN_STATUSES = ['Confirmed', 'Inconclusive', 'Retest_Passed'] as const
 export type VulnStatus = (typeof VULN_STATUSES)[number]
 
+/**
+ * Client-side targets. They are stored on the same vulnerability row as web
+ * findings but are filtered out of the web dashboard, retest workbench and
+ * Memory Nebula graph. Empty string = a normal server/web finding.
+ */
+export const CLIENT_TYPES = ['android', 'ios', 'desktop'] as const
+export type ClientType = (typeof CLIENT_TYPES)[number]
+export type ClientTypeValue = ClientType | ''
+
+/** How the client/test device was reached: USB, SSH, remote/emulator, etc. */
+export const CLIENT_CONNECTIONS = ['usb', 'ssh', 'remote', 'emulator', 'wifi'] as const
+export type ClientConnection = (typeof CLIENT_CONNECTIONS)[number]
+export type ClientConnectionValue = ClientConnection | ''
+
+/** UI/query filter: `server` = normal web findings; `client` = any client finding. */
+export const CLIENT_SCOPES = ['server', 'client'] as const
+export type ClientScope = (typeof CLIENT_SCOPES)[number]
+
 export const SEVERITY_LABELS: Record<Severity, string> = {
   Critical: '严重',
   High: '高危',
@@ -88,6 +106,10 @@ export interface Vulnerability {
   retest_results: RetestResult[]
   related_vuln_ids: string[]
   status: VulnStatus
+  /** Client target type; empty for normal web/server findings. */
+  client_type: ClientTypeValue
+  /** Client/test-device connection context (USB / SSH / emulator / remote). */
+  client_connection: ClientConnectionValue
   /** ISO-8601 timestamp. */
   created_at: string
 }
@@ -178,6 +200,10 @@ export const VulnerabilityPayloadSchema = z
     retest_results: z.array(RetestResultSchema).max(100).default([]),
     related_vuln_ids: z.array(z.string().trim().min(1).max(100)).max(200).default([]),
     status: z.enum(VULN_STATUSES).default('Confirmed'),
+    /** Leave empty for a normal web/server finding. */
+    client_type: z.union([z.enum(CLIENT_TYPES), z.literal('')]).default(''),
+    /** USB / SSH / emulator / remote context for client findings; empty otherwise. */
+    client_connection: z.union([z.enum(CLIENT_CONNECTIONS), z.literal('')]).default(''),
     created_at: isoDateString.default(() => new Date().toISOString())
   })
   .strict()
@@ -529,6 +555,8 @@ export const AssetContextPayloadSchema = z
     host_port: assetIdentifierSchema,
     host: assetHostSchema.optional(),
     project_name: z.string().trim().min(1, 'project_name 不能为空').max(120),
+    /** Human-readable system name (company + system); project stays the relation key. */
+    system_name: z.string().trim().max(200).optional(),
     tech_stack: z.string().trim().max(1_000).optional(),
     auth_required: z.boolean().default(false),
     status: z.enum(ASSET_STATUSES).default('Alive'),
@@ -629,6 +657,8 @@ export interface AssetListItem {
   /** Pure host derived from host_port. */
   host: string
   project_name: string
+  /** Company/system label shown instead of the project name in the asset library. */
+  system_name: string
   tech_stack: string
   auth_required: boolean
   status: AssetStatus
@@ -880,6 +910,10 @@ export const QueryVulnerabilitiesInputSchema = z
     status: z.enum(VULN_STATUSES).optional(),
     /** Realm isolation; default `all` keeps the legacy behavior for old agents. */
     realm: z.enum(REALM_FILTERS).optional(),
+    /** Restrict to normal web findings or client findings. */
+    client: z.enum(CLIENT_SCOPES).optional(),
+    /** Narrow client findings to one platform. */
+    client_type: z.enum(CLIENT_TYPES).optional(),
     page: z.number().int().min(1).max(100_000).optional(),
     pageSize: z.number().int().min(1).max(200).optional()
   })
@@ -891,9 +925,11 @@ export const QueryVulnerabilitiesInputSchema = z
       (value.search !== undefined && value.search.length > 0) ||
       value.severity !== undefined ||
       value.status !== undefined ||
-      value.realm !== undefined,
+      value.realm !== undefined ||
+      value.client !== undefined ||
+      value.client_type !== undefined,
     {
-      message: '至少提供 vuln_id、host、search、severity、status、realm 之一',
+      message: '至少提供 vuln_id、host、search、severity、status、realm、client 或 client_type 之一',
       path: ['vuln_id']
     }
   )
@@ -936,7 +972,7 @@ export const QueryAssetContextInputSchema = z
     project_name: z.string().trim().min(1, 'project_name 不能为空').max(120).optional(),
     /** Include the internal-scope summary (footholds / hosts / services / pivots). */
     include_internal: z.boolean().optional(),
-    /** Include masked credentials (implies `include_internal`). */
+    /** Include raw credentials (implies `include_internal`). */
     include_credentials: z.boolean().optional()
   })
   .strict()
@@ -996,6 +1032,8 @@ export interface VulnerabilityListItem {
   severity: Severity
   target_url: string
   status: VulnStatus
+  client_type: ClientTypeValue
+  client_connection: ClientConnectionValue
   created_at: string
 }
 
@@ -1014,6 +1052,13 @@ export interface DashboardStats {
     high: number
     hosts: number
   }
+  /** Client-target counters across the web realm, independent of the filter. */
+  client: {
+    total: number
+    critical: number
+    high: number
+    hosts: number
+  }
 }
 
 export interface VulnFilters {
@@ -1023,6 +1068,10 @@ export interface VulnFilters {
   status?: VulnStatus | 'all'
   /** Realm isolation filter; omitted keeps the legacy cross-domain behavior. */
   realm?: RealmFilter
+  /** `server` hides client findings; `client` shows only client findings. */
+  client?: ClientScope
+  /** Narrow client findings to one platform. */
+  client_type?: ClientType
 }
 
 /** Page sizes offered by the vulnerability dashboard. */

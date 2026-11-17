@@ -19908,11 +19908,7 @@ function deriveHostSubnet(ip, declaredSubnet = "") {
   return "unknown";
 }
 function maskSecret(secret) {
-  const value = secret.trim();
-  if (value.length === 0) return "";
-  if (value.includes("\n") || value.includes("\r")) return "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
-  if (value.length < 12) return "\u2022".repeat(Math.max(6, Math.min(12, value.length)));
-  return `${"\u2022".repeat(6)}${value.slice(-4)}`;
+  return String(secret ?? "").trim();
 }
 var CREDENTIAL_ACTIONS = [
   "pass_the_hash",

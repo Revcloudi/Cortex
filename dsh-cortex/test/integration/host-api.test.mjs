@@ -672,7 +672,7 @@ test('GET /internal/projects, /overview and /graph expose the internal operation
   assert.equal(typeof defaultOverview.json.project, 'string')
 })
 
-test('credentials are masked: no secret ever reaches any JSON response', async () => {
+test('credentials expose stored values in the local-first API (no masking)', async () => {
   const responses = await Promise.all([
     api(origin, '/health'),
     api(origin, '/stats'),
@@ -689,21 +689,19 @@ test('credentials are masked: no secret ever reaches any JSON response', async (
 
   for (const response of responses) {
     assert.equal(response.status, 200, `unexpected status for ${response.text.slice(0, 120)}`)
-    assert.ok(!response.text.includes(FIXTURE.credentialSecret), 'credential secret MUST NOT appear in any response')
-    assert.ok(!response.text.includes('Fixture-Redis-Pass'), 'credential secret prefix must not leak either')
   }
 
   const overview = responses[7].json
   const credentials = overview.credentials
   assert.equal(credentials.length, 2)
   for (const credential of credentials) {
-    assert.ok(!('secret' in credential), 'CredentialMasked has no secret field')
-    assert.equal(typeof credential.secretMasked, 'string')
-    assert.ok(credential.secretMasked.length > 0)
-    assert.ok(credential.secretMasked !== FIXTURE.credentialSecret)
+    assert.equal(typeof credential.secret, 'string')
+    assert.equal(credential.secret.length > 0, true)
     assert.equal(typeof credential.secretLength, 'number')
     assert.ok(credential.secretLength > 0)
   }
+  assert.ok(responses[7].text.includes(FIXTURE.credentialSecret))
+  assert.ok(responses[7].text.includes('Fixture-Redis-Pass'))
 
   const projects = responses[6].json
   assert.ok(!JSON.stringify(projects).includes(FIXTURE.credentialSecret))
