@@ -107,7 +107,7 @@ const SNAPSHOT_SUMMARY = {
 /* -------------------------------------------------------------------------- */
 /* Mini-program fixtures (contract §3.7). IDs are the source SHA1, not appid.   */
 /* -------------------------------------------------------------------------- */
-const MINIAPP_WORKSPACE = 'C:\\Users\\slg13\\.cortex\\miniapps'
+const MINIAPP_WORKSPACE = 'C:\\demo\\.cortex\\miniapps'
 
 const MINIAPP_UNPACKED = {
   id: 'b'.repeat(40),
@@ -136,7 +136,7 @@ const MINIAPP_DETECTED = {
   version: '135',
   root_kind: 'xwechat',
   package_dir:
-    'C:\\Users\\slg13\\AppData\\Roaming\\Tencent\\xwechat\\radium\\users\\hash\\applet\\packages\\wxdabf06925a55f410\\135',
+    'C:\\demo\\AppData\\Roaming\\Tencent\\xwechat\\radium\\users\\hash\\applet\\packages\\wxdabf06925a55f410\\135',
   size_bytes: 3929233,
   file_count: 2,
   format: 'v1mmwx',
@@ -157,7 +157,7 @@ const MINIAPP_EXTRA = {
   app_name: '',
   version: '7',
   root_kind: 'wechat3',
-  package_dir: 'C:\\Users\\slg13\\Documents\\WeChat Files\\Applet\\wxfeedfacecafebeef\\7',
+  package_dir: 'C:\\demo\\Documents\\WeChat Files\\Applet\\wxfeedfacecafebeef\\7',
   size_bytes: 512000,
   file_count: 1,
   format: 'plain',
@@ -264,8 +264,8 @@ function miniappDetailFor(row) {
 const APP_INFO = {
   name: 'Cortex',
   version: '0.1.0',
-  projectRoot: 'C:\\Users\\slg13\\Desktop\\Cortex',
-  dbPath: 'C:\\Users\\slg13\\.cortex\\data.db',
+  projectRoot: 'C:\\demo\\Desktop\\Cortex',
+  dbPath: 'C:\\demo\\.cortex\\data.db',
   schemaVersion: 5,
   platform: 'win32',
   electronVersion: '31.7.7',
@@ -274,8 +274,8 @@ const APP_INFO = {
   mcpRuntime: {
     mode: 'installed',
     command: 'node.exe',
-    entry: 'C:\\Users\\slg13\\.dsh\\plugins\\dsh-cortex\\mcp\\server.mjs',
-    display: 'node.exe "C:\\Users\\slg13\\.dsh\\plugins\\dsh-cortex\\mcp\\server.mjs"'
+    entry: 'C:\\demo\\.dsh\\plugins\\dsh-cortex\\mcp\\server.mjs',
+    display: 'node.exe "C:\\demo\\.dsh\\plugins\\dsh-cortex\\mcp\\server.mjs"'
   }
 }
 
@@ -639,7 +639,7 @@ function createMockFetch() {
         roots: [
           {
             kind: 'xwechat',
-            path: 'C:\\Users\\slg13\\AppData\\Roaming\\Tencent\\xwechat\\radium\\users',
+            path: 'C:\\demo\\AppData\\Roaming\\Tencent\\xwechat\\radium\\users',
             label: 'WeChat 4.x',
             exists: true
           }
